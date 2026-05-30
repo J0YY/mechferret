@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .controller import MechFerret
+from .evaluators import template_for_venue
 from .models import ResearchRun, utc_now
 
 
@@ -82,6 +83,7 @@ class GoalLoop:
         return summary
 
     def _goal_question(self, question: str, venue: str, actions: list[str]) -> str:
+        template = template_for_venue(venue)
         suffix = ""
         if actions:
             suffix = "\n\nPrevious critic requested these next actions:\n" + "\n".join(f"- {action}" for action in actions)
@@ -89,6 +91,9 @@ class GoalLoop:
             f"{question}\n\n"
             f"Target venue/bar: {venue}. Evaluate like a program chair or expert reviewer. "
             "Prioritize novelty, evidence quality, experimental rigor, clarity, and unresolved risks."
+            f"\nEvaluation criteria: {', '.join(template.criteria)}."
+            f"\nMust-have evidence: {', '.join(template.must_have)}."
+            f"\nCommon rejection reasons to avoid: {', '.join(template.common_reject_reasons)}."
             f"{suffix}"
         )
 
@@ -127,15 +132,15 @@ def venue_bar_adjustment(venue: str) -> float:
 
 def next_actions(run: ResearchRun, venue: str, probability: float, target: float) -> list[str]:
     actions: list[str] = []
+    template = template_for_venue(venue)
     if run.gaps:
         actions.extend(f"Resolve gap: {gap}" for gap in run.gaps[:3])
     if run.metrics.get("source_diversity", 0) < 5:
         actions.append("Add independent sources, datasets, baselines, or reviewer-facing external validation.")
     if run.metrics.get("citation_density", 0) < 1.2:
         actions.append("Corroborate the strongest claims with additional evidence chunks.")
-    if "neurips" in venue.lower():
-        actions.append("Add an experiment plan with baselines, ablations, error analysis, and compute budget.")
-        actions.append("Clarify novelty against adjacent methods and expected reviewer objections.")
+    actions.append(f"Address must-have evidence: {', '.join(template.must_have[:4])}.")
+    actions.append(f"Preempt rejection reasons: {', '.join(template.common_reject_reasons[:3])}.")
     if probability < target:
         actions.append(f"Increase estimated acceptance probability from {probability:.2f} toward {target:.2f}.")
     return dedupe(actions)[:8]
@@ -150,4 +155,3 @@ def dedupe(items: list[str]) -> list[str]:
         seen.add(item)
         result.append(item)
     return result
-

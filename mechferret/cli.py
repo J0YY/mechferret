@@ -7,7 +7,10 @@ from pathlib import Path
 
 from .config import PROVIDERS, configure_provider, load_config, prompt_api_key, save_config
 from .controller import MechFerret
+from .costs import estimate_run_cost
 from .goal_loop import GoalLoop
+from .ops import memory_clear, memory_recent, memory_summary, print_doctor, summarize_run_artifact
+from .registry import all_items, items_by_kind
 from .sources import example_corpus_path
 
 DEMO_QUESTION = (
@@ -54,7 +57,11 @@ def build_parser() -> argparse.ArgumentParser:
     api.add_argument("--show", action="store_true", help="Show configured provider status.")
     api.add_argument("--clear", choices=sorted(PROVIDERS), help="Remove a stored provider key.")
 
-    goal = sub.add_parser("goal", help="Loop research/experiments until a target acceptance probability is reached.")
+    goal = sub.add_parser(
+        "goal",
+        aliases=["/goal", "loop", "/loop"],
+        help="Loop research/experiments until a target acceptance probability is reached.",
+    )
     goal.add_argument("question")
     goal.add_argument("--venue", default="NeurIPS main", help="Target venue or acceptance bar.")
     goal.add_argument("--target", type=float, default=0.9, help="Target estimated acceptance probability.")
@@ -67,6 +74,23 @@ def build_parser() -> argparse.ArgumentParser:
     goal.add_argument("--provider", choices=["auto", "local", "openai", "anthropic"], default="auto")
     goal.add_argument("--model", help="Override the configured provider model.")
     goal.add_argument("--no-memory", action="store_true")
+
+    doctor = sub.add_parser("doctor", aliases=["/doctor"], help="Check config, packages, corpus, and registry health.")
+    doctor.set_defaults(_doctor=True)
+
+    registry = sub.add_parser("registry", aliases=["/registry"], help="List available tools, tasks, playbooks, and evaluators.")
+    registry.add_argument("--kind", choices=["tool", "task", "playbook", "evaluator"])
+
+    memory = sub.add_parser("memory", aliases=["/memory"], help="Inspect or clear research memory.")
+    memory.add_argument("--db", default=".mechferret/memory.sqlite")
+    memory.add_argument("--recent", type=int, default=0, help="Show recent remembered runs.")
+    memory.add_argument("--clear", action="store_true", help="Delete the memory database.")
+
+    cost = sub.add_parser("cost", aliases=["/cost"], help="Estimate cost/usage from a run artifact.")
+    cost.add_argument("run_json")
+
+    resume = sub.add_parser("resume", aliases=["/resume"], help="Summarize a prior run artifact.")
+    resume.add_argument("run_json")
 
     inspect = sub.add_parser("inspect", help="Print a compact summary of a run JSON artifact.")
     inspect.add_argument("run_json")
@@ -117,7 +141,7 @@ def main(argv: list[str] | None = None) -> None:
         print(f"Default provider: {load_config().default_provider}")
     elif args.command in {"api", "/api"}:
         handle_api_command(args)
-    elif args.command == "goal":
+    elif args.command in {"goal", "/goal", "loop", "/loop"}:
         loop = GoalLoop(args.db)
         result = loop.run(
             args.question,
@@ -136,6 +160,40 @@ def main(argv: list[str] | None = None) -> None:
         print(f"Best probability: {result['best_probability']:.2f}")
         print(f"Iterations: {len(result['iterations'])}")
         print(f"Report: {result['artifact']}")
+    elif args.command in {"doctor", "/doctor"}:
+        print_doctor()
+    elif args.command in {"registry", "/registry"}:
+        items = items_by_kind(args.kind) if args.kind else all_items()
+        for item in items:
+            print(f"{item.kind:9} {item.name:24} {item.status:10} {item.description}")
+    elif args.command in {"memory", "/memory"}:
+        if args.clear:
+            memory_clear(args.db)
+            print(f"Cleared memory at {args.db}")
+            return
+        summary = memory_summary(args.db)
+        print(f"Memory: runs={summary['runs']} claims={summary['claims']} sources={summary['sources']}")
+        if args.recent:
+            for row in memory_recent(args.db, args.recent):
+                score = row["metrics"].get("readiness_score", 0)
+                print(f"{row['created_at']} {row['id']} readiness={score:.2f} {row['question'][:90]}")
+    elif args.command in {"cost", "/cost"}:
+        cost = estimate_run_cost(args.run_json)
+        print(f"Run: {cost['run_id']}")
+        print(f"Estimated tokens processed: {cost['estimated_tokens_processed']}")
+        print(f"Estimated provider calls: {cost['estimated_provider_calls']}")
+        print(f"Local plan steps: {cost['local_steps']}")
+        print(cost["note"])
+    elif args.command in {"resume", "/resume"}:
+        summary = summarize_run_artifact(args.run_json)
+        print(f"Run: {summary['run_id']}")
+        print(f"Question: {summary['question']}")
+        print(f"Readiness: {summary['readiness_score']:.2f}")
+        print(f"Claims: {summary['claims']}")
+        print(f"Evidence chunks: {summary['evidence']}")
+        print(f"Gaps: {len(summary['gaps'])}")
+        if summary["artifacts"].get("html"):
+            print(f"Report: {summary['artifacts']['html']}")
     elif args.command == "inspect":
         payload = json.loads(Path(args.run_json).read_text(encoding="utf-8"))
         print(f"Question: {payload['question']}")

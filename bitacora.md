@@ -30,6 +30,10 @@ Implemented:
 - Provider selection via `--provider local|auto|openai|anthropic`.
 - Goal loop for "run until acceptance probability target" workflows.
 - `goal.json` summary artifact with iteration history and next actions.
+- `/goal` and `/loop` aliases for the primary autonomy loop.
+- Explicit registries for tools, tasks, playbooks, and evaluators.
+- `doctor`, `registry`, `memory`, `cost`, and `resume` commands.
+- Domain evaluator templates for NeurIPS, biology, law, and coding.
 - Review-loop fixes from independent `codex review`.
 
 In progress:
@@ -56,14 +60,14 @@ Mapped architectural areas:
 - Tool registry: `Tool.ts`, `tools/`
   - MechFerret analogue planned: research tool registry for search, file load,
     provider call, experiment execution, report writing.
-  - Status: partial via modules, no explicit registry yet.
+  - Status: implemented in `mechferret/registry.py`.
 - Task registry: `Task.ts`, `tasks/`
   - MechFerret analogue planned: goal-loop tasks and experiment tasks.
-  - Status: in progress via `goal_loop.py`.
+  - Status: implemented in `mechferret/registry.py` and `mechferret/goal_loop.py`.
 - Commands: `commands/`
   - MechFerret analogue: `mechferret/cli.py`.
-  - Status: `run`, `demo`, `inspect`, `/login`, `/api`; planned `goal`,
-    `doctor`, `memory`, `status`, `cost`.
+  - Status: `run`, `demo`, `inspect`, `/login`, `/api`, `/goal`, `/loop`,
+    `/doctor`, `/registry`, `/memory`, `/cost`, `/resume`.
 - Memory directory: `memdir/`
   - MechFerret analogue: `mechferret/memory.py`.
   - Status: implemented SQLite memory; planned typed memory and selective
@@ -71,7 +75,7 @@ Mapped architectural areas:
 - Skills/plugins: `skills/`, `plugins/`
   - MechFerret analogue planned: reusable research playbooks and domain
     evaluator plugins.
-  - Status: not implemented.
+  - Status: partial via evaluator templates and playbook registry.
 - Bridge/remote/server: `bridge/`, `remote/`, `server/`
   - MechFerret analogue: Modal remote entrypoint and trace mirroring.
   - Status: partial; no IDE bridge.
@@ -80,14 +84,14 @@ Mapped architectural areas:
   - Status: partial via `goal --max-iterations` and no destructive tools.
 - Cost/token tracking: `cost-tracker.ts`, `query/tokenBudget.ts`
   - MechFerret analogue planned: per-run provider calls, estimates, budget stop.
-  - Status: not implemented.
+  - Status: partial via artifact-based cost estimate and loop iteration budget.
 - Diagnostics: `commands/doctor`, diagnostics components.
   - MechFerret analogue planned: `doctor` command for API/config/package checks.
-  - Status: not implemented.
+  - Status: implemented in `mechferret/ops.py`.
 - Session/history/resume: `history.ts`, `assistant/sessionHistory.ts`,
   `commands/resume`.
   - MechFerret analogue: run artifacts and SQLite memory.
-  - Status: partial; no resume command yet.
+  - Status: partial with `/resume` artifact summary and `/memory --recent`.
 - MCP/LSP/tools integration.
   - MechFerret analogue planned: optional connectors for paper search, code
     search, experiment runners.
@@ -95,10 +99,12 @@ Mapped architectural areas:
 
 ## Near-Term Work Queue
 
-1. Add `doctor` command.
-2. Add explicit tool/task registries.
-3. Add cost/budget tracking.
-4. Add memory management commands.
-5. Add domain evaluator templates for NeurIPS, biology, law, and coding.
-6. Add skills/playbooks and plugin loading.
-7. Add remote/session resume.
+1. Add stronger `/loop` budget controls: max provider calls, max dollars,
+   wall-clock time, and stop-on-regression.
+2. Add experiment runners that can execute scripts/notebooks and feed metrics
+   back into acceptance probability.
+3. Add real plugin loading for evaluator templates and search connectors.
+4. Add richer memory commands: export, prune, typed memories, and stale-memory
+   checks.
+5. Add remote/session resume beyond artifact summary.
+6. Add MCP-style connector layer for paper search, code search, and datasets.

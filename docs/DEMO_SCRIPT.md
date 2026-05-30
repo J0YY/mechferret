@@ -38,12 +38,20 @@ python3 -m mechferret /api --provider anthropic
 Goal-loop demo:
 
 ```bash
-python3 -m mechferret goal "Can this autoresearch project reach NeurIPS main?" \
+python3 -m mechferret /loop "Can this autoresearch project reach NeurIPS main?" \
   --venue "NeurIPS main" \
   --target 0.9 \
   --source examples/seed_corpus \
   --max-iterations 3 \
   --provider local
+```
+
+Ops quick checks:
+
+```bash
+python3 -m mechferret /doctor
+python3 -m mechferret /registry --kind task
+python3 -m mechferret /memory --recent 3
 ```
 
 ```bash

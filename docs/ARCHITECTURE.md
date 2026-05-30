@@ -14,6 +14,9 @@ MechFerret is organized around a replayable autoresearch loop:
    `evals.json`, and `trace.jsonl`.
 8. **GoalLoop** repeats research iterations until an estimated acceptance
    probability target is reached or the iteration budget is exhausted.
+9. **Registries** expose MechFerret-native tools, tasks, playbooks, and
+   evaluators so the system can grow like a command/tool platform instead of a
+   single script.
 
 The implementation borrows high-level product lessons from mature coding-agent
 systems: task registries, explicit memory boundaries, selective recall,
@@ -42,3 +45,6 @@ question
   Workshop for local tracing.
 - It emits machine-readable artifacts that another agent can inspect, replay,
   score, or visualize.
+- `/goal` and `/loop` are the primary autonomy surfaces: they turn review gaps
+  into new research or experiment actions until the target bar is met or the
+  budget is exhausted.

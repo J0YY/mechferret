@@ -1,6 +1,6 @@
 # MechFerret
 
-MechFerret is a hackathon-ready autonomous research system. It runs an explicit
+MechFerret is an interpretability-specific autonomous research system. It runs an explicit
 plan/search/extract/critic/synthesize loop, keeps a durable evidence memory, and
 generates an inspectable dossier with citations, confidence scores, gaps,
 contradictions, a claim graph, eval assertions, and trace artifacts.
@@ -51,15 +51,25 @@ python3 -m mechferret /api --show
 python3 -m mechferret /api --provider anthropic
 ```
 
-Run until a target research bar:
+Run until a target research bar. `/goal` and `/loop` are aliases:
 
 ```bash
-python3 -m mechferret goal "Can this idea reach NeurIPS main?" \
+python3 -m mechferret /loop "Can this idea reach NeurIPS main?" \
   --venue "NeurIPS main" \
   --target 0.9 \
   --source ./proposal \
   --max-iterations 5 \
   --provider anthropic
+```
+
+Operational commands:
+
+```bash
+python3 -m mechferret /doctor
+python3 -m mechferret /registry
+python3 -m mechferret /memory --recent 5
+python3 -m mechferret /cost runs/demo/run.json
+python3 -m mechferret /resume runs/demo/run.json
 ```
 
 ## Raindrop Workshop
