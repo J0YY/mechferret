@@ -74,9 +74,9 @@ def configured_model(provider: str, config: MechFerretConfig | None = None, over
     if settings.model:
         return settings.model
     if provider == "openai":
-        return os.getenv("MECHFERRET_OPENAI_MODEL", "gpt-5")
+        return os.getenv("MECHFERRET_OPENAI_MODEL", "gpt-4o")
     if provider == "anthropic":
-        return os.getenv("MECHFERRET_ANTHROPIC_MODEL", "claude-sonnet-4-5")
+        return os.getenv("MECHFERRET_ANTHROPIC_MODEL", "claude-sonnet-4-6")
     return "local"
 
 

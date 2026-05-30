@@ -56,22 +56,28 @@ straight from the repo (no install needed). `mf` is a short alias for
 > Requires Python 3.11+. The core has **no dependencies** and runs offline; GPU,
 > provider search, Modal, and cluster features are optional extras (see below).
 
-## Interactive prompt
+## Interactive prompt (conversational agent)
 
-Run `mechferret` with no arguments to open a Claude-Code-style prompt:
+Run `mechferret` with no arguments to open a Claude-Code-style prompt. Your
+messages are piped to a model (Claude or GPT); it converses and **calls
+MechFerret's discovery tools** when you ask for interpretability work. On your
+first message, if no model is connected, it walks you through adding an API key.
 
 ```text
-❯ which heads do induction in gpt2?
-❯ /skill ioi-circuit
-❯ /backend transformer_lens
-❯ /modal run --skill ioi-circuit
-❯ /open          # open the last run's HTML dossier
-❯ /help          # all commands · /exit to quit
+❯ hi, what can you do?                         # just talks to the model
+❯ find the IOI circuit in gpt2                 # model calls run_discovery, narrates results
+❯ now check induction heads on the synthetic backend
+❯ /login                                       # connect / change your model API key
+❯ /model claude-sonnet-4-6                     # set the conversation model
+❯ /modal run --skill ioi-circuit              # GPU on Modal
+❯ /open                                        # open the last run's HTML dossier
+❯ /help                                        # all commands · /exit to quit
 ```
 
-Type a plain-English question and it runs the discovery loop (task inferred);
-type a `/command` to drive the system. Set session defaults with `/model`,
-`/backend`, `/task`.
+Plain text → the model. `/commands` → driven directly. The model holds the
+conversation; the architecture/agent parts (discovery loop, skills, experiments)
+are tools it invokes. API keys are stored locally (or read from
+`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`).
 
 ## Quickstart (offline, deterministic — no GPU, no keys)
 

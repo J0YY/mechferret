@@ -1,9 +1,10 @@
-"""Interactive REPL — a Claude-Code-style prompt bar for MechFerret.
+"""Interactive REPL — a Claude-Code-style prompt for MechFerret.
 
 Run `mechferret` with no arguments (or `mechferret repl`) to drop into an
-interactive session: type a research question in plain English and it runs the
-autonomous discovery loop; type a `/command` to drive the system. Input editing
-and history come from `readline` when available.
+interactive session. Plain-English prompts are piped to a model (Claude or GPT)
+that converses and calls MechFerret's discovery tools when you ask for
+interpretability work. `/commands` drive the system directly. On your first
+prompt, if no model is connected, it walks you through adding an API key.
 """
 
 from __future__ import annotations
@@ -11,23 +12,28 @@ from __future__ import annotations
 import os
 import shlex
 import sys
-import uuid
 from pathlib import Path
 
 try:
     import readline  # noqa: F401  (enables arrow keys + history on input())
-except ImportError:  # pragma: no cover - readline missing on some platforms
+except ImportError:  # pragma: no cover
     readline = None
 
-# ANSI styling (auto-disabled when output is not a TTY or NO_COLOR is set).
 _COLOR = sys.stdout.isatty() and not os.getenv("NO_COLOR")
+VERSION = "0.1.0"
+WIDTH = 78
 
 
 def _c(text: str, code: str) -> str:
     return f"\033[{code}m{text}\033[0m" if _COLOR else text
 
 
-REPL_ONLY = {"help", "exit", "quit", "q", "clear", "open", "session"}
+def _vlen(text: str) -> int:
+    import re
+
+    return len(re.sub(r"\033\[[0-9;]*m", "", text))
+
+
 KNOWN_COMMANDS = {
     "run", "demo", "discover", "login", "api", "goal", "loop", "doctor",
     "registry", "memory", "cost", "resume", "inspect", "skills", "modal", "cluster",
@@ -35,36 +41,81 @@ KNOWN_COMMANDS = {
 
 HISTORY_FILE = Path.home() / ".mechferret" / "repl_history"
 
+FERRET = [
+    "    ▟▙      ▟▙   ",
+    "   ▟██▙▄▄▄▟██▙  ",
+    "   ▜████◣◢████▛  ",
+    "    ▜███▀▀███▛   ",
+    "     ▝▀▙▃▃▟▀▘    ",
+    "      ferret     ",
+]
+
 
 class Session:
     def __init__(self) -> None:
-        self.model = "gpt2"
-        self.backend = "auto"
-        self.task: str | None = None
-        self.provider = "auto"
         self.out_root = Path("runs")
         self.last_report: str | None = None
         self.run_count = 0
 
 
-def _banner() -> str:
-    title = _c("MechFerret", "1;36") + _c("  ·  autonomous interpretability research agent", "36")
-    hint = _c("type a question, or ", "2") + _c("/help", "1;33") + _c(" for commands · ", "2") + _c("/exit", "1;33") + _c(" to quit", "2")
-    rows = [title, hint]
-    width = max(_visible_len(row) for row in rows) + 4  # 2-space padding each side
-    top = "╭" + "─" * width + "╮"
-    bottom = "╰" + "─" * width + "╯"
-    body = "\n".join(
-        "│  " + row + " " * (width - 2 - _visible_len(row)) + "│" for row in rows
+# --- welcome screen ------------------------------------------------------------------
+
+def _two_column_box(left: list[str], right: list[str]) -> str:
+    left_w = 38
+    right_w = WIDTH - left_w - 5  # borders + separator
+    rows = max(len(left), len(right))
+    left += [""] * (rows - len(left))
+    right += [""] * (rows - len(right))
+    title = _c(f" MechFerret v{VERSION} ", "1;36")
+    top = "╭─── " + title + "─" * (WIDTH - _vlen(title) - 6) + "╮"
+    bottom = "╰" + "─" * (WIDTH - 2) + "╯"
+    lines = [top]
+    for l, r in zip(left, right):
+        lpad = l + " " * max(0, left_w - _vlen(l))
+        rpad = r + " " * max(0, right_w - _vlen(r))
+        lines.append("│ " + lpad + " │ " + rpad + " │")
+    lines.append(bottom)
+    return "\n".join(lines)
+
+
+def _welcome(session: Session) -> str:
+    from .agent import active_provider
+
+    provider, model, _key = active_provider()
+    user = os.getenv("USER") or "there"
+    cwd = str(Path.cwd()).replace(str(Path.home()), "~")
+    status = (
+        _c(f"{model}", "1;36") + _c(" · interpretability agent", "2")
+        if provider
+        else _c("no model connected", "33") + _c(" · type ", "2") + _c("/login", "1;33")
     )
-    return f"{top}\n{body}\n{bottom}"
+
+    left = [
+        "",
+        _c(f"Welcome back {user.capitalize()}!", "1"),
+        "",
+    ]
+    left += [_c(line, "38;5;173") for line in FERRET]
+    left += ["", status, _c(cwd, "2")]
+
+    right = [
+        _c("Tips for getting started", "1"),
+        _c('Ask "find the IOI circuit in gpt2"', "2"),
+        _c("Type /skills to see playbooks", "2"),
+        _c("─" * (WIDTH - 45), "2"),
+        _c("What's new", "1"),
+        _c("Conversational agent + tools", "2"),
+        _c("/modal and /cluster run on GPUs", "2"),
+        _c("/help for all commands", "2"),
+    ]
+    return _two_column_box(left, right)
 
 
-def _visible_len(text: str) -> int:
-    import re
+def _print_input_bar() -> None:
+    print(_c("─" * WIDTH, "2"))
 
-    return len(re.sub(r"\033\[[0-9;]*m", "", text))
 
+# --- history -------------------------------------------------------------------------
 
 def _setup_history() -> None:
     if readline is None:
@@ -86,24 +137,64 @@ def _save_history() -> None:
         pass
 
 
+# --- onboarding ----------------------------------------------------------------------
+
+def onboard() -> bool:
+    """Connect a model (provider + API key). Returns True if configured."""
+
+    import getpass
+
+    from .config import configure_provider, configured_model
+
+    print()
+    print(_c("  Connect a model to start.", "1"))
+    print("    " + _c("1)", "1;36") + " Anthropic (Claude)   — needs an Anthropic API key")
+    print("    " + _c("2)", "1;36") + " OpenAI (GPT)         — needs an OpenAI API key")
+    try:
+        choice = input(_c("  Choose 1 or 2 (or press Enter to cancel): ", "1")).strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+    provider = {"1": "anthropic", "2": "openai", "anthropic": "anthropic", "openai": "openai"}.get(choice.lower())
+    if not provider:
+        print(_c("  Cancelled. You can connect later with /login.", "2"))
+        return False
+    env_hint = "ANTHROPIC_API_KEY" if provider == "anthropic" else "OPENAI_API_KEY"
+    try:
+        key = getpass.getpass(_c(f"  Paste your {provider} API key ({env_hint}): ", "1")).strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+    if not key:
+        print(_c("  No key entered; cancelled.", "33"))
+        return False
+    path = configure_provider(provider, key, make_default=True)
+    print(_c(f"  ✓ Connected {provider} ({configured_model(provider)}). Stored in {path}.", "32"))
+    print(_c("  (Keys are also read from env vars if you prefer not to store them.)", "2"))
+    print()
+    return True
+
+
+# --- main loop -----------------------------------------------------------------------
+
 def run_repl() -> None:
-    from .discovery import DiscoveryController
-    from .interp.tasks import infer_task
+    from .agent import Agent
 
     session = Session()
-    controller = DiscoveryController()
+    agent = Agent(on_tool=_on_tool)
     _setup_history()
-    print(_banner())
+    print(_welcome(session))
     print()
 
     while True:
+        _print_input_bar()
         try:
             line = input(_c("❯ ", "1;36")).strip()
         except EOFError:
             print()
             break
         except KeyboardInterrupt:
-            print(_c("  (press Ctrl-D or type /exit to quit)", "2"))
+            print(_c("  (Ctrl-D or /exit to quit)", "2"))
             continue
         if not line:
             continue
@@ -122,142 +213,85 @@ def run_repl() -> None:
             continue
         if bare == "clear":
             os.system("cls" if os.name == "nt" else "clear")
-            continue
-        if bare == "session":
-            _print_session(session)
+            print(_welcome(session))
             continue
         if bare == "open":
             _open_report(session)
             continue
-        if bare in {"model", "backend", "task", "provider"} and head.startswith("/"):
-            _set_session(session, bare, tokens[1:])
+        if bare in {"login", "connect"}:
+            if onboard():
+                agent.reload()
             continue
-        if bare == "skill":
-            if len(tokens) < 2:
-                print(_c("  usage: /skill <name>   (see /skills)", "33"))
-            else:
-                _run_skill(controller, session, tokens[1])
+        if bare == "model" and head.startswith("/"):
+            _set_model(agent, tokens[1:])
             continue
 
         if head.startswith("/") or bare in KNOWN_COMMANDS:
             _dispatch_command(tokens, bare)
             continue
 
-        # Plain text => a research question.
-        _run_question(controller, session, line, infer_task)
+        # Plain text => talk to the model.
+        _chat(agent, line)
 
     _save_history()
     print(_c("bye 👋", "2"))
 
 
+def _chat(agent, text: str) -> None:
+    if not agent.configured:
+        print(_c("  No model connected yet — let's fix that.", "2"))
+        if not onboard():
+            return
+        agent.reload()
+    print(_c("  ⠿ thinking…", "2"))
+    try:
+        reply = agent.send(text)
+    except KeyboardInterrupt:
+        print(_c("  (interrupted)", "2"))
+        return
+    except Exception as exc:  # noqa: BLE001
+        print(_c(f"  error: {exc}", "31"))
+        if "401" in str(exc) or "authentication" in str(exc).lower():
+            print(_c("  Your API key may be invalid — reconnect with /login.", "33"))
+        return
+    print()
+    print(_indent(reply))
+    print()
+
+
+def _on_tool(name: str, args: dict) -> None:
+    detail = ", ".join(f"{k}={v}" for k, v in args.items() if v) or ""
+    print(_c(f"  → {name}({detail})", "2"))
+
+
+def _indent(text: str) -> str:
+    return "\n".join("  " + line for line in (text or "").splitlines())
+
+
+def _set_model(agent, args: list[str]) -> None:
+    if not args:
+        print(_c(f"  model = {agent.model or '(none)'}  provider = {agent.provider or '(none)'}", "2"))
+        return
+    agent.model = args[0]
+    print(_c(f"  model → {args[0]}", "32"))
+
+
 def _dispatch_command(tokens: list[str], bare: str) -> None:
     from .cli import main as cli_main
 
-    argv = [bare] + tokens[1:]
     try:
-        cli_main(argv)
+        cli_main([bare] + tokens[1:])
     except SystemExit:
-        # argparse calls sys.exit on bad input; keep the REPL alive.
         pass
     except KeyboardInterrupt:
         print(_c("  (interrupted)", "2"))
-    except Exception as exc:  # noqa: BLE001 - surface, don't crash the session
-        print(_c(f"  error: {exc}", "31"))
-
-
-def _run_question(controller, session: "Session", question: str, infer_task) -> None:
-    task = session.task or infer_task(question)
-    session.run_count += 1
-    out_dir = session.out_root / f"session-{session.run_count:02d}-{uuid.uuid4().hex[:6]}"
-    print(_c(f"  ⠿ investigating [{task}] on {session.model} ({session.backend})…", "2"))
-    try:
-        run = controller.run(
-            question=question,
-            task=task,
-            model=session.model,
-            backend=session.backend,
-            provider=session.provider,
-            out_dir=out_dir,
-        )
-    except KeyboardInterrupt:
-        print(_c("  (interrupted)", "2"))
-        return
     except Exception as exc:  # noqa: BLE001
         print(_c(f"  error: {exc}", "31"))
-        return
-    _print_run(run)
-    session.last_report = run.artifacts.get("html")
-
-
-def _run_skill(controller, session: "Session", skill_name: str) -> None:
-    session.run_count += 1
-    out_dir = session.out_root / f"session-{session.run_count:02d}-{uuid.uuid4().hex[:6]}"
-    print(_c(f"  ⠿ running skill [{skill_name}] on {session.model} ({session.backend})…", "2"))
-    try:
-        run = controller.run(
-            skill=skill_name,
-            model=session.model,
-            backend=session.backend,
-            provider=session.provider,
-            out_dir=out_dir,
-        )
-    except KeyError:
-        print(_c(f"  unknown skill: {skill_name}  (type /skills to list)", "33"))
-        return
-    except KeyboardInterrupt:
-        print(_c("  (interrupted)", "2"))
-        return
-    except Exception as exc:  # noqa: BLE001
-        print(_c(f"  error: {exc}", "31"))
-        return
-    _print_run(run)
-    session.last_report = run.artifacts.get("html")
-
-
-def _print_run(run) -> None:
-    rigor = run.metrics.get("rigor_score", 0)
-    ready = run.metrics.get("readiness_score", 0)
-    print()
-    print(_c(f"  {len(run.discoveries)} confirmed mechanism(s)", "1;32")
-          + _c(f"  ·  rigor {rigor:.2f} · readiness {ready:.2f} · "
-               f"{int(run.metrics.get('experiments_run', 0))} experiments", "2"))
-    for d in run.discoveries:
-        print("  " + _c("•", "32") + " " + d.statement)
-        print(_c(f"      confidence {d.confidence:.2f} · effect {d.effect_size:.2f} · "
-                 f"reproducibility {d.reproducibility:.2f} · novelty {d.novelty:.2f}", "2"))
-    if not run.discoveries:
-        print(_c("  No mechanism cleared the rigor bar. Try a different --task or model.", "33"))
-    report = run.artifacts.get("html")
-    if report:
-        print(_c(f"  dossier: {report}", "36") + _c("   (type /open to view)", "2"))
-    print()
-
-
-def _set_session(session: "Session", field: str, args: list[str]) -> None:
-    if not args:
-        print(_c(f"  {field} = {getattr(session, field)}", "2"))
-        return
-    value = args[0]
-    if field == "backend" and value not in {"auto", "synthetic", "transformer_lens"}:
-        print(_c("  backend must be auto | synthetic | transformer_lens", "33"))
-        return
-    if field == "task" and value not in {"ioi", "induction", "greater_than", "factual_recall"}:
-        print(_c("  task must be ioi | induction | greater_than | factual_recall", "33"))
-        return
-    setattr(session, field, value)
-    print(_c(f"  {field} → {value}", "32"))
-
-
-def _print_session(session: "Session") -> None:
-    print(_c("  session settings:", "1"))
-    for field in ("model", "backend", "task", "provider"):
-        print(f"    {field:9} {getattr(session, field)}")
-    print(f"    runs      {session.run_count}")
 
 
 def _open_report(session: "Session") -> None:
     if not session.last_report:
-        print(_c("  no report yet — ask a question first", "33"))
+        print(_c("  no report yet — runs land in ./runs (use /discover or ask the agent)", "33"))
         return
     opener = "open" if sys.platform == "darwin" else "xdg-open"
     os.system(f"{opener} {shlex.quote(session.last_report)}")
@@ -265,21 +299,17 @@ def _open_report(session: "Session") -> None:
 
 def _print_help() -> None:
     rows = [
-        ("<your question>", "run the discovery loop on a plain-English question"),
-        ("/skill <name>", "run a saved playbook (e.g. /skill ioi-circuit) via /discover"),
-        ("/discover ...", "discovery with explicit flags (--skill --task --model --backend)"),
+        ("<your prompt>", "talk to the model; it runs experiments when you ask"),
+        ("/login", "connect or change your model API key"),
+        ("/model <name>", "set the conversation model (e.g. claude-sonnet-4-5)"),
+        ("/discover ...", "run discovery directly (--skill --task --model --backend)"),
         ("/skills [name]", "list playbooks, or show one"),
-        ("/model <name>", "set the model under study (e.g. gpt2, pythia-160m)"),
-        ("/backend <b>", "auto | synthetic | transformer_lens"),
-        ("/task <t>", "pin the task: ioi | induction | greater_than | factual_recall"),
         ("/modal <action>", "status | setup | run | deploy  (GPU on Modal)"),
         ("/cluster <action>", "status | setup | run  (your own SLURM cluster)"),
         ("/doctor /registry /memory", "environment, capabilities, recalled runs"),
         ("/open", "open the last run's HTML dossier"),
-        ("/session", "show current session settings"),
-        ("/clear  /exit", "clear the screen · quit"),
+        ("/clear  /exit", "redraw welcome · quit"),
     ]
     print(_c("  commands:", "1"))
     for cmd, desc in rows:
         print("    " + _c(f"{cmd:28}", "1;36") + _c(desc, "2"))
-    print(_c("\n  note: `/skill ioi-circuit` is shorthand for `/discover --skill ioi-circuit`.", "2"))
