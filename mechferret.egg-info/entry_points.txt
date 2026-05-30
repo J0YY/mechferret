@@ -1,0 +1,3 @@
+[console_scripts]
+mechferret = mechferret.cli:main
+mf = mechferret.cli:main

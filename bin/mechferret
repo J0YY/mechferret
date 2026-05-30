@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Zero-install launcher: run `bin/mechferret ...` from the repo without pip install.
+# For a global `mechferret` command, run ./install.sh (pipx).
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+exec python3 -m mechferret "$@"

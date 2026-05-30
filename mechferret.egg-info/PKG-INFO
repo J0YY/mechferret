@@ -1,3 +1,30 @@
+Metadata-Version: 2.4
+Name: mechferret
+Version: 0.1.0
+Summary: Autonomous research control loop with evidence memory, citation synthesis, and local traceability.
+Author: MechFerret Hackathon Team
+License-Expression: MIT
+Keywords: autoresearch,agents,retrieval,citations,openai,modal,raindrop
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Provides-Extra: openai
+Requires-Dist: openai>=1.0.0; extra == "openai"
+Provides-Extra: anthropic
+Requires-Dist: anthropic>=0.40.0; extra == "anthropic"
+Provides-Extra: modal
+Requires-Dist: modal>=0.73.0; extra == "modal"
+Provides-Extra: interp
+Requires-Dist: torch>=2.0.0; extra == "interp"
+Requires-Dist: transformer_lens>=2.0.0; extra == "interp"
+Provides-Extra: all
+Requires-Dist: openai>=1.0.0; extra == "all"
+Requires-Dist: anthropic>=0.40.0; extra == "all"
+Requires-Dist: modal>=0.73.0; extra == "all"
+Requires-Dist: torch>=2.0.0; extra == "all"
+Requires-Dist: transformer_lens>=2.0.0; extra == "all"
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0.0; extra == "dev"
+
 # MechFerret
 
 **MechFerret is an autonomous mechanistic-interpretability research system.**
@@ -30,7 +57,7 @@ The fastest path is **pipx** (installs an isolated global `mechferret` command):
 ```bash
 pipx install .          # from the repo root; gives you global `mechferret` and `mf`
 pipx ensurepath         # makes sure ~/.local/bin is on your PATH (only needed once)
-mechferret              # opens the interactive prompt, like `claude`
+mechferret              # bare command runs the headline discovery, like `claude`
 ```
 
 `./install.sh` does the same (pipx if present, otherwise `pip install --user`).
@@ -56,26 +83,7 @@ straight from the repo (no install needed). `mf` is a short alias for
 > Requires Python 3.11+. The core has **no dependencies** and runs offline; GPU,
 > provider search, Modal, and cluster features are optional extras (see below).
 
-## Interactive prompt
-
-Run `mechferret` with no arguments to open a Claude-Code-style prompt:
-
-```text
-❯ which heads do induction in gpt2?
-❯ /skill ioi-circuit
-❯ /backend transformer_lens
-❯ /modal run --skill ioi-circuit
-❯ /open          # open the last run's HTML dossier
-❯ /help          # all commands · /exit to quit
-```
-
-Type a plain-English question and it runs the discovery loop (task inferred);
-type a `/command` to drive the system. Set session defaults with `/model`,
-`/backend`, `/task`.
-
 ## Quickstart (offline, deterministic — no GPU, no keys)
-
-Prefer one-shot commands? Everything is available non-interactively too:
 
 ```bash
 mechferret discover --skill ioi-circuit --out runs/demo   # or: python3 -m mechferret ...

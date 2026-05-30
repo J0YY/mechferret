@@ -23,6 +23,7 @@ dev = ["pytest>=8.0.0"]
 
 [project.scripts]
 mechferret = "mechferret.cli:main"
+mf = "mechferret.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["mechferret*"]

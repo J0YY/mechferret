@@ -122,8 +122,6 @@ def build_parser() -> argparse.ArgumentParser:
     cluster_cmd.add_argument("--out", default="runs/cluster")
     cluster_cmd.add_argument("--dry-run", action="store_true", help="Print the ssh+srun command without executing.")
 
-    sub.add_parser("repl", aliases=["chat", "/repl"], help="Launch the interactive prompt (default when run with no arguments).")
-
     doctor = sub.add_parser("doctor", aliases=["/doctor"], help="Check config, packages, corpus, and registry health.")
     doctor.set_defaults(_doctor=True)
 
@@ -149,10 +147,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.command is None or args.command in {"repl", "chat", "/repl"}:
-        from .repl import run_repl
-
-        run_repl()
+    if args.command is None:
+        run_default()
         return
     if args.command == "run":
         engine = MechFerret(args.db)
@@ -263,6 +259,17 @@ def main(argv: list[str] | None = None) -> None:
         print(f"Claims: {len(payload['claims'])}")
         print(f"Evidence chunks: {len(payload['evidence'])}")
         print(f"Gaps: {len(payload['gaps'])}")
+
+
+def run_default() -> None:
+    """Bare `mechferret` -> the headline autonomous discovery (offline, ~1s)."""
+
+    print("MechFerret — autonomous mechanistic-interpretability research")
+    print("Running the `ioi-circuit` skill on the offline synthetic backend.")
+    print("(Try: `mechferret /skills`, `mechferret discover ...`, `mechferret /modal run`, `mechferret /cluster run`)\n")
+    run = DiscoveryController().run(skill="ioi-circuit", backend="auto", out_dir="runs/demo")
+    print_discovery_summary(run)
+    print("\nOpen the dossier:  open runs/demo/report.html")
 
 
 def handle_discover(args) -> None:

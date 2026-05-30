@@ -6,10 +6,17 @@
 > and it forms hypotheses, runs causal experiments on a model, checks its own
 > rigor, and hands back reproducible discoveries — offline, or on Modal GPUs."
 
+## 0. Install once (then no `python`)
+
+```bash
+./install.sh        # global `mechferret` (pipx); or use ./bin/mechferret with zero install
+mechferret          # bare command = headline discovery, like `claude`
+```
+
 ## 1. Run the headline discovery (offline, deterministic)
 
 ```bash
-python3 -m mechferret discover --skill ioi-circuit --out runs/demo
+mechferret discover --skill ioi-circuit --out runs/demo
 open runs/demo/report.html
 ```
 
@@ -65,6 +72,17 @@ python3 -m mechferret /modal run --skill ioi-circuit # whole loop on a GPU, real
 "Same code, same probes — the synthetic backend swaps for `transformer_lens` on
 a Modal A10G. Offline when you want determinism; GPU when you want ground
 truth."
+
+## 5b. Or run it on your own SLURM cluster
+
+```bash
+mechferret /cluster setup                            # generic connection steps
+mechferret /cluster run --skill ioi-circuit --dry-run # shows the exact ssh+srun command
+mechferret /cluster run --skill ioi-circuit          # ssh -> srun -> discover -> scp dossier back
+```
+
+"Have a cluster instead of Modal? Set a few env vars and the same loop runs via
+`srun` on your GPUs — nothing host-specific is hard-coded."
 
 ## Sponsor upgrade paths
 
