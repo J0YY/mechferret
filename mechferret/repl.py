@@ -22,6 +22,8 @@ except ImportError:  # pragma: no cover
 _COLOR = sys.stdout.isatty() and not os.getenv("NO_COLOR")
 VERSION = "0.1.0"
 WIDTH = 78
+PURPLE = "38;5;141"  # soft violet
+PURPLE_B = "1;38;5;141"
 
 
 def _c(text: str, code: str) -> str:
@@ -41,13 +43,12 @@ KNOWN_COMMANDS = {
 
 HISTORY_FILE = Path.home() / ".mechferret" / "repl_history"
 
+# Small, cute ferret — width-stable ASCII so the box stays aligned.
 FERRET = [
-    "    ▟▙      ▟▙   ",
-    "   ▟██▙▄▄▄▟██▙  ",
-    "   ▜████◣◢████▛  ",
-    "    ▜███▀▀███▛   ",
-    "     ▝▀▙▃▃▟▀▘    ",
-    "      ferret     ",
+    "  ___",
+    " (o.o)__",
+    "  >.<   )",
+    '  (")_(")',
 ]
 
 
@@ -66,7 +67,7 @@ def _two_column_box(left: list[str], right: list[str]) -> str:
     rows = max(len(left), len(right))
     left += [""] * (rows - len(left))
     right += [""] * (rows - len(right))
-    title = _c(f" MechFerret v{VERSION} ", "1;36")
+    title = _c(f" MechFerret v{VERSION} ", PURPLE_B)
     top = "╭─── " + title + "─" * (WIDTH - _vlen(title) - 6) + "╮"
     bottom = "╰" + "─" * (WIDTH - 2) + "╯"
     lines = [top]
@@ -85,9 +86,8 @@ def _welcome(session: Session) -> str:
     user = os.getenv("USER") or "there"
     cwd = str(Path.cwd()).replace(str(Path.home()), "~")
     status = (
-        _c(f"{model}", "1;36") + _c(" · interpretability agent", "2")
-        if provider
-        else _c("no model connected", "33") + _c(" · type ", "2") + _c("/login", "1;33")
+        _c(model, PURPLE) if provider
+        else _c("no model connected", "33") + _c(" · /login", "2")
     )
 
     left = [
@@ -95,24 +95,32 @@ def _welcome(session: Session) -> str:
         _c(f"Welcome back {user.capitalize()}!", "1"),
         "",
     ]
-    left += [_c(line, "38;5;173") for line in FERRET]
-    left += ["", status, _c(cwd, "2")]
+    left += [_c(line, PURPLE) for line in FERRET]
+    left += [_c("mechferret", PURPLE_B), "", status, _c(cwd, "2")]
 
     right = [
-        _c("Tips for getting started", "1"),
-        _c('Ask "find the IOI circuit in gpt2"', "2"),
-        _c("Type /skills to see playbooks", "2"),
-        _c("─" * (WIDTH - 45), "2"),
-        _c("What's new", "1"),
-        _c("Conversational agent + tools", "2"),
-        _c("/modal and /cluster run on GPUs", "2"),
-        _c("/help for all commands", "2"),
+        _c("About", "1"),
+        _c("agentic interpretability", "2"),
+        _c("research CLI", "2"),
+        "",
+        _c("Help", "1"),
+        _c("<prompt>   chat + run work", "2"),
+        _c("/login     connect a model", "2"),
+        _c("/model     pick the model", "2"),
+        _c("/help      all commands", "2"),
+        _c("/exit      quit", "2"),
     ]
     return _two_column_box(left, right)
 
 
-def _print_input_bar() -> None:
+def _print_status_and_bar(agent) -> None:
+    mode = getattr(agent, "permission_mode", "auto")
+    bits = [_c(agent.model, PURPLE) if agent.configured else _c("no model · /login", "33")]
+    if agent.configured and agent.cost.usd:
+        bits.append(_c(agent.cost.format_total(), "2"))
+    bits.append(_c(f"mode:{mode}" + (" ⏸" if mode == "plan" else ""), "33" if mode == "plan" else "2"))
     print(_c("─" * WIDTH, "2"))
+    print("  " + _c(" · ", "2").join(bits))
 
 
 # --- history -------------------------------------------------------------------------
@@ -144,21 +152,29 @@ def onboard() -> bool:
 
     import getpass
 
-    from .config import configure_provider, configured_model
+    from .config import configure_provider
+    from .picker import select
 
+    MODELS = {
+        "anthropic": ["claude-opus-4-8  (highest reasoning)", "claude-sonnet-4-6  (faster)"],
+        "openai": ["gpt-5.5  (highest reasoning)", "gpt-5"],
+    }
     print()
-    print(_c("  Connect a model to start.", "1"))
-    print("    " + _c("1)", "1;36") + " Anthropic (Claude)   — needs an Anthropic API key")
-    print("    " + _c("2)", "1;36") + " OpenAI (GPT)         — needs an OpenAI API key")
     try:
-        choice = input(_c("  Choose 1 or 2 (or press Enter to cancel): ", "1")).strip()
-    except (EOFError, KeyboardInterrupt):
-        print()
+        choice = select(
+            _c("  Connect a model  (↑/↓, Enter; Esc to cancel)", "1"),
+            ["Anthropic (Claude)", "OpenAI (GPT)"],
+        )
+    except KeyboardInterrupt:
+        print(_c("  Cancelled. Connect later with /login.", "2"))
         return False
-    provider = {"1": "anthropic", "2": "openai", "anthropic": "anthropic", "openai": "openai"}.get(choice.lower())
-    if not provider:
-        print(_c("  Cancelled. You can connect later with /login.", "2"))
+    provider = "anthropic" if choice.startswith("Anthropic") else "openai"
+    try:
+        model_choice = select(_c(f"  Pick a {provider} model", "1"), MODELS[provider])
+    except KeyboardInterrupt:
+        print(_c("  Cancelled.", "2"))
         return False
+    model = model_choice.split()[0]
     env_hint = "ANTHROPIC_API_KEY" if provider == "anthropic" else "OPENAI_API_KEY"
     try:
         key = getpass.getpass(_c(f"  Paste your {provider} API key ({env_hint}): ", "1")).strip()
@@ -168,8 +184,8 @@ def onboard() -> bool:
     if not key:
         print(_c("  No key entered; cancelled.", "33"))
         return False
-    path = configure_provider(provider, key, make_default=True)
-    print(_c(f"  ✓ Connected {provider} ({configured_model(provider)}). Stored in {path}.", "32"))
+    path = configure_provider(provider, key, model=model, make_default=True)
+    print(_c(f"  ✓ Connected {provider} ({model}). Stored in {path}.", "32"))
     print(_c("  (Keys are also read from env vars if you prefer not to store them.)", "2"))
     print()
     return True
@@ -181,13 +197,13 @@ def run_repl() -> None:
     from .agent import Agent
 
     session = Session()
-    agent = Agent(on_tool=_on_tool)
+    agent = Agent()
     _setup_history()
     print(_welcome(session))
     print()
 
     while True:
-        _print_input_bar()
+        _print_status_and_bar(agent)
         try:
             line = input(_c("❯ ", "1;36")).strip()
         except EOFError:
@@ -225,6 +241,16 @@ def run_repl() -> None:
         if bare == "model" and head.startswith("/"):
             _set_model(agent, tokens[1:])
             continue
+        if bare == "plan":
+            agent.permission_mode = "auto" if agent.permission_mode == "plan" else "plan"
+            on = agent.permission_mode == "plan"
+            print(_c(f"  plan mode {'ON — write/exec/GPU tools will ask before running' if on else 'OFF'}", "33"))
+            continue
+        if bare == "cost" and len(tokens) == 1:
+            print(_c(f"  session: {agent.cost.format_total()}  ·  model {agent.model}  ·  denied tools: {len(agent.denials)}", "2"))
+            for model, slot in agent.cost.by_model.items():
+                print(_c(f"    {model}: ${slot['usd']:.4f}  ({int(slot['input'])} in / {int(slot['output'])} out)", "2"))
+            continue
 
         if head.startswith("/") or bare in KNOWN_COMMANDS:
             _dispatch_command(tokens, bare)
@@ -238,14 +264,30 @@ def run_repl() -> None:
 
 
 def _chat(agent, text: str) -> None:
+    from .spinner import Spinner
+
     if not agent.configured:
         print(_c("  No model connected yet — let's fix that.", "2"))
         if not onboard():
             return
         agent.reload()
-    print(_c("  ⠿ thinking…", "2"))
+    spinner = Spinner()
+    agent.on_tool = lambda name, args: spinner.log(_tool_line(name, args))
+
+    def _confirm(name, args, reason):
+        from .picker import select
+
+        with spinner.pause():
+            print(_c(f"  ⚠ {name} — {reason or 'approval needed'}", "33"))
+            try:
+                return select(_c("  Allow this tool call?", "1"), ["yes, run it", "no, skip it"]).startswith("yes")
+            except KeyboardInterrupt:
+                return False
+
+    agent.confirm = _confirm
     try:
-        reply = agent.send(text)
+        with spinner:
+            reply = agent.send(text)
     except KeyboardInterrupt:
         print(_c("  (interrupted)", "2"))
         return
@@ -256,12 +298,13 @@ def _chat(agent, text: str) -> None:
         return
     print()
     print(_indent(reply))
+    print(_c(f"  ({agent.cost.format_total()})", "2"))
     print()
 
 
-def _on_tool(name: str, args: dict) -> None:
-    detail = ", ".join(f"{k}={v}" for k, v in args.items() if v) or ""
-    print(_c(f"  → {name}({detail})", "2"))
+def _tool_line(name: str, args: dict) -> str:
+    detail = ", ".join(f"{k}={str(v)[:40]}" for k, v in args.items() if v) or ""
+    return _c(f"  → {name}({detail})", "2")
 
 
 def _indent(text: str) -> str:
@@ -302,7 +345,9 @@ def _print_help() -> None:
         ("<your prompt>", "talk to the model; it runs experiments when you ask"),
         ("/login", "connect or change your model API key"),
         ("/model <name>", "set the conversation model (e.g. claude-sonnet-4-5)"),
-        ("/discover ...", "run discovery directly (--skill --task --model --backend)"),
+        ("/plan", "toggle plan mode (approve write/exec/GPU tools)"),
+        ("/cost", "show session token + USD usage"),
+        ("/discover ...", "run discovery directly (--skill --task --model)"),
         ("/skills [name]", "list playbooks, or show one"),
         ("/modal <action>", "status | setup | run | deploy  (GPU on Modal)"),
         ("/cluster <action>", "status | setup | run  (your own SLURM cluster)"),

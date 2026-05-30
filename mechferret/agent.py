@@ -13,131 +13,81 @@ venv). Anthropic and OpenAI tool-use are both supported.
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any, Callable
 
+from . import permissions
 from .config import configured_api_key, configured_model, load_config
+from .costs import CostTracker
+from .tools import TOOL_SPECS, run_tool as _run_tool, tool_meta
 
-SYSTEM_PROMPT = """You are MechFerret, an autonomous mechanistic-interpretability research agent.
+BASE_SYSTEM_PROMPT = """You are MechFerret, an agentic coding assistant specialised for mechanistic-interpretability research (like Claude Code / Codex, but for interp).
 
-You converse normally and help the user reason about neural-network internals
-(attention heads, MLPs, circuits, features). When the user wants to actually
-investigate, find, localise, confirm, or explain a model's internal mechanism —
-or asks to run an experiment, screen heads, or recover a circuit — call the
-`run_discovery` tool rather than guessing. Use `list_skills` to see ready-made
-playbooks and `environment_status` to check compute/providers.
+You have real tools: run shell commands (bash), read/write/edit files, glob and
+grep the codebase, search the web, fetch URLs, search arXiv, query Neuronpedia
+for SAE features, run the interpretability discovery loop, and list skills. Use
+them — don't guess. When the user wants to investigate a model's internals, plan
+a paper, or run experiments, gather evidence with the search tools, then write
+and run real code (TransformerLens / SAELens / nnsight) with bash, reading
+results back. Prefer concrete action over speculation.
 
-After a tool runs, summarise the findings crisply: name the confirmed mechanisms
-(layer.head + role), their effect size / reproducibility / novelty, and point to
-the HTML dossier. Be precise about rigor: distinguish significant + reproducible
-+ triangulated results from weaker ones. Keep replies concise and concrete."""
+Be precise about experimental rigor: controls, multiple seeds, reproducibility,
+and triangulation across independent probes before claiming a mechanism. Keep
+replies concise; cite files and paper URLs you actually read."""
 
-MAX_TOOL_STEPS = 6
-
-
-# --- tools the model can call --------------------------------------------------------
-
-def _tool_run_discovery(args: dict[str, Any]) -> str:
-    from .discovery import DiscoveryController
-
-    run = DiscoveryController().run(
-        question=args.get("question", ""),
-        skill=args.get("skill"),
-        task=args.get("task"),
-        model=args.get("model", "gpt2"),
-        backend=args.get("backend", "auto"),
-        out_dir=args.get("out_dir", "runs/agent"),
-    )
-    return json.dumps(
-        {
-            "discoveries": [
-                {
-                    "statement": d.statement,
-                    "confidence": d.confidence,
-                    "effect_size": d.effect_size,
-                    "reproducibility": d.reproducibility,
-                    "novelty": d.novelty,
-                }
-                for d in run.discoveries
-            ],
-            "metrics": {
-                k: run.metrics.get(k)
-                for k in ("rigor_score", "readiness_score", "confirmed_mechanisms", "experiments_run", "rounds_run")
-            },
-            "report_html": run.artifacts.get("html"),
-            "discoveries_json": run.artifacts.get("discoveries"),
-        }
-    )
+MAX_TOOL_STEPS = 12
+MAX_TOKENS = int(os.getenv("MECHFERRET_MAX_TOKENS", "4096"))
 
 
-def _tool_list_skills(_args: dict[str, Any]) -> str:
-    from .skills import list_skills
+def build_system_prompt() -> str:
+    """Assemble the system prompt from base + enabled tools + project memory + git."""
 
-    return json.dumps([{"name": s.name, "task": s.task, "description": s.description} for s in list_skills()])
+    sections = [BASE_SYSTEM_PROMPT]
+    tool_lines = ", ".join(t["name"] for t in TOOL_SPECS)
+    sections.append(f"Available tools: {tool_lines}.")
+
+    for fname in ("MECHFERRET.md", "CLAUDE.md"):
+        path = Path.cwd() / fname
+        if path.is_file():
+            sections.append(f"Project notes ({fname}):\n" + path.read_text(encoding="utf-8", errors="ignore")[:4000])
+            break
+
+    try:
+        status = subprocess.run(["git", "status", "-s"], capture_output=True, text=True, timeout=5)
+        if status.returncode == 0 and status.stdout.strip():
+            sections.append("Git status (short):\n" + status.stdout.strip()[:1500])
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+    mechanisms = _recall_mechanisms()
+    if mechanisms:
+        sections.append("Previously confirmed mechanisms (from memory):\n" + mechanisms)
+    return "\n\n".join(sections)
 
 
-def _tool_environment_status(_args: dict[str, Any]) -> str:
-    from .cluster import load_cluster_config
-    from .interp.backends import transformer_lens_available
-    from .modal_app import modal_status
-    from .skills import list_skills
+def _recall_mechanisms(limit: int = 8) -> str:
+    try:
+        from .memory import ResearchMemory
 
-    return json.dumps(
-        {
-            "interp_backend": "transformer_lens" if transformer_lens_available() else "synthetic (offline)",
-            "skills": [s.name for s in list_skills()],
-            "modal": modal_status(),
-            "cluster_configured": load_cluster_config().configured,
-        }
-    )
+        mem = ResearchMemory(".mechferret/memory.sqlite")
+        try:
+            rows = mem.conn.execute(
+                "select text from claims where stance='discovery' order by created_at desc limit ?",
+                (limit,),
+            ).fetchall()
+        finally:
+            mem.close()
+        return "\n".join(f"- {r['text']}" for r in rows)
+    except Exception:  # noqa: BLE001 - memory is best-effort context
+        return ""
 
 
-TOOLS: list[dict[str, Any]] = [
-    {
-        "name": "run_discovery",
-        "description": (
-            "Run the autonomous interpretability discovery loop on a model to find and confirm the "
-            "mechanisms (attention heads / circuits) responsible for a behaviour. Use whenever the user "
-            "asks to investigate, find, localise, confirm, or explain a model's internals or a circuit."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "question": {"type": "string", "description": "Free-form research question."},
-                "skill": {
-                    "type": "string",
-                    "enum": ["ioi-circuit", "find-induction-heads", "logit-lens-sweep", "factual-recall-trace"],
-                    "description": "Optional named playbook to run.",
-                },
-                "task": {
-                    "type": "string",
-                    "enum": ["ioi", "induction", "greater_than", "factual_recall"],
-                    "description": "Interpretability task to investigate.",
-                },
-                "model": {"type": "string", "description": "Model to study (default gpt2)."},
-                "backend": {"type": "string", "enum": ["auto", "synthetic", "transformer_lens"]},
-            },
-            "required": [],
-        },
-    },
-    {
-        "name": "list_skills",
-        "description": "List the available interpretability playbooks/skills.",
-        "parameters": {"type": "object", "properties": {}, "required": []},
-    },
-    {
-        "name": "environment_status",
-        "description": "Report the environment: interp backend, skills, Modal status, cluster config.",
-        "parameters": {"type": "object", "properties": {}, "required": []},
-    },
-]
-
-DISPATCH: dict[str, Callable[[dict[str, Any]], str]] = {
-    "run_discovery": _tool_run_discovery,
-    "list_skills": _tool_list_skills,
-    "environment_status": _tool_environment_status,
-}
+# Tools live in tools.py (the full Claude-Code-style suite). TOOL_SPECS is the
+# provider-neutral schema list; _run_tool dispatches by name.
 
 
 # --- provider configuration ----------------------------------------------------------
@@ -170,7 +120,11 @@ class Agent:
     def __init__(self, on_tool: Callable[[str, dict], None] | None = None) -> None:
         self.provider, self.model, self._key = active_provider()
         self.on_tool = on_tool or (lambda name, args: None)
+        self.confirm: Callable[[str, dict, str], bool] | None = None
+        self.permission_mode = "auto"  # auto | plan
         self.messages: list[dict[str, Any]] = []  # provider-native message history
+        self.cost = CostTracker()
+        self.denials: list[str] = []
 
     @property
     def configured(self) -> bool:
@@ -187,20 +141,35 @@ class Agent:
             return self._send_anthropic(user_text)
         return self._send_openai(user_text)
 
+    def _dispatch(self, name: str, args: dict) -> str:
+        """Permission-gate a tool call, then run it."""
+
+        meta = tool_meta(name)
+        decision = permissions.decide(
+            name, args, read_only=meta["read_only"], permission_class=meta["permission"], mode=self.permission_mode
+        )
+        if decision.behavior in {"ask", "deny"}:
+            approved = bool(self.confirm and self.confirm(name, args, decision.reason)) if decision.behavior == "ask" else False
+            if not approved:
+                self.denials.append(name)
+                return json.dumps({"denied": True, "reason": decision.reason or "not approved", "tool": name})
+        self.on_tool(name, args)
+        return _run_tool(name, args)
+
     # --- Anthropic ------------------------------------------------------------------
 
     def _send_anthropic(self, user_text: str) -> str:
         self.messages.append({"role": "user", "content": user_text})
         tools = [
             {"name": t["name"], "description": t["description"], "input_schema": t["parameters"]}
-            for t in TOOLS
+            for t in TOOL_SPECS
         ]
         final_text: list[str] = []
         for _ in range(MAX_TOOL_STEPS):
             payload = {
                 "model": self.model,
-                "max_tokens": 1024,
-                "system": SYSTEM_PROMPT,
+                "max_tokens": MAX_TOKENS,
+                "system": build_system_prompt(),
                 "messages": self.messages,
                 "tools": tools,
             }
@@ -213,6 +182,8 @@ class Agent:
                     "content-type": "application/json",
                 },
             )
+            if isinstance(data.get("usage"), dict):
+                self.cost.add(self.model, data["usage"])
             content = data.get("content", [])
             self.messages.append({"role": "assistant", "content": content})
             tool_results = []
@@ -220,8 +191,7 @@ class Agent:
                 if block.get("type") == "text":
                     final_text.append(block.get("text", ""))
                 elif block.get("type") == "tool_use":
-                    self.on_tool(block["name"], block.get("input", {}))
-                    result = _run_tool(block["name"], block.get("input", {}))
+                    result = self._dispatch(block["name"], block.get("input", {}))
                     tool_results.append(
                         {"type": "tool_result", "tool_use_id": block["id"], "content": result}
                     )
@@ -235,20 +205,22 @@ class Agent:
 
     def _send_openai(self, user_text: str) -> str:
         if not self.messages:
-            self.messages.append({"role": "system", "content": SYSTEM_PROMPT})
+            self.messages.append({"role": "system", "content": build_system_prompt()})
         self.messages.append({"role": "user", "content": user_text})
         tools = [
             {"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["parameters"]}}
-            for t in TOOLS
+            for t in TOOL_SPECS
         ]
         final_text: list[str] = []
         for _ in range(MAX_TOOL_STEPS):
-            payload = {"model": self.model, "messages": self.messages, "tools": tools, "tool_choice": "auto"}
+            payload = {"model": self.model, "messages": self.messages, "tools": tools, "tool_choice": "auto", "max_tokens": MAX_TOKENS}
             data = _http_post(
                 "https://api.openai.com/v1/chat/completions",
                 payload,
                 {"authorization": f"Bearer {self._key}", "content-type": "application/json"},
             )
+            if isinstance(data.get("usage"), dict):
+                self.cost.add(self.model, data["usage"])
             message = data["choices"][0]["message"]
             self.messages.append(message)
             tool_calls = message.get("tool_calls") or []
@@ -262,20 +234,9 @@ class Agent:
                     args = json.loads(call["function"].get("arguments") or "{}")
                 except json.JSONDecodeError:
                     args = {}
-                self.on_tool(name, args)
-                result = _run_tool(name, args)
+                result = self._dispatch(name, args)
                 self.messages.append({"role": "tool", "tool_call_id": call["id"], "content": result})
         return "\n".join(t for t in final_text if t).strip()
-
-
-def _run_tool(name: str, args: dict[str, Any]) -> str:
-    handler = DISPATCH.get(name)
-    if not handler:
-        return json.dumps({"error": f"unknown tool {name}"})
-    try:
-        return handler(args)
-    except Exception as exc:  # noqa: BLE001 - report tool failure back to the model
-        return json.dumps({"error": str(exc)})
 
 
 def _http_post(url: str, payload: dict, headers: dict) -> dict:
