@@ -1,7 +1,15 @@
-"""MechFerret autonomous research package."""
+"""MechFerret: autonomous mechanistic-interpretability research system."""
 
 from .controller import MechFerret
-from .models import ResearchRun
+from .discovery import DiscoveryController
+from .models import Discovery, ExperimentResult, Hypothesis, ResearchRun
 
-__all__ = ["MechFerret", "ResearchRun"]
+__all__ = [
+    "MechFerret",
+    "DiscoveryController",
+    "ResearchRun",
+    "Hypothesis",
+    "ExperimentResult",
+    "Discovery",
+]
 

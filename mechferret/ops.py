@@ -15,13 +15,23 @@ from .sources import example_corpus_path
 
 def doctor() -> dict[str, Any]:
     config = load_config()
+    from .skills import list_skills
+
+    interp_real = (
+        importlib.util.find_spec("torch") is not None
+        and importlib.util.find_spec("transformer_lens") is not None
+    )
     checks = [
         check("python_version", sys.version_info >= (3, 11), ".".join(map(str, sys.version_info[:3]))),
         check("example_corpus", example_corpus_path().exists(), str(example_corpus_path())),
         check("registry_items", len(all_items()) >= 10, str(len(all_items()))),
+        check("skills_available", len(list_skills()) >= 1, f"{len(list_skills())} skills"),
+        check("interp_backend", True, "transformer_lens" if interp_real else "synthetic (offline)"),
         check("config_path", True, str(default_config_path())),
         check("openai_package", importlib.util.find_spec("openai") is not None, "optional", optional=True),
         check("anthropic_package", importlib.util.find_spec("anthropic") is not None, "optional", optional=True),
+        check("modal_package", importlib.util.find_spec("modal") is not None, "optional", optional=True),
+        check("transformer_lens_package", interp_real, "optional", optional=True),
     ]
     for provider in sorted(PROVIDERS):
         env_name = "OPENAI_API_KEY" if provider == "openai" else "ANTHROPIC_API_KEY"

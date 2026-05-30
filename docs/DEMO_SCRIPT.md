@@ -1,66 +1,84 @@
-# Demo Script
+# Demo Script (≈3 minutes)
 
-Run:
+## The one-liner
+
+> "MechFerret is an autonomous interpretability researcher. Give it a question,
+> and it forms hypotheses, runs causal experiments on a model, checks its own
+> rigor, and hands back reproducible discoveries — offline, or on Modal GPUs."
+
+## 1. Run the headline discovery (offline, deterministic)
 
 ```bash
-python3 -m mechferret demo --out runs/demo
+python3 -m mechferret discover --skill ioi-circuit --out runs/demo
 open runs/demo/report.html
 ```
 
-Narrative:
+Talk track while it runs (~1s):
 
-1. "This is not a prompt wrapper. It is a replayable research control loop."
-2. Show the readiness score and metrics at the top of `report.html`.
-3. Show the claims section: every claim has confidence and citations.
-4. Show the evidence ledger: source chunks are preserved for audit.
-5. Open `runs/demo/graph.json`: claims are connected to evidence and sources.
-6. Open `runs/demo/evals.json`: the run self-checks against research quality
-   assertions.
-7. Open `runs/demo/trace.jsonl`: planner, retrieval, extraction, critic, and
-   synthesis phases are traceable. With Raindrop Workshop running, these spans
-   mirror to the local debugger.
+1. "It grounded the question in prior art, then **screened ~96 attention heads**
+   by causal ablation."
+2. "Heads with a **significant, reproducible** effect were promoted to
+   single-head hypotheses and **triangulated** with three independent probes —
+   attention pattern, direct logit attribution, activation patching."
+3. "Its critic confirms a head only when ≥2 independent probes agree against a
+   **negative control**."
 
-Optional sponsor demo:
+## 2. Show the dossier (`runs/demo/report.html`)
+
+- **Confirmed Mechanisms** — e.g. "head 5.5 / 6.5 / 7.3 are name-mover /
+  duplicate-token heads," each with effect size, reproducibility, and **novelty
+  vs. the literature**.
+- **Experiment Ledger** — every probe, its effect vs. control, significance,
+  reproducibility, and the backend used.
+- **Metrics** — `rigor_score`, `reproducibility_rate`, `confirmed_mechanisms`,
+  `readiness_score`, and budget usage.
+
+## 3. Show it self-checks and is auditable
 
 ```bash
-export OPENAI_API_KEY=...
-python3 -m mechferret demo --provider openai --out runs/openai-demo
+cat runs/demo/evals.json        # has_confirmed_mechanism, every_experiment_has_control,
+                                # significant_effects_reproduce, discoveries_are_triangulated
+cat runs/demo/discoveries.json  # discoveries + full hypothesis lifecycle
+cat runs/demo/graph.json        # sources -> evidence -> claims -> hypotheses -> discoveries
+cat runs/demo/trace.jsonl       # per-phase spans (mirror to Raindrop Workshop)
 ```
 
-Provider login:
+## 4. Minimal-human-in-the-loop autonomy
 
 ```bash
-python3 -m mechferret /login openai
+python3 -m mechferret /skills                       # reusable playbooks
+python3 -m mechferret discover --skill find-induction-heads --out runs/induction
+```
+
+"Different skill, different task — same loop finds an **induction head** and its
+upstream **previous-token head**. The budget (`hooks.py`) is the only stop
+condition; no human approves each step."
+
+## 5. Scale to real models on Modal
+
+```bash
+python3 -m mechferret /modal status                 # detects install + auth + GPU
+python3 -m mechferret /modal setup                  # one-time setup steps
+python3 -m mechferret /modal run --skill ioi-circuit # whole loop on a GPU, real GPT-2
+```
+
+"Same code, same probes — the synthetic backend swaps for `transformer_lens` on
+a Modal A10G. Offline when you want determinism; GPU when you want ground
+truth."
+
+## Sponsor upgrade paths
+
+```bash
+python3 -m mechferret /login openai                 # prior-art web search
 python3 -m mechferret /login anthropic
-python3 -m mechferret /api --provider anthropic
+export RAINDROP_LOCAL_DEBUGGER=1 && raindrop workshop  # live trace of every phase
 ```
 
-Goal-loop demo:
+## Judging-criteria map
 
-```bash
-python3 -m mechferret /loop "Can this autoresearch project reach NeurIPS main?" \
-  --venue "NeurIPS main" \
-  --target 0.9 \
-  --source examples/seed_corpus \
-  --max-iterations 3 \
-  --provider local
-```
-
-Ops quick checks:
-
-```bash
-python3 -m mechferret /doctor
-python3 -m mechferret /registry --kind task
-python3 -m mechferret /memory --recent 3
-```
-
-```bash
-export RAINDROP_LOCAL_DEBUGGER=1
-raindrop workshop
-python3 -m mechferret demo --out runs/raindrop-demo
-```
-
-```bash
-pip install -e '.[modal]'
-modal run mechferret/modal_app.py
-```
+- **Technical depth** — causal screen → triangulation → rigor critic; budgeted
+  autonomy; GPU offload.
+- **Originality** — an agent that *runs experiments and makes reproducible
+  discoveries*, not a summariser.
+- **Demo clarity** — deterministic, offline, fully inspectable dossier.
+- **Applied autonomous research** — mechanistic interpretability, end to end.
