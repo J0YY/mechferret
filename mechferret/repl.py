@@ -251,6 +251,42 @@ def run_repl() -> None:
             for model, slot in agent.cost.by_model.items():
                 print(_c(f"    {model}: ${slot['usd']:.4f}  ({int(slot['input'])} in / {int(slot['output'])} out)", "2"))
             continue
+        if bare == "compact":
+            summary = agent.compact()
+            if summary == "nothing to compact":
+                print(_c("  " + summary, "2"))
+            else:
+                print(_c("  ✓ compacted older turns into a summary:", "32"))
+                print(_indent(_c(summary[:800], "2")))
+            continue
+        if bare == "resume":
+            _resume(agent, tokens[1:])
+            continue
+        if bare == "memory" and len(tokens) == 1:
+            _show_memory()
+            continue
+        if bare == "mcp":
+            _mcp(tokens[1:])
+            continue
+        if bare == "init":
+            _init_project()
+            continue
+        if bare == "export":
+            _export(agent, tokens[1:])
+            continue
+        if bare == "review":
+            import subprocess
+
+            diff = subprocess.run(["git", "diff", "HEAD"], capture_output=True, text=True).stdout
+            if not diff.strip():
+                print(_c("  no uncommitted changes to review", "33"))
+                continue
+            _chat(agent, (
+                "Review this git diff for an interpretability-research codebase. Flag correctness bugs, "
+                "missing experimental controls or seed logging, data leakage into activations/probes, "
+                "and reproducibility issues. Be specific with file:line.\n\n" + diff[:40000]
+            ))
+            continue
 
         if head.startswith("/") or bare in KNOWN_COMMANDS:
             _dispatch_command(tokens, bare)
@@ -285,6 +321,13 @@ def _chat(agent, text: str) -> None:
                 return False
 
     agent.confirm = _confirm
+    streamed = {"any": False}
+
+    def _emit(block: str):
+        streamed["any"] = True
+        spinner.log("\n" + _indent(block.strip()) + "\n")
+
+    agent.on_text = _emit
     try:
         with spinner:
             reply = agent.send(text)
@@ -296,10 +339,114 @@ def _chat(agent, text: str) -> None:
         if "401" in str(exc) or "authentication" in str(exc).lower():
             print(_c("  Your API key may be invalid — reconnect with /login.", "33"))
         return
-    print()
-    print(_indent(reply))
+    if not streamed["any"] and reply:
+        print()
+        print(_indent(reply))
     print(_c(f"  ({agent.cost.format_total()})", "2"))
     print()
+
+
+def _resume(agent, args: list[str]) -> None:
+    from . import sessions
+
+    if args:
+        target = args[0]
+    else:
+        metas = sessions.list_sessions(10)
+        if not metas:
+            print(_c("  no saved sessions yet", "33"))
+            return
+        from .picker import select
+
+        labels = [f"{m.id}  ({m.turns} turns · ${m.usd:.4f} · {m.model})" for m in metas]
+        try:
+            choice = select(_c("  Resume which session?", "1"), labels)
+        except KeyboardInterrupt:
+            return
+        target = metas[labels.index(choice)].id
+    try:
+        agent.load_session(target)
+        print(_c(f"  resumed {target} — {len([m for m in agent.messages if isinstance(m, dict) and m.get('role') == 'user'])} prior turns, {agent.cost.format_total()}", "32"))
+    except KeyError as exc:
+        print(_c(f"  {exc}", "33"))
+
+
+def _init_project() -> None:
+    import importlib.util
+
+    path = Path.cwd() / "MECHFERRET.md"
+    if path.exists():
+        print(_c(f"  {path.name} already exists — leaving it as is", "33"))
+        return
+    have = lambda m: importlib.util.find_spec(m) is not None
+    stack = [m for m in ("torch", "transformer_lens", "sae_lens", "nnsight") if have(m)]
+    content = f"""# MechFerret project notes
+
+This file is read into the agent's system prompt each turn. Keep it short and current.
+
+## Stack
+Installed: {", ".join(stack) or "none detected (install torch + transformer_lens for real experiments)"}
+
+## Conventions
+- Default model under study: gpt2
+- Put run outputs under runs/
+- Log seeds; every causal claim needs a negative control + reproduction across seeds.
+
+## Current goal
+(Describe the paper/result you're driving toward, and the acceptance bar.)
+"""
+    path.write_text(content, encoding="utf-8")
+    print(_c(f"  ✓ wrote {path.name} (detected: {', '.join(stack) or 'no interp stack'})", "32"))
+
+
+def _export(agent, args: list[str]) -> None:
+    out = Path(args[0]) if args else Path(f"mechferret-session-{agent.session_id}.md")
+    from .agent import _render_messages
+
+    body = _render_messages(agent.messages)
+    md = f"# MechFerret session {agent.session_id}\n\nModel: {agent.model}\nCost: {agent.cost.format_total()}\n\n---\n\n{body}\n"
+    out.write_text(md, encoding="utf-8")
+    print(_c(f"  ✓ exported transcript to {out}", "32"))
+
+
+def _mcp(args: list[str]) -> None:
+    from . import mcp
+
+    action = args[0] if args else "status"
+    if action in {"status", "list"}:
+        st = mcp.status()
+        servers = st["configured"]
+        print(_c(f"  MCP servers: {', '.join(servers) if servers else '(none configured)'}", "2"))
+        print(_c(f"  MCP tools available: {st['tool_count']}", "2"))
+        if not servers:
+            print(_c("  add one:  /mcp add <name> <command> [args…]", "2"))
+        return
+    if action == "add" and len(args) >= 3:
+        path = mcp.add_server(args[1], args[2], args[3:])
+        print(_c(f"  ✓ added MCP server '{args[1]}' to {path}; its tools will load on next prompt", "32"))
+        return
+    if action == "tools":
+        for spec in mcp.tool_specs():
+            print(_c(f"    {spec['name']}", "1;36") + _c(f"  {spec['description'][:70]}", "2"))
+        return
+    print(_c("  usage: /mcp [status | tools | add <name> <command> [args…]]", "33"))
+
+
+def _show_memory() -> None:
+    from .memory import ResearchMemory
+
+    mem = ResearchMemory(".mechferret/memory.sqlite")
+    try:
+        rows = mem.recent_mechanisms(20)
+    finally:
+        mem.close()
+    if not rows:
+        print(_c("  no confirmed mechanisms in memory yet", "2"))
+        return
+    print(_c(f"  {len(rows)} confirmed mechanism(s) in memory:", "1"))
+    for r in rows:
+        print(_c(f"    • {r['statement']}", "2"))
+        print(_c(f"      {r['model']} · effect {r['effect_size']:.2f} · repro {r['reproducibility']:.2f} · novelty {r['novelty']:.2f}", "2"))
 
 
 def _tool_line(name: str, args: dict) -> str:
@@ -341,20 +488,8 @@ def _open_report(session: "Session") -> None:
 
 
 def _print_help() -> None:
-    rows = [
-        ("<your prompt>", "talk to the model; it runs experiments when you ask"),
-        ("/login", "connect or change your model API key"),
-        ("/model <name>", "set the conversation model (e.g. claude-sonnet-4-5)"),
-        ("/plan", "toggle plan mode (approve write/exec/GPU tools)"),
-        ("/cost", "show session token + USD usage"),
-        ("/discover ...", "run discovery directly (--skill --task --model)"),
-        ("/skills [name]", "list playbooks, or show one"),
-        ("/modal <action>", "status | setup | run | deploy  (GPU on Modal)"),
-        ("/cluster <action>", "status | setup | run  (your own SLURM cluster)"),
-        ("/doctor /registry /memory", "environment, capabilities, recalled runs"),
-        ("/open", "open the last run's HTML dossier"),
-        ("/clear  /exit", "redraw welcome · quit"),
-    ]
+    from .commands import REPL_COMMANDS
+
     print(_c("  commands:", "1"))
-    for cmd, desc in rows:
-        print("    " + _c(f"{cmd:28}", "1;36") + _c(desc, "2"))
+    for cmd in REPL_COMMANDS:
+        print("    " + _c(f"{cmd.name:28}", "1;36") + _c(cmd.summary, "2"))

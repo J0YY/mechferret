@@ -52,9 +52,52 @@ class ResearchMemory:
               artifacts_json text not null,
               created_at text not null
             );
+            create table if not exists mechanisms (
+              id text primary key,
+              statement text not null,
+              model text,
+              effect_size real,
+              reproducibility real,
+              novelty real,
+              created_at text not null
+            );
             """
         )
         self.conn.commit()
+
+    def record_mechanisms(self, model: str, mechanisms: list[dict]) -> int:
+        """Persist confirmed mechanisms so findings compound across sessions."""
+
+        rows = []
+        for m in mechanisms:
+            statement = m.get("statement", "")
+            if not statement:
+                continue
+            rows.append((
+                stable_id("mech", f"{model}:{statement}"),
+                statement,
+                model,
+                float(m.get("effect_size", 0.0)),
+                float(m.get("reproducibility", 0.0)),
+                float(m.get("novelty", 0.0)),
+                utc_now(),
+            ))
+        if rows:
+            self.conn.executemany(
+                "insert or replace into mechanisms (id, statement, model, effect_size, reproducibility, novelty, created_at) "
+                "values (?, ?, ?, ?, ?, ?, ?)",
+                rows,
+            )
+            self.conn.commit()
+        return len(rows)
+
+    def recent_mechanisms(self, limit: int = 12) -> list[dict]:
+        rows = self.conn.execute(
+            "select statement, model, effect_size, reproducibility, novelty, created_at "
+            "from mechanisms order by created_at desc limit ?",
+            (limit,),
+        ).fetchall()
+        return [dict(row) for row in rows]
 
     def upsert_sources(self, sources: list[Source]) -> None:
         self.conn.executemany(

@@ -15,15 +15,16 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import threading
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
-from . import permissions
+from . import permissions, sessions
 from .config import configured_api_key, configured_model, load_config
 from .costs import CostTracker
-from .tools import TOOL_SPECS, run_tool as _run_tool, tool_meta
+from .tools import all_specs, run_tool as _run_tool, tool_meta
 
 BASE_SYSTEM_PROMPT = """You are MechFerret, an agentic coding assistant specialised for mechanistic-interpretability research (like Claude Code / Codex, but for interp).
 
@@ -41,13 +42,22 @@ replies concise; cite files and paper URLs you actually read."""
 
 MAX_TOOL_STEPS = 12
 MAX_TOKENS = int(os.getenv("MECHFERRET_MAX_TOKENS", "4096"))
+COMPACT_CHAR_THRESHOLD = int(os.getenv("MECHFERRET_COMPACT_CHARS", "240000"))  # ~60k tokens
+COMPACT_KEEP_LAST = 4
+
+COMPACT_SYSTEM = (
+    "You are compacting a mechanistic-interpretability research session to free context. "
+    "Write a dense summary that MUST retain: every confirmed mechanism (layer.head + role + "
+    "effect size + seeds), open hypotheses and next experiments, key file paths and decisions, "
+    "and any goal/acceptance bar. Drop chit-chat. Output only the summary."
+)
 
 
 def build_system_prompt() -> str:
     """Assemble the system prompt from base + enabled tools + project memory + git."""
 
     sections = [BASE_SYSTEM_PROMPT]
-    tool_lines = ", ".join(t["name"] for t in TOOL_SPECS)
+    tool_lines = ", ".join(t["name"] for t in all_specs())
     sections.append(f"Available tools: {tool_lines}.")
 
     for fname in ("MECHFERRET.md", "CLAUDE.md"):
@@ -75,13 +85,10 @@ def _recall_mechanisms(limit: int = 8) -> str:
 
         mem = ResearchMemory(".mechferret/memory.sqlite")
         try:
-            rows = mem.conn.execute(
-                "select text from claims where stance='discovery' order by created_at desc limit ?",
-                (limit,),
-            ).fetchall()
+            rows = mem.recent_mechanisms(limit)
         finally:
             mem.close()
-        return "\n".join(f"- {r['text']}" for r in rows)
+        return "\n".join(f"- {r['statement']} (effect {r['effect_size']:.2f}, repro {r['reproducibility']:.2f})" for r in rows)
     except Exception:  # noqa: BLE001 - memory is best-effort context
         return ""
 
@@ -120,11 +127,14 @@ class Agent:
     def __init__(self, on_tool: Callable[[str, dict], None] | None = None) -> None:
         self.provider, self.model, self._key = active_provider()
         self.on_tool = on_tool or (lambda name, args: None)
+        self.on_text: Callable[[str], None] = lambda text: None  # incremental assistant text
         self.confirm: Callable[[str, dict, str], bool] | None = None
         self.permission_mode = "auto"  # auto | plan
         self.messages: list[dict[str, Any]] = []  # provider-native message history
         self.cost = CostTracker()
         self.denials: list[str] = []
+        self.session_id = sessions.new_session_id()
+        self.abort = threading.Event()
 
     @property
     def configured(self) -> bool:
@@ -137,9 +147,107 @@ class Agent:
     def send(self, user_text: str) -> str:
         if not self.configured:
             raise RuntimeError("No provider configured.")
+        self.abort.clear()
+        self._maybe_compact()
+        try:
+            reply = self._send_anthropic(user_text) if self.provider == "anthropic" else self._send_openai(user_text)
+        except KeyboardInterrupt:
+            self._persist()  # flush transcript on abort
+            raise
+        self._persist()
+        return reply
+
+    def _persist(self) -> None:
+        try:
+            sessions.save_session(
+                self.session_id, self.provider, self.model, self.messages,
+                {"usd": self.cost.usd, "input": self.cost.input_tokens, "output": self.cost.output_tokens},
+            )
+        except Exception:  # noqa: BLE001 - transcript persistence is best-effort
+            pass
+
+    # --- context compaction --------------------------------------------------------
+
+    def _approx_chars(self) -> int:
+        try:
+            return len(json.dumps(self.messages))
+        except (TypeError, ValueError):
+            return 0
+
+    def _maybe_compact(self) -> None:
+        if self._approx_chars() > COMPACT_CHAR_THRESHOLD:
+            self.compact()
+
+    def compact(self) -> str:
+        """Summarise older turns into one boundary message, keeping the last few."""
+
+        if len(self.messages) <= COMPACT_KEEP_LAST:
+            return "nothing to compact"
+        head = self.messages[:-COMPACT_KEEP_LAST]
+        tail = self.messages[-COMPACT_KEEP_LAST:]
+        summary = self._summarize(_render_messages(head))
+        boundary = {"role": "user", "content": f"[Summary of earlier conversation — retain these facts]\n{summary}"}
+        if self.provider == "openai":
+            system = self.messages[:1] if self.messages and self.messages[0].get("role") == "system" else []
+            self.messages = system + [boundary] + tail
+        else:
+            self.messages = [boundary] + tail
+        return summary
+
+    def _summarize(self, convo: str) -> str:
+        convo = convo[:60000]
         if self.provider == "anthropic":
-            return self._send_anthropic(user_text)
-        return self._send_openai(user_text)
+            data = _http_post(
+                "https://api.anthropic.com/v1/messages",
+                {"model": self.model, "max_tokens": 1024, "system": COMPACT_SYSTEM,
+                 "messages": [{"role": "user", "content": convo}]},
+                {"x-api-key": self._key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
+            )
+            return "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text").strip()
+        data = _http_post(
+            "https://api.openai.com/v1/chat/completions",
+            {"model": self.model, "messages": [{"role": "system", "content": COMPACT_SYSTEM}, {"role": "user", "content": convo}]},
+            {"authorization": f"Bearer {self._key}", "content-type": "application/json"},
+        )
+        return (data["choices"][0]["message"].get("content") or "").strip()
+
+    def load_session(self, session_id: str) -> None:
+        data = sessions.load_session(session_id)
+        self.session_id = data["id"]
+        self.provider = data.get("provider", self.provider)
+        self.model = data.get("model", self.model)
+        self.messages = data.get("messages", [])
+        self._key = configured_api_key(self.provider) or self._key
+        c = data.get("cost", {})
+        self.cost.usd = float(c.get("usd", 0.0))
+        self.cost.input_tokens = int(c.get("input", 0))
+        self.cost.output_tokens = int(c.get("output", 0))
+
+    def _run_tool_calls(self, calls: list[tuple[str, str, dict]]) -> dict[str, str]:
+        """Run a turn's tool calls: read-only ones in parallel, the rest serially.
+
+        calls: list of (call_id, tool_name, args). Returns {call_id: result}.
+        """
+
+        results: dict[str, str] = {}
+        read_only = [c for c in calls if tool_meta(c[1])["read_only"]]
+        serial = [c for c in calls if not tool_meta(c[1])["read_only"]]
+        if len(read_only) > 1:
+            from .coordinator import Coordinator
+
+            pairs = Coordinator(max_workers=min(8, len(read_only))).map(
+                lambda c: (c[0], self._dispatch(c[1], c[2])), read_only
+            )
+            results.update(dict(pairs))
+        else:
+            for cid, name, args in read_only:
+                results[cid] = self._dispatch(name, args)
+        for cid, name, args in serial:
+            if self.abort.is_set():
+                results[cid] = json.dumps({"aborted": True})
+                continue
+            results[cid] = self._dispatch(name, args)
+        return results
 
     def _dispatch(self, name: str, args: dict) -> str:
         """Permission-gate a tool call, then run it."""
@@ -162,7 +270,7 @@ class Agent:
         self.messages.append({"role": "user", "content": user_text})
         tools = [
             {"name": t["name"], "description": t["description"], "input_schema": t["parameters"]}
-            for t in TOOL_SPECS
+            for t in all_specs()
         ]
         final_text: list[str] = []
         for _ in range(MAX_TOOL_STEPS):
@@ -186,17 +294,17 @@ class Agent:
                 self.cost.add(self.model, data["usage"])
             content = data.get("content", [])
             self.messages.append({"role": "assistant", "content": content})
-            tool_results = []
             for block in content:
-                if block.get("type") == "text":
-                    final_text.append(block.get("text", ""))
-                elif block.get("type") == "tool_use":
-                    result = self._dispatch(block["name"], block.get("input", {}))
-                    tool_results.append(
-                        {"type": "tool_result", "tool_use_id": block["id"], "content": result}
-                    )
-            if data.get("stop_reason") == "tool_use" and tool_results:
-                self.messages.append({"role": "user", "content": tool_results})
+                if block.get("type") == "text" and block.get("text", "").strip():
+                    final_text.append(block["text"])
+                    self.on_text(block["text"])
+            calls = [(b["id"], b["name"], b.get("input", {})) for b in content if b.get("type") == "tool_use"]
+            if data.get("stop_reason") == "tool_use" and calls:
+                results = self._run_tool_calls(calls)
+                self.messages.append({
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": cid, "content": results[cid]} for cid, _, _ in calls],
+                })
                 continue
             break
         return "\n".join(t for t in final_text if t).strip()
@@ -209,7 +317,7 @@ class Agent:
         self.messages.append({"role": "user", "content": user_text})
         tools = [
             {"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["parameters"]}}
-            for t in TOOL_SPECS
+            for t in all_specs()
         ]
         final_text: list[str] = []
         for _ in range(MAX_TOOL_STEPS):
@@ -226,17 +334,50 @@ class Agent:
             tool_calls = message.get("tool_calls") or []
             if message.get("content"):
                 final_text.append(message["content"])
+                self.on_text(message["content"])
             if not tool_calls:
                 break
+            calls = []
             for call in tool_calls:
-                name = call["function"]["name"]
                 try:
                     args = json.loads(call["function"].get("arguments") or "{}")
                 except json.JSONDecodeError:
                     args = {}
-                result = self._dispatch(name, args)
-                self.messages.append({"role": "tool", "tool_call_id": call["id"], "content": result})
+                calls.append((call["id"], call["function"]["name"], args))
+            results = self._run_tool_calls(calls)
+            for cid, _, _ in calls:
+                self.messages.append({"role": "tool", "tool_call_id": cid, "content": results[cid]})
         return "\n".join(t for t in final_text if t).strip()
+
+
+def _render_messages(messages: list) -> str:
+    """Flatten provider-native messages to plain text for summarization."""
+
+    lines = []
+    for m in messages:
+        if not isinstance(m, dict):
+            continue
+        role = m.get("role", "?")
+        content = m.get("content", "")
+        if isinstance(content, str):
+            text = content
+        elif isinstance(content, list):
+            parts = []
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "text":
+                    parts.append(block.get("text", ""))
+                elif block.get("type") == "tool_use":
+                    parts.append(f"[tool_use {block.get('name')} {json.dumps(block.get('input', {}))[:300]}]")
+                elif block.get("type") == "tool_result":
+                    parts.append(f"[tool_result {str(block.get('content', ''))[:600]}]")
+            text = "\n".join(parts)
+        else:
+            text = str(content)
+        if text.strip():
+            lines.append(f"{role}: {text}")
+    return "\n".join(lines)
 
 
 def _http_post(url: str, payload: dict, headers: dict) -> dict:

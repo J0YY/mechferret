@@ -65,12 +65,35 @@ def tool_read_file(args: dict[str, Any]) -> str:
     path = Path(args["path"]).expanduser()
     if not path.is_file():
         return f"error: not a file: {path}"
+    suffix = path.suffix.lower()
+    if suffix == ".pdf":
+        return _truncate(_read_pdf(path))
+    if suffix == ".ipynb":
+        return _truncate(_read_notebook(path))
     offset = int(args.get("offset", 0))
     limit = int(args.get("limit", 2000))
     lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
     chunk = lines[offset: offset + limit]
     numbered = "\n".join(f"{offset + i + 1}\t{line}" for i, line in enumerate(chunk))
     return _truncate(numbered or "(empty)")
+
+
+def _read_pdf(path: Path) -> str:
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        return "error: reading PDFs needs pypdf (pip install pypdf), or fetch the arXiv abstract instead"
+    reader = PdfReader(str(path))
+    return "\n\n".join(f"[page {i + 1}]\n{(p.extract_text() or '').strip()}" for i, p in enumerate(reader.pages))
+
+
+def _read_notebook(path: Path) -> str:
+    nb = json.loads(path.read_text(encoding="utf-8", errors="ignore"))
+    out = []
+    for i, cell in enumerate(nb.get("cells", [])):
+        src = "".join(cell.get("source", []))
+        out.append(f"[cell {i} · {cell.get('cell_type')}]\n{src}")
+    return "\n\n".join(out) or "(empty notebook)"
 
 
 def tool_write_file(args: dict[str, Any]) -> str:
@@ -176,19 +199,33 @@ def tool_neuronpedia_search(args: dict[str, Any]) -> str:
 def tool_run_discovery(args: dict[str, Any]) -> str:
     from .discovery import DiscoveryController
 
+    model = args.get("model", "gpt2")
     run = DiscoveryController().run(
         question=args.get("question", ""),
         skill=args.get("skill"),
         task=args.get("task"),
-        model=args.get("model", "gpt2"),
+        model=model,
         out_dir=args.get("out_dir", "runs/agent"),
     )
+    discoveries = [
+        {"statement": d.statement, "confidence": d.confidence, "effect_size": d.effect_size,
+         "reproducibility": d.reproducibility, "novelty": d.novelty}
+        for d in run.discoveries
+    ]
+    # Auto-promote confirmed mechanisms to durable memory so findings compound.
+    if discoveries:
+        try:
+            from .memory import ResearchMemory
+
+            mem = ResearchMemory(".mechferret/memory.sqlite")
+            try:
+                mem.record_mechanisms(model, discoveries)
+            finally:
+                mem.close()
+        except Exception:  # noqa: BLE001 - persistence is best-effort
+            pass
     return json.dumps({
-        "discoveries": [
-            {"statement": d.statement, "confidence": d.confidence, "effect_size": d.effect_size,
-             "reproducibility": d.reproducibility, "novelty": d.novelty}
-            for d in run.discoveries
-        ],
+        "discoveries": discoveries,
         "metrics": {k: run.metrics.get(k) for k in ("rigor_score", "readiness_score", "confirmed_mechanisms", "experiments_run")},
         "report_html": run.artifacts.get("html"),
     })
@@ -284,14 +321,32 @@ META: dict[str, dict[str, Any]] = {
 
 
 def tool_meta(name: str) -> dict[str, Any]:
+    if name.startswith("mcp__"):
+        return {"read_only": False, "permission": "network"}
     return META.get(name, {"read_only": False, "permission": "local"})
+
+
+def dynamic_specs() -> list[dict[str, Any]]:
+    """Tool specs contributed at runtime by MCP servers ([] if none configured)."""
+
+    from . import mcp
+
+    return mcp.tool_specs()
+
+
+def all_specs() -> list[dict[str, Any]]:
+    return TOOL_SPECS + dynamic_specs()
 
 
 def run_tool(name: str, args: dict[str, Any]) -> str:
     handler = HANDLERS.get(name)
-    if not handler:
-        return json.dumps({"error": f"unknown tool {name}"})
     try:
-        return _persist_if_large(name, handler(args))
+        if handler:
+            return _persist_if_large(name, handler(args))
+        if name.startswith("mcp__"):
+            from . import mcp
+
+            return _persist_if_large(name, mcp.call(name, args))
+        return json.dumps({"error": f"unknown tool {name}"})
     except Exception as exc:  # noqa: BLE001 - report failures back to the model
         return json.dumps({"error": f"{type(exc).__name__}: {exc}"})
