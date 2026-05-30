@@ -113,7 +113,7 @@ def html_report(run: ResearchRun) -> str:
         f"<li><strong>{html.escape(step.intent)}</strong>: {html.escape(step.question)}</li>"
         for step in run.plan.steps
     )
-    payload = html.escape(json.dumps(run.to_dict(), sort_keys=True))
+    payload = json.dumps(run.to_dict(), sort_keys=True).replace("<", "\\u003c")
     return f"""<!doctype html>
 <html lang="en">
 <head>

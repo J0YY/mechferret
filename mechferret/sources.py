@@ -102,7 +102,7 @@ def dedupe_sources(sources: list[Source]) -> list[Source]:
     seen: set[str] = set()
     unique: list[Source] = []
     for source in sources:
-        fingerprint = stable_id("fp", source.text[:2000])
+        fingerprint = stable_id("fp", source.text)
         if fingerprint in seen:
             continue
         seen.add(fingerprint)

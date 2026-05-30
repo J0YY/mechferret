@@ -38,6 +38,12 @@ class MechFerret:
         try:
             with tracer.span("load_sources", source_paths=source_paths or [], urls=urls or []):
                 sources = load_sources(source_paths, urls)
+                requested_sources = bool(source_paths or urls)
+                if not sources and requested_sources:
+                    raise ValueError(
+                        "No supported text sources were loaded from the requested paths or URLs. "
+                        "Use .md, .txt, .rst, .html, .json, or .csv files, or omit --source to run the demo corpus."
+                    )
                 if not sources:
                     sources = load_sources([str(example_corpus_path())], [])
                 if include_memory:
@@ -116,4 +122,3 @@ def dedupe_evidence(chunks: list[EvidenceChunk]) -> list[EvidenceChunk]:
         if current is None or chunk.score > current.score:
             by_id[chunk.id] = chunk
     return sorted(by_id.values(), key=lambda c: c.score, reverse=True)
-

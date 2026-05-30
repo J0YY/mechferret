@@ -31,7 +31,21 @@ class PipelineTest(unittest.TestCase):
             payload = json.loads((root / "run" / "run.json").read_text(encoding="utf-8"))
             self.assertEqual(payload["run_id"], run.run_id)
 
+    def test_explicit_empty_corpus_does_not_fallback_to_demo(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source_dir = root / "source"
+            source_dir.mkdir()
+            (source_dir / "paper.pdf").write_bytes(b"%PDF fake")
+            engine = MechFerret(root / "memory.sqlite")
+            with self.assertRaisesRegex(ValueError, "No supported text sources"):
+                engine.run(
+                    "What is in my PDF?",
+                    source_paths=[str(source_dir)],
+                    out_dir=root / "run",
+                    include_memory=False,
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
-
