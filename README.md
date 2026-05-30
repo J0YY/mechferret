@@ -38,8 +38,28 @@ Optional live search through OpenAI:
 ```bash
 export OPENAI_API_KEY=...
 python3 -m mechferret run "Find current evidence and risks for agentic research systems" \
-  --openai \
+  --provider openai \
   --out runs/live
+```
+
+Store API keys and choose a provider:
+
+```bash
+python3 -m mechferret /login openai
+python3 -m mechferret /login anthropic
+python3 -m mechferret /api --show
+python3 -m mechferret /api --provider anthropic
+```
+
+Run until a target research bar:
+
+```bash
+python3 -m mechferret goal "Can this idea reach NeurIPS main?" \
+  --venue "NeurIPS main" \
+  --target 0.9 \
+  --source ./proposal \
+  --max-iterations 5 \
+  --provider anthropic
 ```
 
 ## Raindrop Workshop
@@ -72,8 +92,8 @@ modal run mechferret/modal_app.py
 2. The critic expands the plan when coverage or source diversity is weak.
 3. Runs are replayable from local artifacts, including `trace.jsonl` and
    `evals.json`.
-4. The system is useful without API keys but upgrades cleanly to OpenAI live
-   search.
+4. The system is useful without API keys but upgrades cleanly to OpenAI or
+   Anthropic provider calls.
 5. The Raindrop trace gives a visible decision timeline for each agent phase.
 
 ## Development

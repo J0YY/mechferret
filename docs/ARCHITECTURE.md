@@ -12,6 +12,8 @@ MechFerret is organized around a replayable autoresearch loop:
 6. **Synthesizer** writes the final answer and evidence ledger.
 7. **Reporter** emits `report.html`, `report.md`, `run.json`, `graph.json`,
    `evals.json`, and `trace.jsonl`.
+8. **GoalLoop** repeats research iterations until an estimated acceptance
+   probability target is reached or the iteration budget is exhausted.
 
 The implementation borrows high-level product lessons from mature coding-agent
 systems: task registries, explicit memory boundaries, selective recall,
@@ -36,7 +38,7 @@ question
 - It exposes internal agent state instead of only showing a final answer.
 - It works offline, so the demo is not hostage to credentials.
 - It has upgrade paths for sponsor technologies: OpenAI for live web search,
-  Modal for distributed runs, and Raindrop Workshop for local tracing.
+  Anthropic for model-backed critique, Modal for distributed runs, and Raindrop
+  Workshop for local tracing.
 - It emits machine-readable artifacts that another agent can inspect, replay,
   score, or visualize.
-

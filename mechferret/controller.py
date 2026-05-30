@@ -4,7 +4,8 @@ import uuid
 from pathlib import Path
 
 from .agents import ClaimExtractor, Critic, Planner, Synthesizer
-from .llm import OpenAIWebResearch
+from .config import load_config
+from .llm import make_research_adapter
 from .memory import ResearchMemory
 from .models import EvidenceChunk, ResearchRun, Source, utc_now
 from .report import write_artifacts
@@ -29,6 +30,8 @@ class MechFerret:
         out_dir: str | Path = "runs/latest",
         max_rounds: int = 2,
         use_openai: bool = False,
+        provider: str = "auto",
+        model: str | None = None,
         include_memory: bool = True,
     ) -> ResearchRun:
         run_id = f"run_{uuid.uuid4().hex[:10]}"
@@ -55,7 +58,9 @@ class MechFerret:
 
             evidence: list[EvidenceChunk] = []
             claims_by_id = {}
-            openai = OpenAIWebResearch()
+            config = load_config()
+            selected_provider = "openai" if use_openai else provider
+            research_adapter = make_research_adapter(selected_provider, model, config)
             for round_index in range(max(1, max_rounds)):
                 with tracer.span("round", round=round_index + 1, steps=len(plan.steps), sources=len(sources)):
                     index = BM25Index.from_sources(sources)
@@ -67,13 +72,17 @@ class MechFerret:
                         step.notes.append(f"retrieved {len(chunks)} chunks in round {round_index + 1}")
                     evidence = dedupe_evidence(evidence + round_chunks)
 
-                    if use_openai and round_index == 0:
-                        with tracer.span("openai_web_search", available=openai.available):
-                            live_source = openai.search_summary(question)
+                    if research_adapter and round_index == 0:
+                        with tracer.span(
+                            "provider_research",
+                            provider=selected_provider,
+                            available=research_adapter.available,
+                        ):
+                            live_source = research_adapter.search_summary(question)
                             if live_source:
                                 sources.append(live_source)
                                 memory.upsert_sources([live_source])
-                                tracer.event("openai_source_added", source_id=live_source.id)
+                                tracer.event("provider_source_added", source_id=live_source.id, provider=selected_provider)
                                 index = BM25Index.from_sources(sources)
                                 evidence = dedupe_evidence(evidence + index.search(question, limit=8))
 

@@ -24,7 +24,26 @@ Optional sponsor demo:
 
 ```bash
 export OPENAI_API_KEY=...
-python3 -m mechferret demo --openai --out runs/openai-demo
+python3 -m mechferret demo --provider openai --out runs/openai-demo
+```
+
+Provider login:
+
+```bash
+python3 -m mechferret /login openai
+python3 -m mechferret /login anthropic
+python3 -m mechferret /api --provider anthropic
+```
+
+Goal-loop demo:
+
+```bash
+python3 -m mechferret goal "Can this autoresearch project reach NeurIPS main?" \
+  --venue "NeurIPS main" \
+  --target 0.9 \
+  --source examples/seed_corpus \
+  --max-iterations 3 \
+  --provider local
 ```
 
 ```bash
@@ -37,4 +56,3 @@ python3 -m mechferret demo --out runs/raindrop-demo
 pip install -e '.[modal]'
 modal run mechferret/modal_app.py
 ```
-
