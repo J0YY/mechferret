@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mechferret"
+version = "0.1.0"
+description = "Autonomous research control loop with evidence memory, citation synthesis, and local traceability."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "MechFerret Hackathon Team" }]
+license = "MIT"
+keywords = ["autoresearch", "agents", "retrieval", "citations", "openai", "modal", "raindrop"]
+dependencies = []
+
+[project.optional-dependencies]
+openai = ["openai>=1.0.0"]
+modal = ["modal>=0.73.0"]
+dev = ["pytest>=8.0.0"]
+
+[project.scripts]
+mechferret = "mechferret.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["mechferret*"]
+
