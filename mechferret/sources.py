@@ -111,4 +111,7 @@ def dedupe_sources(sources: list[Source]) -> list[Source]:
 
 
 def example_corpus_path() -> Path:
+    packaged = Path(__file__).resolve().parent / "seed_corpus"
+    if packaged.exists():
+        return packaged
     return Path(__file__).resolve().parent.parent / "examples" / "seed_corpus"

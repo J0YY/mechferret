@@ -24,3 +24,5 @@ mechferret = "mechferret.cli:main"
 [tool.setuptools.packages.find]
 include = ["mechferret*"]
 
+[tool.setuptools.package-data]
+mechferret = ["seed_corpus/*.md"]

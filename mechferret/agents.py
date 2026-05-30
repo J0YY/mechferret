@@ -207,9 +207,15 @@ class Synthesizer:
             grouped[chunk.source_id].append(chunk)
         labels: dict[str, str] = {}
         source_index: dict[str, int] = {}
+        chunk_index: dict[str, int] = defaultdict(int)
         for chunk in evidence:
             source_index.setdefault(chunk.source_id, len(source_index) + 1)
-            labels[chunk.id] = f"S{source_index[chunk.source_id]}"
+            chunk_index[chunk.source_id] += 1
+            source_label = f"S{source_index[chunk.source_id]}"
+            if len(grouped[chunk.source_id]) == 1:
+                labels[chunk.id] = source_label
+            else:
+                labels[chunk.id] = f"{source_label}.{chunk_index[chunk.source_id]}"
         return labels
 
 
