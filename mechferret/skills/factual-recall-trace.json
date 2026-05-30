@@ -1,0 +1,13 @@
+{
+  "name": "factual-recall-trace",
+  "description": "Causal-trace where a factual association is stored (ROME-style) by patching clean activations into a corrupted-subject run.",
+  "task": "factual_recall",
+  "model": "gpt2",
+  "question": "Where in GPT-2 is a factual association stored, and which components are causally responsible for recalling it?",
+  "max_screen_heads": 96,
+  "promote_top_k": 5,
+  "seeds": [0, 1, 2],
+  "budget": {"max_experiments": 350, "max_rounds": 3, "max_gpu_seconds": 800},
+  "stop": {"min_confirmed_mechanisms": 1, "min_rigor_score": 0.65},
+  "references": ["Meng et al. 2022, Locating and Editing Factual Associations in GPT (ROME)."]
+}

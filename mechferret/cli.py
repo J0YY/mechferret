@@ -8,9 +8,12 @@ from pathlib import Path
 from .config import PROVIDERS, configure_provider, load_config, prompt_api_key, save_config
 from .controller import MechFerret
 from .costs import estimate_run_cost
+from .discovery import DiscoveryController
 from .goal_loop import GoalLoop
+from .hooks import Budget
 from .ops import memory_clear, memory_recent, memory_summary, print_doctor, summarize_run_artifact
 from .registry import all_items, items_by_kind
+from .skills import list_skills, load_skill
 from .sources import example_corpus_path
 
 DEMO_QUESTION = (
@@ -74,6 +77,38 @@ def build_parser() -> argparse.ArgumentParser:
     goal.add_argument("--provider", choices=["auto", "local", "openai", "anthropic"], default="auto")
     goal.add_argument("--model", help="Override the configured provider model.")
     goal.add_argument("--no-memory", action="store_true")
+
+    discover = sub.add_parser(
+        "discover",
+        aliases=["/discover"],
+        help="Autonomous interpretability discovery loop: hypothesize, experiment, critique, synthesize.",
+    )
+    discover.add_argument("question", nargs="?", default="", help="Research question (optional if --skill is given).")
+    discover.add_argument("--skill", help="Named skill/playbook (see `mechferret /skills`) or a path to a skill JSON.")
+    discover.add_argument("--task", choices=["ioi", "induction", "greater_than", "factual_recall"], help="Interpretability task.")
+    discover.add_argument("--model", default="gpt2", help="Model to investigate (e.g. gpt2, pythia-160m).")
+    discover.add_argument("--backend", choices=["auto", "synthetic", "transformer_lens"], default="auto")
+    discover.add_argument("--source", action="append", default=[], help="Prior-art documents to ground hypotheses.")
+    discover.add_argument("--url", action="append", default=[])
+    discover.add_argument("--out", default="runs/discovery")
+    discover.add_argument("--db", default=".mechferret/memory.sqlite")
+    discover.add_argument("--max-rounds", type=int, help="Override the budget's max experiment rounds.")
+    discover.add_argument("--max-experiments", type=int, help="Override the budget's max experiments.")
+    discover.add_argument("--max-gpu-seconds", type=float, help="Override the budget's GPU-second ceiling.")
+    discover.add_argument("--provider", choices=["auto", "local", "openai", "anthropic"], default="auto")
+    discover.add_argument("--llm-model", help="Override the configured provider model for prior-art search.")
+    discover.add_argument("--no-memory", action="store_true")
+
+    skills_cmd = sub.add_parser("skills", aliases=["/skills"], help="List or show interpretability skills/playbooks.")
+    skills_cmd.add_argument("name", nargs="?", help="Show details for one skill.")
+
+    modal_cmd = sub.add_parser("modal", aliases=["/modal"], help="Connect to Modal for GPU compute and run experiments remotely.")
+    modal_cmd.add_argument("action", nargs="?", default="status", choices=["status", "setup", "run", "deploy"])
+    modal_cmd.add_argument("question", nargs="?", default="")
+    modal_cmd.add_argument("--skill", help="Skill to run remotely (e.g. ioi-circuit).")
+    modal_cmd.add_argument("--task", choices=["ioi", "induction", "greater_than", "factual_recall"])
+    modal_cmd.add_argument("--model", default="gpt2")
+    modal_cmd.add_argument("--out", default="runs/modal")
 
     doctor = sub.add_parser("doctor", aliases=["/doctor"], help="Check config, packages, corpus, and registry health.")
     doctor.set_defaults(_doctor=True)
@@ -160,6 +195,12 @@ def main(argv: list[str] | None = None) -> None:
         print(f"Best probability: {result['best_probability']:.2f}")
         print(f"Iterations: {len(result['iterations'])}")
         print(f"Report: {result['artifact']}")
+    elif args.command in {"discover", "/discover"}:
+        handle_discover(args)
+    elif args.command in {"skills", "/skills"}:
+        handle_skills(args)
+    elif args.command in {"modal", "/modal"}:
+        handle_modal(args)
     elif args.command in {"doctor", "/doctor"}:
         print_doctor()
     elif args.command in {"registry", "/registry"}:
@@ -201,6 +242,127 @@ def main(argv: list[str] | None = None) -> None:
         print(f"Claims: {len(payload['claims'])}")
         print(f"Evidence chunks: {len(payload['evidence'])}")
         print(f"Gaps: {len(payload['gaps'])}")
+
+
+def handle_discover(args) -> None:
+    skill = args.skill
+    if not skill and not args.question and not args.task:
+        skill = "ioi-circuit"  # the headline demo
+        print("No question/skill/task given; running the `ioi-circuit` skill.\n")
+    budget = _budget_override(args)
+    run = DiscoveryController(args.db).run(
+        question=args.question,
+        skill=skill,
+        task=args.task,
+        model=args.model,
+        backend=args.backend,
+        source_paths=args.source,
+        urls=args.url,
+        out_dir=args.out,
+        budget=budget,
+        provider=args.provider,
+        llm_model=args.llm_model,
+        include_memory=not args.no_memory,
+    )
+    print_discovery_summary(run)
+
+
+def _budget_override(args) -> Budget | None:
+    if not any(
+        getattr(args, name, None) is not None
+        for name in ("max_rounds", "max_experiments", "max_gpu_seconds")
+    ):
+        return None
+    base = Budget()
+    return Budget(
+        max_experiments=args.max_experiments if args.max_experiments is not None else base.max_experiments,
+        max_rounds=args.max_rounds if args.max_rounds is not None else base.max_rounds,
+        max_gpu_seconds=args.max_gpu_seconds if args.max_gpu_seconds is not None else base.max_gpu_seconds,
+    )
+
+
+def handle_skills(args) -> None:
+    if args.name:
+        skill = load_skill(args.name)
+        print(f"Skill: {skill.name}")
+        print(f"Description: {skill.description}")
+        print(f"Task: {skill.task}  Model: {skill.model}")
+        print(f"Question: {skill.question}")
+        print(f"Screen heads: {skill.max_screen_heads}  Promote top-k: {skill.promote_top_k}  Seeds: {skill.seeds}")
+        print(f"Budget: {skill.budget}")
+        print(f"Stop when: confirmed>={skill.min_confirmed}, rigor>={skill.min_rigor}")
+        for reference in skill.references:
+            print(f"  ref: {reference}")
+        return
+    skills = list_skills()
+    if not skills:
+        print("No skills found.")
+        return
+    print(f"{len(skills)} interpretability skills:")
+    for skill in skills:
+        print(f"  {skill.name:24} [{skill.task}] {skill.description}")
+
+
+def handle_modal(args) -> None:
+    from .modal_app import dispatch_discovery, modal_status
+
+    status = modal_status()
+    if args.action == "status":
+        print(f"Modal installed:       {status['installed']}")
+        print(f"Modal authenticated:   {status['authenticated']}")
+        print(f"GPU type:              {status['gpu']}")
+        print(f"Local torch:           {status['torch_local']}")
+        print(f"Local transformer_lens:{status['transformer_lens_local']}")
+        if not status["installed"]:
+            print("\nInstall with: pip install -e '.[modal]'")
+        elif not status["authenticated"]:
+            print("\nAuthenticate with: modal token new")
+        else:
+            print("\nReady. Run: mechferret /modal run --skill ioi-circuit")
+        return
+    if args.action == "setup":
+        print("Modal setup steps:")
+        print("  1. pip install -e '.[modal,interp]'")
+        print("  2. modal token new            # browser auth")
+        print("  3. (optional) modal secret create openai-api-key OPENAI_API_KEY=sk-...")
+        print("  4. mechferret /modal run --skill ioi-circuit")
+        print(f"\nCurrent status: installed={status['installed']} authenticated={status['authenticated']}")
+        return
+    if args.action == "deploy":
+        print("Deploy the GPU app with:\n  modal deploy mechferret/modal_app.py")
+        print(f"App name: {status['app']} (gpu={status['gpu']})")
+        return
+    # action == "run"
+    skill = args.skill or (None if (args.question or args.task) else "ioi-circuit")
+    print(f"Dispatching discovery to Modal (skill={skill}, task={args.task}, model={args.model})...")
+    result = dispatch_discovery(
+        question=args.question, skill=skill, task=args.task, model=args.model, out_dir=args.out
+    )
+    print(f"Executed on: {result['backend']} backend")
+    if result.get("note"):
+        print(result["note"])
+    payload = result["run"]
+    metrics = payload.get("metrics", {})
+    print(f"Discoveries: {len(payload.get('discoveries', []))}")
+    print(f"Readiness: {metrics.get('readiness_score', 0)}")
+    if "modal_gpu_seconds" in metrics:
+        print(f"Modal GPU seconds: {metrics['modal_gpu_seconds']}")
+    print(f"Artifacts under: {result['out_dir']}")
+
+
+def print_discovery_summary(run) -> None:
+    print(f"Run: {run.run_id} (mode={run.mode})")
+    print(f"Readiness score: {run.metrics.get('readiness_score', 0):.2f}  rigor: {run.metrics.get('rigor_score', 0):.2f}")
+    print(f"Experiments ran: {int(run.metrics.get('experiments_run', 0))} over {int(run.metrics.get('rounds_run', 0))} round(s)")
+    print(f"Confirmed mechanisms: {len(run.discoveries)}")
+    for discovery in run.discoveries:
+        print(f"  - {discovery.statement}")
+        print(f"      confidence={discovery.confidence:.2f} effect={discovery.effect_size:.2f} "
+              f"reproducibility={discovery.reproducibility:.2f} novelty={discovery.novelty:.2f}")
+    print(f"Report: {run.artifacts.get('html')}")
+    print(f"Discoveries JSON: {run.artifacts.get('discoveries')}")
+    print(f"Experiments JSON: {run.artifacts.get('experiments')}")
+    print(f"Trace: {run.artifacts.get('trace')}")
 
 
 def handle_api_command(args) -> None:

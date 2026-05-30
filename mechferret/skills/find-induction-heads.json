@@ -1,0 +1,13 @@
+{
+  "name": "find-induction-heads",
+  "description": "Locate induction heads on the repeated-sequence task by screening with ablation and confirming with attention-pattern analysis.",
+  "task": "induction",
+  "model": "gpt2",
+  "question": "Which heads in GPT-2 are induction heads that copy what followed the previous occurrence of a token?",
+  "max_screen_heads": 96,
+  "promote_top_k": 5,
+  "seeds": [0, 1, 2],
+  "budget": {"max_experiments": 300, "max_rounds": 3, "max_gpu_seconds": 600},
+  "stop": {"min_confirmed_mechanisms": 1, "min_rigor_score": 0.7},
+  "references": ["Olsson et al. 2022, In-context Learning and Induction Heads."]
+}
