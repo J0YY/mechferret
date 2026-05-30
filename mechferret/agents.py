@@ -67,7 +67,12 @@ class ClaimExtractor:
         for chunk in chunks:
             for sentence in sentence_split(chunk.text):
                 terms = set(tokenize(sentence))
-                if len(terms & (query_terms | self.ACTION_TERMS)) < 2:
+                query_overlap = len(terms & query_terms)
+                action_overlap = len(terms & self.ACTION_TERMS)
+                new_information = len(terms - query_terms)
+                if query_overlap + action_overlap < 2 and not (
+                    query_overlap >= 1 and chunk.score > 0 and new_information >= 3
+                ):
                     continue
                 source_diversity = 1.0
                 support = min(1.0, (len(terms & query_terms) / max(len(query_terms), 1)) + 0.25)
@@ -122,7 +127,8 @@ class Critic:
             gaps.append("source diversity is low; seek independent sources or datasets")
         if plan_coverage < 0.65:
             gaps.append("not every plan facet has enough supporting evidence")
-        if total_citations / max(len(claims), 1) < 0.85:
+        unique_citation_ratio = len(cited_chunks) / max(total_citations, 1)
+        if total_citations / max(len(claims), 1) < 0.85 or unique_citation_ratio < 0.5:
             gaps.append("citation concentration is high; find corroborating chunks")
 
         contradictions = self._contradictions(claims)
@@ -136,7 +142,7 @@ class Critic:
             "domain_diversity": float(len(domains)),
             "plan_coverage": round(plan_coverage, 3),
             "citation_density": round(total_citations / max(len(claims), 1), 3),
-            "unique_citation_ratio": round(len(cited_chunks) / max(total_citations, 1), 3),
+            "unique_citation_ratio": round(unique_citation_ratio, 3),
             "contradiction_pressure": round(sum(c.severity for c in contradictions), 3),
             "mean_confidence": round(sum(c.confidence for c in claims) / max(len(claims), 1), 3),
         }
@@ -149,9 +155,31 @@ class Critic:
         covered = 0
         for step in plan.steps:
             step_terms = set(tokenize(step.question))
-            if any(cosine_overlap(step.question, claim.text) > 0.12 or step_terms & set(tokenize(claim.text)) for claim in claims):
-                covered += 1
+            facet_terms = self._step_facet_terms(step)
+            for claim in claims:
+                claim_terms = set(tokenize(claim.text))
+                shared_terms = step_terms & claim_terms
+                facet_overlap = bool(facet_terms & claim_terms)
+                if not facet_terms and cosine_overlap(step.question, claim.text) > 0.18 and len(shared_terms) >= 2:
+                    covered += 1
+                    break
+                if facet_overlap and len(shared_terms) >= 1:
+                    covered += 1
+                    break
         return covered / len(plan.steps)
+
+    def _step_facet_terms(self, step: PlanStep) -> set[str]:
+        by_intent = {
+            "map_mechanisms": {"mechanism", "mechanisms", "approach", "approaches", "architecture", "architectures"},
+            "validate_evidence": {"evidence", "supports", "support", "weakens", "validate", "validation"},
+            "risk_scan": {"risk", "risks", "reliability", "scaling", "implementation", "failure", "fail"},
+            "gap_finding": {"gap", "gaps", "uncertainty", "uncertain", "searches", "missing"},
+            "critic_gap": set(tokenize(step.question)) - set(tokenize(self.plan_subject_noise(step.question))),
+        }
+        return by_intent.get(step.intent, set())
+
+    def plan_subject_noise(self, question: str) -> str:
+        return question.replace("Resolve evidence gap:", "")
 
     def _contradictions(self, claims: list[Claim]) -> list[Contradiction]:
         contradictions: list[Contradiction] = []
