@@ -21,7 +21,8 @@ def load_sources(paths: list[str] | None = None, urls: list[str] | None = None) 
                 if child.is_file() and child.suffix.lower() in TEXT_EXTENSIONS:
                     sources.append(load_file_source(child))
         elif path.is_file():
-            sources.append(load_file_source(path))
+            if path.suffix.lower() in TEXT_EXTENSIONS:
+                sources.append(load_file_source(path))
         else:
             raise FileNotFoundError(f"Source path not found: {raw}")
     for url in urls or []:

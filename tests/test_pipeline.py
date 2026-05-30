@@ -46,6 +46,20 @@ class PipelineTest(unittest.TestCase):
                     include_memory=False,
                 )
 
+    def test_explicit_unsupported_file_does_not_run_as_text(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "paper.pdf"
+            source.write_bytes(b"%PDF fake")
+            engine = MechFerret(root / "memory.sqlite")
+            with self.assertRaisesRegex(ValueError, "No supported text sources"):
+                engine.run(
+                    "What is in my PDF?",
+                    source_paths=[str(source)],
+                    out_dir=root / "run",
+                    include_memory=False,
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
