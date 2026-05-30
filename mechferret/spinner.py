@@ -56,9 +56,10 @@ class Spinner:
                     sys.stdout.flush()
 
             def __exit__(self_inner, *exc):
-                if spinner.enabled:
-                    sys.stdout.write("\x1b[?25l")
-                    sys.stdout.flush()
+                with spinner._lock:
+                    if spinner.enabled:
+                        sys.stdout.write("\x1b[?25l")
+                        sys.stdout.flush()
                 spinner._paused.clear()
 
         return _Pause()

@@ -98,7 +98,15 @@ class MCPClient:
         if notify:
             return {}
         # Read until we get a response with our id (skip notifications).
+        import select
+
         while True:
+            try:
+                ready, _, _ = select.select([self.proc.stdout], [], [], 60)
+                if not ready:
+                    raise RuntimeError(f"MCP server {self.cfg.name} timed out waiting for {method}")
+            except (OSError, ValueError):
+                pass  # select unavailable for this stream/platform; fall back to blocking read
             line = self.proc.stdout.readline()
             if not line:
                 raise RuntimeError(f"MCP server {self.cfg.name} closed the connection")
@@ -167,11 +175,12 @@ def tool_specs() -> list[dict]:
 def call(full_name: str, args: dict) -> str:
     if _connected is None:
         tool_specs()
-    if not full_name.startswith(_PREFIX) or _connected is None:
+    connected = _connected  # snapshot to avoid a concurrent reset() nulling it
+    if not full_name.startswith(_PREFIX) or connected is None:
         return json.dumps({"error": f"no MCP tool {full_name}"})
     rest = full_name[len(_PREFIX):]
     server, _, tool = rest.partition("__")
-    client = _connected.get(server)
+    client = connected.get(server)
     if not client:
         return json.dumps({"error": f"MCP server {server} not connected"})
     try:

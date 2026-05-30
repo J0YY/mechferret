@@ -298,7 +298,11 @@ class Agent:
                 if block.get("type") == "text" and block.get("text", "").strip():
                     final_text.append(block["text"])
                     self.on_text(block["text"])
-            calls = [(b["id"], b["name"], b.get("input", {})) for b in content if b.get("type") == "tool_use"]
+            calls = [
+                (b["id"], b["name"], b.get("input", {}))
+                for b in content
+                if b.get("type") == "tool_use" and b.get("id") and b.get("name")
+            ]
             if data.get("stop_reason") == "tool_use" and calls:
                 results = self._run_tool_calls(calls)
                 self.messages.append({

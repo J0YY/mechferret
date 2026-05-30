@@ -367,8 +367,8 @@ def _resume(agent, args: list[str]) -> None:
     try:
         agent.load_session(target)
         print(_c(f"  resumed {target} — {len([m for m in agent.messages if isinstance(m, dict) and m.get('role') == 'user'])} prior turns, {agent.cost.format_total()}", "32"))
-    except KeyError as exc:
-        print(_c(f"  {exc}", "33"))
+    except (KeyError, ValueError, OSError) as exc:  # missing / corrupted / unreadable session
+        print(_c(f"  could not resume {target}: {exc}", "33"))
 
 
 def _init_project() -> None:
