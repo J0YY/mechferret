@@ -1493,11 +1493,18 @@ def _search_commands(commands: list[dict[str, Any]], search: str) -> list[dict[s
     terms = _search_terms(search)
     if not terms:
         return commands
-    scored = [
-        (score, index, command)
+    scored_by_name: dict[str, tuple[int, int, dict[str, Any]]] = {
+        str(command["name"]): (score, index, command)
         for index, command in enumerate(commands)
         if (score := _search_match_score(_command_search_fields(command), terms)) > 0
-    ]
+    }
+    if len(terms) > 1 and _terms_are_command_name_tokens(commands, terms):
+        for index, command in enumerate(commands):
+            if any(term in _command_name_tokens(command) for term in terms):
+                name = str(command["name"])
+                score, _old_index, _old_command = scored_by_name.get(name, (0, index, command))
+                scored_by_name[name] = (max(score, 45), index, command)
+    scored = list(scored_by_name.values())
     scored.sort(key=lambda row: (-row[0], row[1]))
     return [command for _score, _index, command in scored]
 
@@ -1518,6 +1525,20 @@ def _search_command_workflows(search: str) -> list[dict[str, Any]]:
 def _search_terms(search: str) -> list[str]:
     normalized = _normalize_search_text(search)
     return [term for term in normalized.split() if term]
+
+
+def _terms_are_command_name_tokens(commands: list[dict[str, Any]], terms: list[str]) -> bool:
+    command_tokens = set()
+    for command in commands:
+        command_tokens.update(_command_name_tokens(command))
+    return bool(terms) and all(term in command_tokens for term in terms)
+
+
+def _command_name_tokens(command: dict[str, Any]) -> set[str]:
+    tokens = set(_normalize_search_text(command.get("name", "")).split())
+    for alias in command.get("aliases", []):
+        tokens.update(_normalize_search_text(alias).split())
+    return tokens
 
 
 def _search_match_score(fields: dict[str, str], terms: list[str]) -> int:

@@ -329,6 +329,16 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertEqual([command["name"] for command in multi_term_payload["commands"]], ["verify-bundle"])
         self.assertEqual([workflow["name"] for workflow in multi_term_payload["workflows"]], ["publish_dossier"])
 
+        command_token_search_out = StringIO()
+        with redirect_stdout(command_token_search_out):
+            main(["commands", "--search", "paper bundle", "--json"])
+        command_token_payload = json.loads(command_token_search_out.getvalue())
+        self.assertTrue(command_token_payload["ok"])
+        command_token_names = [command["name"] for command in command_token_payload["commands"]]
+        self.assertLess(command_token_names.index("paper"), command_token_names.index("open"))
+        self.assertLess(command_token_names.index("bundle"), command_token_names.index("open"))
+        self.assertIn("publish_dossier", [workflow["name"] for workflow in command_token_payload["workflows"]])
+
         option_search_out = StringIO()
         with redirect_stdout(option_search_out):
             main(["commands", "--search", "max gpu", "--json"])
