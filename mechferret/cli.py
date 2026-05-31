@@ -58,6 +58,9 @@ COMMAND_GROUP_CHOICES = [title.lower() for title, _names in COMMAND_GROUPS]
 EMPTY_COMMAND_SEARCH_NEXT_ACTIONS = [
     "Try a command name, option, workflow, or broader term; run `mechferret commands` to list everything."
 ]
+EMPTY_COMMAND_EXAMPLES_NEXT_ACTIONS = [
+    "Try a command name, workflow group, or broader term; run `mechferret commands --examples` to list every example."
+]
 
 COMMAND_WORKFLOWS = [
     {
@@ -1417,6 +1420,8 @@ def _command_examples_payload(
         result["search"] = search
     if group:
         result["group"] = group
+    if not rows:
+        result["next_actions"] = EMPTY_COMMAND_EXAMPLES_NEXT_ACTIONS
     return result
 
 
@@ -2053,6 +2058,8 @@ def _command_examples_text(
         lines.extend(["", f"{command['name']}:"])
         for example in command.get("examples", []):
             lines.append(f"  {example}")
+    if not commands:
+        lines.extend(["", f"No examples matched. {EMPTY_COMMAND_EXAMPLES_NEXT_ACTIONS[0]}"])
     return "\n".join(lines)
 
 
@@ -2096,7 +2103,14 @@ def _command_markdown(payload: dict[str, Any]) -> str:
         lines.extend(_command_workflows_markdown(workflows))
     if not commands:
         if not workflows:
-            lines.append("_No commands matched._")
+            if payload.get("examples_only"):
+                lines.append("_No examples matched._")
+            else:
+                lines.append("_No commands matched._")
+            if payload.get("next_actions"):
+                lines.extend(["", "Next actions:"])
+                for action in payload["next_actions"]:
+                    lines.append(f"- {action}")
         return "\n".join(lines).rstrip() + "\n"
     if workflows and not payload.get("examples_only") and not payload.get("query") and not payload.get("search") and not payload.get("group"):
         lines.extend(_command_workflows_markdown(workflows))

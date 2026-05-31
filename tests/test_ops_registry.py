@@ -453,6 +453,31 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertIn("## `bundle`", rendered_examples_markdown)
         self.assertIn("- `mechferret bundle --select best`", rendered_examples_markdown)
 
+        no_match_examples_out = StringIO()
+        with redirect_stdout(no_match_examples_out):
+            main(["commands", "--group", "start", "--search", "nonexistent", "--examples"])
+        rendered_no_match_examples = no_match_examples_out.getvalue()
+        self.assertIn("MechFerret start examples matching 'nonexistent':", rendered_no_match_examples)
+        self.assertIn("No examples matched.", rendered_no_match_examples)
+        self.assertIn("mechferret commands --examples", rendered_no_match_examples)
+
+        no_match_examples_json_out = StringIO()
+        with redirect_stdout(no_match_examples_json_out):
+            main(["commands", "--group", "start", "--search", "nonexistent", "--examples", "--json"])
+        no_match_examples_payload = json.loads(no_match_examples_json_out.getvalue())
+        self.assertTrue(no_match_examples_payload["ok"])
+        self.assertTrue(no_match_examples_payload["examples_only"])
+        self.assertEqual(no_match_examples_payload["count"], 0)
+        self.assertEqual(no_match_examples_payload["commands"], [])
+        self.assertIn("mechferret commands --examples", " ".join(no_match_examples_payload["next_actions"]))
+
+        no_match_examples_markdown_out = StringIO()
+        with redirect_stdout(no_match_examples_markdown_out):
+            main(["commands", "--search", "nonexistent", "--examples", "--markdown"])
+        rendered_no_match_examples_markdown = no_match_examples_markdown_out.getvalue()
+        self.assertIn("_No examples matched._", rendered_no_match_examples_markdown)
+        self.assertIn("Next actions:", rendered_no_match_examples_markdown)
+
         mixed_out = StringIO()
         mixed_err = StringIO()
         with self.assertRaises(SystemExit) as ctx:
