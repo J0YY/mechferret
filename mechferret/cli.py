@@ -1329,8 +1329,8 @@ def _command_index_payload(
             "commands": [selected],
         }
     if search:
-        filtered = _search_commands(commands, search)
-        workflows = _search_command_workflows(search) if not group else []
+        filtered = [_command_with_search_matches(command, search) for command in _search_commands(commands, search)]
+        workflows = [_workflow_with_search_matches(workflow, search) for workflow in _search_command_workflows(search)] if not group else []
         payload = {
             "ok": True,
             "name": "mechferret",
@@ -1571,6 +1571,67 @@ def _search_command_workflows(search: str) -> list[dict[str, Any]]:
     ]
     scored.sort(key=lambda row: (-row[0], row[1]))
     return [workflow for _score, _index, workflow in scored]
+
+
+def _command_with_search_matches(command: dict[str, Any], search: str) -> dict[str, Any]:
+    terms = _search_terms(search)
+    if not terms:
+        return command
+    matches: list[str] = []
+    if _matches_search_terms(" ".join([str(command.get("name", "")), *[str(alias) for alias in command.get("aliases", [])]]), terms):
+        matches.append("command")
+    if _matches_search_terms(str(command.get("help", "")), terms):
+        matches.append("help")
+    if _matches_search_terms(str(command.get("usage", "")), terms):
+        matches.append("usage")
+    if _matches_search_terms(" ".join(str(example) for example in command.get("examples", [])), terms):
+        matches.append("example")
+    for argument in command.get("positionals", []):
+        label = str(argument.get("dest", "")).strip() or "positional"
+        text = " ".join([str(argument.get("dest", "")), str(argument.get("help", "")), *[str(choice) for choice in argument.get("choices", [])]])
+        if _matches_search_terms(text, terms):
+            matches.append(f"positional:{label}")
+    for argument in command.get("options", []):
+        flags = [str(flag) for flag in argument.get("flags", [])]
+        label = flags[0] if flags else str(argument.get("dest", "")).strip() or "option"
+        text = " ".join([str(argument.get("dest", "")), str(argument.get("help", "")), *flags, *[str(choice) for choice in argument.get("choices", [])]])
+        if _matches_search_terms(text, terms):
+            matches.append(f"option:{label}")
+    result = dict(command)
+    result["matched_fields"] = _unique(matches)
+    return result
+
+
+def _workflow_with_search_matches(workflow: dict[str, Any], search: str) -> dict[str, Any]:
+    terms = _search_terms(search)
+    if not terms:
+        return workflow
+    matches: list[str] = []
+    if _matches_search_terms(" ".join([str(workflow.get("name", "")), str(workflow.get("title", ""))]), terms):
+        matches.append("workflow")
+    if _matches_search_terms(str(workflow.get("description", "")), terms):
+        matches.append("description")
+    if _matches_search_terms(" ".join(str(command) for command in workflow.get("commands", [])), terms):
+        matches.append("command")
+    result = dict(workflow)
+    result["matched_fields"] = _unique(matches)
+    return result
+
+
+def _matches_search_terms(value: Any, terms: list[str]) -> bool:
+    normalized = _normalize_search_text(value)
+    return bool(terms) and any(term in normalized for term in terms)
+
+
+def _unique(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique_values: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        unique_values.append(value)
+    return unique_values
 
 
 def _search_terms(search: str) -> list[str]:

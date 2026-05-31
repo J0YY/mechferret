@@ -342,6 +342,8 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertEqual(search_payload["search"], "source")
         search_names = {command["name"] for command in search_payload["commands"]}
         self.assertIn("run", search_names)
+        run_search_result = next(command for command in search_payload["commands"] if command["name"] == "run")
+        self.assertIn("option:--source", run_search_result["matched_fields"])
         self.assertTrue(
             any(
                 option["flags"] == ["--source"]
@@ -358,6 +360,9 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertTrue(multi_term_payload["ok"])
         self.assertEqual([command["name"] for command in multi_term_payload["commands"]], ["verify-bundle"])
         self.assertEqual([workflow["name"] for workflow in multi_term_payload["workflows"]], ["publish_dossier"])
+        self.assertIn("command", multi_term_payload["commands"][0]["matched_fields"])
+        self.assertIn("option:--strict", multi_term_payload["commands"][0]["matched_fields"])
+        self.assertIn("command", multi_term_payload["workflows"][0]["matched_fields"])
         self.assertIn("mechferret verify-bundle --select best --strict", " ".join(multi_term_payload["next_actions"]))
 
         command_token_search_out = StringIO()
@@ -370,6 +375,13 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertLess(command_token_names.index("bundle"), command_token_names.index("open"))
         self.assertIn("publish_dossier", [workflow["name"] for workflow in command_token_payload["workflows"]])
         self.assertIn("mechferret paper --select best --json", " ".join(command_token_payload["next_actions"]))
+
+        provider_search_out = StringIO()
+        with redirect_stdout(provider_search_out):
+            main(["commands", "--search", "provider", "--json"])
+        provider_payload = json.loads(provider_search_out.getvalue())
+        provider_run = next(command for command in provider_payload["commands"] if command["name"] == "run")
+        self.assertIn("option:--provider", provider_run["matched_fields"])
 
         name_boost_search_out = StringIO()
         with redirect_stdout(name_boost_search_out):
