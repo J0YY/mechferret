@@ -281,12 +281,23 @@ def run_repl() -> None:
             continue
         if bare == "goal":
             if len(tokens) > 1:
-                session.goal = " ".join(tokens[1:])
-                print(_c(f"  🎯 goal set: {session.goal}", PURPLE))
+                _goal_loop(agent, session, " ".join(tokens[1:]))
             elif session.goal:
                 print(_c(f"  🎯 current goal: {session.goal}", PURPLE))
             else:
                 print(_c("  usage: /goal <your research objective>", "33"))
+            continue
+        if bare == "why":
+            _why()
+            continue
+        if bare == "arch":
+            _arch()
+            continue
+        if bare == "paper":
+            _paper(agent, session)
+            continue
+        if bare == "review-paper":
+            _review_paper(agent, tokens[1:])
             continue
         if bare == "cost" and len(tokens) == 1:
             print(_c(f"  session: {agent.cost.format_total()}  ·  model {agent.model}  ·  denied tools: {len(agent.denials)}", "2"))
@@ -341,13 +352,13 @@ def run_repl() -> None:
     print(_c("bye 👋", "2"))
 
 
-def _chat(agent, session, text: str) -> None:
+def _chat(agent, session, text: str) -> str | None:
     from .spinner import Spinner
 
     if not agent.configured:
         print(_c("  No model connected yet — let's fix that.", "2"))
         if not onboard():
-            return
+            return None
         agent.reload()
     spinner = Spinner()
     session.step = "thinking…"
@@ -392,13 +403,13 @@ def _chat(agent, session, text: str) -> None:
     except KeyboardInterrupt:
         session.step = "interrupted"
         print(_c("  (interrupted — Ctrl-C again at the prompt to quit)", "2"))
-        return
+        return None
     except Exception as exc:  # noqa: BLE001
         session.step = "error"
         print(_c(f"  error: {exc}", "31"))
         if "401" in str(exc) or "authentication" in str(exc).lower():
             print(_c("  Your API key may be invalid — reconnect with /login.", "33"))
-        return
+        return None
     if not streamed["any"] and reply:
         print()
         print(_render_reply(reply))
@@ -406,6 +417,7 @@ def _chat(agent, session, text: str) -> None:
     print()
     first_line = next((ln for ln in (reply or "").strip().splitlines() if ln.strip()), "")
     session.step = (first_line[:60] + "…") if len(first_line) > 60 else (first_line or "ready")
+    return reply
 
 
 def _resume(agent, args: list[str]) -> None:
@@ -469,6 +481,224 @@ def _export(agent, args: list[str]) -> None:
     md = f"# MechFerret session {agent.session_id}\n\nModel: {agent.model}\nCost: {agent.cost.format_total()}\n\n---\n\n{body}\n"
     out.write_text(md, encoding="utf-8")
     print(_c(f"  ✓ exported transcript to {out}", "32"))
+
+
+def _goal_loop(agent, session, goal: str, max_iters: int = 6) -> None:
+    session.goal = goal
+    print(_c(f"  🎯 goal: {goal}", PURPLE))
+    print(_c(f"  working autonomously (up to {max_iters} steps) — Ctrl-C to stop", "2"))
+    prompt = (
+        f"Goal: {goal}\nTake the next concrete step toward this goal using your tools "
+        "(retrieval, experiments, code). When the goal is fully achieved, reply with "
+        "'GOAL ACHIEVED' on the first line, then a one-paragraph summary."
+    )
+    for i in range(max_iters):
+        print(_c(f"  ── step {i + 1}/{max_iters} ──", PURPLE))
+        try:
+            reply = _chat(agent, session, prompt)
+        except KeyboardInterrupt:
+            print(_c("  (goal loop stopped)", "2"))
+            return
+        if reply is None:
+            return
+        if reply.strip().upper().startswith("GOAL ACHIEVED"):
+            print(_c("  ✓ goal achieved", "32"))
+            session.step = "goal achieved"
+            return
+        prompt = (
+            f"Continue toward the goal: {goal}. Build on prior steps; avoid repeating work. "
+            "Reply with 'GOAL ACHIEVED' on the first line when fully done."
+        )
+    print(_c("  reached the step cap; goal still open — run /goal again to keep going", "33"))
+
+
+def _why() -> None:
+    text = """Why interpretability — the short version.
+
+Modern AI models are black boxes: we can see their inputs and outputs, but not
+the reasoning in between. Mechanistic interpretability reverse-engineers that
+middle — finding the specific circuits (attention heads, MLP features) a model
+uses. Example: in GPT-2, a small set of "name-mover" heads literally copy the
+right name when completing "When John and Mary went to the store, Mary gave a
+drink to ___". We can point to the parts and show, by ablating them, that they
+cause the behaviour.
+
+Why it matters for safety: you cannot trust, audit, or correct what you cannot
+inspect. Interpretability is how we catch deception, hidden goals, and unsafe
+shortcuts before deployment — turning "the model usually behaves" into "we know
+why it behaves."
+
+Why this domain over law or bio: those benefit from autoresearch too, but they
+study the external world. Interpretability studies the very systems doing the
+research — so progress here compounds across every other domain and is the most
+direct lever on AI safety.
+
+The accessibility argument: understanding the black box is in everyone's
+interest, so the tools should be as open and popular as possible. If researchers
+are going to optimise for paper count, interpretability is the category where
+more shots on goal most benefits the world. MechFerret exists to make that loop
+cheap, reproducible, and fast."""
+    print(_render_reply(text))
+
+
+def _strength(x: float) -> str:
+    return "strong" if x >= 1.0 else ("medium" if x >= 0.4 else "weak")
+
+
+def _arch() -> None:
+    from .memory import ResearchMemory
+
+    mem = ResearchMemory(".mechferret/memory.sqlite")
+    try:
+        grouped = mem.experiments_by_hypothesis()
+    finally:
+        mem.close()
+    if not grouped:
+        print(_c("  no experiments recorded yet — run /discover (or ask the agent to investigate)", "33"))
+        return
+    # Separate the broad screen/lens hypotheses (noisy: ~96 ablations) from the
+    # targeted single-head hypotheses we actually want a flowchart of.
+    def _is_screen(h: str) -> bool:
+        return h.startswith("At least one") or "is formed in a specific" in h or h == "screen"
+
+    screen = [e for h, v in grouped.items() if _is_screen(h) for e in v]
+    targeted = {h: v for h, v in grouped.items() if not _is_screen(h)}
+
+    print(_c("  ARCHITECTURE OF EVIDENCE — what each experiment proves", PURPLE_B))
+    if screen:
+        hits = sum(1 for e in screen if e["verdict"] == "good")
+        print(_c(f"  screen: {len(screen)} candidate heads ablated → {hits} significant + reproducible", "2"))
+    if not targeted:
+        print(_c("  no targeted mechanism hypotheses yet (screen found no leads to triangulate)", "33"))
+        return
+    for hyp, exps in targeted.items():
+        print()
+        print(_c(f"  ▸ {hyp}", "1"))
+        for j, e in enumerate(exps):
+            branch = "└─" if j == len(exps) - 1 else "├─"
+            mark = _c("✓ good", "32") if e["verdict"] == "good" else _c("✗ weak", "31")
+            drift = _c(f"  ⚠ drift×{e['drift_count']}", "33") if e["drift_count"] else ""
+            print(f"    {branch} {mark}  {e['probe']:24} effect {e['effect_size']:+.2f} vs ctrl {e['control']:+.2f}  [{_strength(abs(e['effect_size']))}]{drift}")
+        good_n = sum(1 for e in exps if e["verdict"] == "good")
+        verdict, col = (("CONFIRMED", "32") if good_n >= 2 else ("SUPPORTED", "33") if good_n == 1 else ("UNSUPPORTED", "31"))
+        print("    " + _c(f"⇒ {verdict}  ({good_n}/{len(exps)} independent probes agree)", col))
+    print()
+    print(_c("  memory model: each experiment is keyed by a hash of (model, task, probe, target).", "2"))
+    print(_c("  Re-runs upsert in place; a flip in significance or effect-sign counts as drift —", "2"))
+    print(_c("  so a mechanism that stops reproducing (new model/code) surfaces instead of rotting.", "2"))
+
+
+def _strip_code_fences(text: str) -> str:
+    import re
+
+    m = re.search(r"```(?:latex|tex)?\n(.*?)```", text, re.S)
+    return m.group(1) if m else text
+
+
+def _paper_template(goal: str, mechs: list[dict], grouped: dict) -> str:
+    rows = "\\\\\n".join(
+        f"{m['statement'][:60]} & {m['effect_size']:.2f} & {m['reproducibility']:.2f} & {m['novelty']:.2f}"
+        for m in mechs[:12]
+    ) or "(no confirmed mechanisms yet) & & &"
+    return (
+        "\\documentclass{article}\n\\usepackage{booktabs}\\usepackage{hyperref}\n"
+        f"\\title{{MechFerret findings: {goal or 'mechanistic interpretability'}}}\n"
+        "\\author{MechFerret}\\date{}\n\\begin{document}\\maketitle\n"
+        "\\begin{abstract}Automatically generated report of confirmed mechanisms from MechFerret's "
+        "autonomous discovery loop, with effect sizes and cross-seed reproducibility.\\end{abstract}\n"
+        "\\section{Confirmed mechanisms}\n\\begin{table}[h]\\centering\n"
+        "\\begin{tabular}{lrrr}\\toprule\nMechanism & Effect & Reproducibility & Novelty\\\\\\midrule\n"
+        f"{rows}\\\\\n\\bottomrule\\end{{tabular}}\\end{{table}}\n"
+        "\\section{Method}Screen candidate heads by causal ablation; triangulate survivors with "
+        "independent probes (attention pattern, direct logit attribution, activation patching); "
+        "confirm only when $\\geq 2$ independent probes agree against a matched control.\n"
+        "\\end{document}\n"
+    )
+
+
+def _compile_tex(out_dir, tex) -> None:
+    import shutil
+    import subprocess
+
+    if not shutil.which("tectonic"):
+        print(_c("  install tectonic to build the PDF:  brew install tectonic", "33"))
+        return
+    print(_c("  compiling with tectonic…", "2"))
+    proc = subprocess.run(["tectonic", str(tex)], cwd=str(out_dir), capture_output=True, text=True)
+    pdf = Path(out_dir) / (Path(tex).stem + ".pdf")
+    if proc.returncode == 0 and pdf.exists():
+        print(_c(f"  ✓ built {pdf}", "32"))
+    else:
+        print(_c(f"  tectonic failed: {proc.stderr.strip()[:200]}", "31"))
+
+
+def _paper(agent, session) -> None:
+    from .memory import ResearchMemory
+
+    mem = ResearchMemory(".mechferret/memory.sqlite")
+    try:
+        mechs = mem.recent_mechanisms(20)
+        grouped = mem.experiments_by_hypothesis()
+    finally:
+        mem.close()
+    if not mechs and not grouped:
+        print(_c("  no findings yet — run /discover first so there's something to write up", "33"))
+        return
+    out = Path("paper")
+    out.mkdir(exist_ok=True)
+    tex = out / "main.tex"
+    latex = ""
+    if agent.configured:
+        evidence = json.dumps({"goal": session.goal, "mechanisms": mechs}, indent=2)[:8000]
+        print(_c("  drafting main.tex…", "2"))
+        from .spinner import Spinner
+
+        try:
+            with Spinner():
+                latex = agent.send(
+                    "Write a complete, compilable LaTeX conference paper (article class; only "
+                    "booktabs/hyperref packages) reporting these interpretability findings. Output ONLY "
+                    "the LaTeX source — no markdown fences, no commentary. Include title, abstract, intro, "
+                    "method, a results table, discussion, limitations, conclusion.\n\nFindings JSON:\n" + evidence
+                ) or ""
+        except Exception as exc:  # noqa: BLE001
+            print(_c(f"  draft failed ({exc}); using a template", "33"))
+        latex = _strip_code_fences(latex)
+    if "\\documentclass" not in latex:
+        latex = _paper_template(session.goal, mechs, grouped)
+    tex.write_text(latex, encoding="utf-8")
+    print(_c(f"  ✓ wrote {tex}", "32"))
+    _compile_tex(out, tex)
+
+
+def _review_paper(agent, args: list[str]) -> None:
+    path = Path(args[0]) if args else Path("paper/main.tex")
+    if not path.exists():
+        print(_c(f"  no paper at {path} — run /paper first", "33"))
+        return
+    from .agent import Agent
+    from .spinner import Spinner
+
+    reviewer = Agent()  # a fresh, independent instance
+    if not reviewer.configured:
+        print(_c("  connect a model first (/login)", "33"))
+        return
+    print(_c("  spinning up an independent reviewer instance…", "2"))
+    text = path.read_text(encoding="utf-8", errors="ignore")[:24000]
+    try:
+        with Spinner():
+            review = reviewer.send(
+                "You are a senior ML conference reviewer (NeurIPS-style). Review this paper rigorously. "
+                "Give integer scores 1-10 for Soundness, Novelty, Clarity, Significance, and an Overall "
+                "1-10. Then list 3 strengths, 3 weaknesses, and an Accept / Borderline / Reject "
+                "recommendation. Plain text, concise.\n\n" + text
+            )
+    except Exception as exc:  # noqa: BLE001
+        print(_c(f"  review failed: {exc}", "31"))
+        return
+    print()
+    print(_render_reply(review))
+    print(_c(f"  ({reviewer.cost.format_total()})", "2"))
 
 
 def _mcp(args: list[str]) -> None:
@@ -607,8 +837,9 @@ def _open_report(session: "Session") -> None:
 
 
 def _print_help() -> None:
-    from .commands import REPL_COMMANDS
+    from .commands import SECTIONS
 
-    print(_c("  commands:", "1"))
-    for cmd in REPL_COMMANDS:
-        print("    " + _c(f"{cmd.name:28}", "1;36") + _c(cmd.summary, "2"))
+    for title, cmds in SECTIONS:
+        print(_c(f"  {title}", PURPLE_B))
+        for cmd in cmds:
+            print("    " + _c(f"{cmd.name:26}", "1;36") + _c(cmd.summary, "2"))

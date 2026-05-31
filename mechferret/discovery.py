@@ -206,6 +206,11 @@ class DiscoveryController:
                 artifacts = write_artifacts(run, out_path)
                 run.artifacts.update(artifacts)
                 memory.record_run(run)
+                try:
+                    from . import __version__ as _ver
+                except ImportError:
+                    _ver = "0.1.0"
+                memory.record_experiments(model, task_name, hypotheses, list(results_by_spec.values()), code_version=_ver)
                 tracer.event("artifacts_written", **artifacts)
                 return run
         finally:

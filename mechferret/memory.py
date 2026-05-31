@@ -61,9 +61,78 @@ class ResearchMemory:
               novelty real,
               created_at text not null
             );
+            create table if not exists experiments (
+              id text primary key,           -- hash(model|task|probe|target): one row per unique spec
+              model text, task text, probe text, target_json text,
+              hypothesis text, effect_size real, control real,
+              significant integer, reproduced integer, verdict text,
+              observed_count integer not null default 1,
+              drift_count integer not null default 0,
+              code_version text,
+              first_seen text not null, last_seen text not null
+            );
             """
         )
         self.conn.commit()
+
+    @staticmethod
+    def _sign(x: float) -> int:
+        return (x > 0) - (x < 0)
+
+    def record_experiments(self, model: str, task: str, hypotheses: list, results: list, code_version: str = "") -> dict:
+        """Upsert experiments keyed by spec hash; count conclusion flips as drift.
+
+        Scalable: one row per unique (model, task, probe, target). Re-running an
+        experiment updates it in place and, if its significance or effect sign
+        changed vs. the stored result, increments drift_count (e.g. after a model
+        or code change). Returns {"recorded": n, "drifted": k}.
+        """
+
+        spec_to_hyp = {eid: h.statement for h in hypotheses for eid in getattr(h, "experiment_ids", [])}
+        recorded = drifted = 0
+        for r in results:
+            if getattr(r, "status", "ran") != "ran":
+                continue
+            key = stable_id("exp", f"{model}|{task}|{r.probe}|{json.dumps(r.target, sort_keys=True)}")
+            prior = self.conn.execute(
+                "select effect_size, significant from experiments where id=?", (key,)
+            ).fetchone()
+            is_drift = 0
+            if prior is not None:
+                if self._sign(prior["effect_size"]) != self._sign(r.effect_size) or bool(prior["significant"]) != bool(r.significant):
+                    is_drift = 1
+                    drifted += 1
+            verdict = "good" if (r.significant and r.reproduced) else "weak"
+            now = utc_now()
+            if prior is None:
+                self.conn.execute(
+                    "insert into experiments (id, model, task, probe, target_json, hypothesis, effect_size, control, "
+                    "significant, reproduced, verdict, observed_count, drift_count, code_version, first_seen, last_seen) "
+                    "values (?,?,?,?,?,?,?,?,?,?,?,1,0,?,?,?)",
+                    (key, model, task, r.probe, json.dumps(r.target, sort_keys=True),
+                     spec_to_hyp.get(r.spec_id, "screen"), r.effect_size, r.baseline,
+                     int(r.significant), int(r.reproduced), verdict, code_version, now, now),
+                )
+            else:
+                self.conn.execute(
+                    "update experiments set effect_size=?, control=?, significant=?, reproduced=?, verdict=?, "
+                    "hypothesis=?, observed_count=observed_count+1, drift_count=drift_count+?, code_version=?, last_seen=? "
+                    "where id=?",
+                    (r.effect_size, r.baseline, int(r.significant), int(r.reproduced), verdict,
+                     spec_to_hyp.get(r.spec_id, "screen"), is_drift, code_version, now, key),
+                )
+            recorded += 1
+        self.conn.commit()
+        return {"recorded": recorded, "drifted": drifted}
+
+    def experiments_by_hypothesis(self, limit: int = 200) -> dict:
+        rows = self.conn.execute(
+            "select * from experiments order by last_seen desc limit ?", (limit,)
+        ).fetchall()
+        grouped: dict[str, list[dict]] = {}
+        for row in rows:
+            grouped.setdefault(row["hypothesis"], []).append(dict(row))
+        return grouped
 
     def record_mechanisms(self, model: str, mechanisms: list[dict]) -> int:
         """Persist confirmed mechanisms so findings compound across sessions."""

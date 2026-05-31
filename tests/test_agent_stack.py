@@ -76,9 +76,9 @@ class AgentStackTest(unittest.TestCase):
     def test_command_registry_matches_handlers(self):
         from mechferret import commands
 
-        # every REPL-handled bare word should appear in the help registry (or be a global)
-        names = " ".join(c.name for c in commands.REPL_COMMANDS)
-        for handled in ("login", "model", "plan", "cost", "compact", "resume", "memory", "export", "init", "review", "mcp"):
+        # every REPL-handled bare word should appear in the grouped help registry
+        names = " ".join(c.name for _title, cmds in commands.SECTIONS for c in cmds)
+        for handled in ("login", "model", "plan", "cost", "compact", "resume", "memory", "export", "init", "goal", "why", "arch", "paper"):
             self.assertIn(handled, names)
 
 
