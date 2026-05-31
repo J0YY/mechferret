@@ -1,4 +1,5 @@
 import fnmatch
+import subprocess
 import tomllib
 import unittest
 from pathlib import Path
@@ -263,6 +264,17 @@ class PackagingIntegrityTest(unittest.TestCase):
             if not any(fnmatch.fnmatch(path, pattern) for path in package_files)
         ]
         self.assertEqual(dead_patterns, [])
+
+    def test_runtime_assets_are_not_ignored_by_git(self):
+        assets = [f"mechferret/{asset}" for asset in _runtime_assets()]
+        proc = subprocess.run(
+            ["git", "check-ignore", *assets],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertEqual(proc.stdout.strip(), "")
 
     def test_ci_wheel_smoke_checks_representative_runtime_assets(self):
         workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
