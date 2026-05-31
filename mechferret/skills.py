@@ -39,48 +39,128 @@ class Skill:
     def to_budget(self) -> Budget:
         defaults = Budget()
         return Budget(
-            max_experiments=int(self.budget.get("max_experiments", defaults.max_experiments)),
-            max_rounds=int(self.budget.get("max_rounds", defaults.max_rounds)),
-            max_gpu_seconds=float(self.budget.get("max_gpu_seconds", defaults.max_gpu_seconds)),
-            max_wall_seconds=float(self.budget.get("max_wall_seconds", defaults.max_wall_seconds)),
-            allow_gpu=bool(self.budget.get("allow_gpu", defaults.allow_gpu)),
-            allow_network=bool(self.budget.get("allow_network", defaults.allow_network)),
+            max_experiments=_int_field(self.budget, "max_experiments", defaults.max_experiments, min_value=1),
+            max_rounds=_int_field(self.budget, "max_rounds", defaults.max_rounds, min_value=1),
+            max_gpu_seconds=_float_field(self.budget, "max_gpu_seconds", defaults.max_gpu_seconds, min_value=0.0),
+            max_wall_seconds=_float_field(self.budget, "max_wall_seconds", defaults.max_wall_seconds, min_value=0.0),
+            allow_gpu=_bool_field(self.budget, "allow_gpu", defaults.allow_gpu),
+            allow_network=_bool_field(self.budget, "allow_network", defaults.allow_network),
         )
 
     @property
     def min_confirmed(self) -> int:
-        return int(self.stop.get("min_confirmed_mechanisms", 1))
+        return _int_field(self.stop, "min_confirmed_mechanisms", 1, min_value=0)
 
     @property
     def min_rigor(self) -> float:
-        return float(self.stop.get("min_rigor_score", 0.6))
+        return _float_field(self.stop, "min_rigor_score", 0.6, min_value=0.0)
+
+
+def _string(value: Any, default: str = "") -> str:
+    if not isinstance(value, str):
+        return default
+    stripped = value.strip()
+    return stripped if stripped else default
+
+
+def _int(value: Any, default: int, *, min_value: int = 0) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed >= min_value else default
+
+
+def _float(value: Any, default: float, *, min_value: float = 0.0) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed >= min_value else default
+
+
+def _bool(value: Any, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "yes", "on"}:
+            return True
+        if lowered in {"0", "false", "no", "off"}:
+            return False
+    return default
+
+
+def _dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _str_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+
+
+def _int_list(value: Any, default: list[int]) -> list[int]:
+    if not isinstance(value, list):
+        return list(default)
+    parsed = [_int(item, -1, min_value=0) for item in value]
+    seeds = [item for item in parsed if item >= 0]
+    return seeds or list(default)
+
+
+def _int_field(payload: dict[str, Any], key: str, default: int, *, min_value: int = 0) -> int:
+    return _int(_dict(payload).get(key, default), default, min_value=min_value)
+
+
+def _float_field(payload: dict[str, Any], key: str, default: float, *, min_value: float = 0.0) -> float:
+    return _float(_dict(payload).get(key, default), default, min_value=min_value)
+
+
+def _bool_field(payload: dict[str, Any], key: str, default: bool) -> bool:
+    return _bool(_dict(payload).get(key, default), default)
 
 
 def _from_payload(payload: dict[str, Any]) -> Skill:
+    if not isinstance(payload, dict):
+        raise ValueError("skill JSON must be an object")
+    name = _string(payload.get("name"))
+    task = _string(payload.get("task"))
+    if not name or not task:
+        raise ValueError("skill requires non-empty name and task")
     return Skill(
-        name=payload["name"],
-        description=payload.get("description", ""),
-        task=payload["task"],
-        model=payload.get("model", "gpt2"),
-        question=payload.get("question", ""),
-        max_screen_heads=int(payload.get("max_screen_heads", 96)),
-        promote_top_k=int(payload.get("promote_top_k", 5)),
-        seeds=list(payload.get("seeds", [0, 1, 2])),
-        budget=payload.get("budget", {}),
-        stop=payload.get("stop", {}),
-        references=list(payload.get("references", [])),
+        name=name,
+        description=_string(payload.get("description")),
+        task=task,
+        model=_string(payload.get("model"), "gpt2"),
+        question=_string(payload.get("question")),
+        max_screen_heads=_int(payload.get("max_screen_heads", 96), 96, min_value=1),
+        promote_top_k=_int(payload.get("promote_top_k", 5), 5, min_value=1),
+        seeds=_int_list(payload.get("seeds", [0, 1, 2]), [0, 1, 2]),
+        budget=_dict(payload.get("budget")),
+        stop=_dict(payload.get("stop")),
+        references=_str_list(payload.get("references", [])),
     )
 
 
 def load_skill(name_or_path: str) -> Skill:
+    name_or_path = _string(name_or_path)
     candidate = Path(name_or_path)
     if candidate.suffix == ".json" and candidate.exists():
-        return _from_payload(json.loads(candidate.read_text(encoding="utf-8")))
-    slug = name_or_path.strip().lower().replace("_", "-")
+        try:
+            return _from_payload(json.loads(candidate.read_text(encoding="utf-8")))
+        except (json.JSONDecodeError, OSError, ValueError) as exc:
+            raise ValueError(f"invalid skill {candidate}: {exc}") from exc
+    slug = name_or_path.lower().replace("_", "-")
     path = SKILLS_DIR / f"{slug}.json"
     if not path.exists():
         raise KeyError(f"Unknown skill: {name_or_path!r}. Known: {[s.name for s in list_skills()]}")
-    return _from_payload(json.loads(path.read_text(encoding="utf-8")))
+    try:
+        return _from_payload(json.loads(path.read_text(encoding="utf-8")))
+    except (json.JSONDecodeError, OSError, ValueError) as exc:
+        raise ValueError(f"invalid skill {path}: {exc}") from exc
 
 
 def list_skills() -> list[Skill]:
@@ -90,6 +170,6 @@ def list_skills() -> list[Skill]:
     for path in sorted(SKILLS_DIR.glob("*.json")):
         try:
             skills.append(_from_payload(json.loads(path.read_text(encoding="utf-8"))))
-        except (json.JSONDecodeError, KeyError):
+        except (json.JSONDecodeError, OSError, ValueError):
             continue
     return skills

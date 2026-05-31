@@ -154,6 +154,7 @@ class ResearchRun:
     answer: str
     metrics: dict[str, float]
     artifacts: dict[str, str] = field(default_factory=dict)
+    provenance: dict[str, Any] = field(default_factory=dict)
     hypotheses: list[Hypothesis] = field(default_factory=list)
     experiments: list[ExperimentResult] = field(default_factory=list)
     discoveries: list[Discovery] = field(default_factory=list)
@@ -161,4 +162,3 @@ class ResearchRun:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
-

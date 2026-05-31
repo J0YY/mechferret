@@ -24,12 +24,23 @@ SECTIONS: list[tuple[str, list[Command]]] = [
         Command("/compact", "summarise older turns to free context"),
     ]),
     ("Research", [
-        Command("/demo", "replay this project's recorded research trace"),
+        Command("/status", "show setup, selected run, audit/verify state, artifacts, and next actions"),
+        Command("/runs", "list recent run artifacts with audit and artifact status"),
+        Command("/quickstart", "show the recommended demo/OpenVLA/CI command path"),
+        Command("/selftest", "run offline readiness checks and optionally verify demo artifacts"),
+        Command("/support", "write a shareable self-test report for issues or PRs"),
+        Command("/demo", "run the local prompt-to-dossier demo"),
+        Command("run_research tool", "agent tool for source-grounded prompt-to-dossier research"),
         Command("/discover ...", "run discovery directly (--skill --task --model)"),
+        Command("/sae openvla ...", "OpenVLA SAE init, status, plan, commands, manifest checks"),
         Command("/skills [name]", "list interpretability playbooks, or show one"),
         Command("/arch", "show the evidence flowchart: what each experiment proves"),
-        Command("/paper", "generate main.tex + main.pdf for submission"),
-        Command("/review-paper", "spin up a reviewer instance to score the paper 1-10"),
+        Command("/paper [run.json]", "generate main.tex from a saved dossier"),
+        Command("/audit [run.json]", "offline readiness gates + next actions"),
+        Command("/verify [run.json]", "manifest hashes + artifact integrity"),
+        Command("/review-paper", "review the selected run-bound paper with a configured model"),
+        Command("/bundle [run.json]", "package the run dossier into a shareable zip"),
+        Command("/verify-bundle [zip]", "portable bundle manifest + archive hash checks"),
     ]),
     ("Compute", [
         Command("/modal <action>", "status | setup | run | deploy  (GPU on Modal)"),
@@ -37,10 +48,16 @@ SECTIONS: list[tuple[str, list[Command]]] = [
         Command("/mcp <action>", "list | add | tools  (MCP servers)"),
     ]),
     ("Session", [
+        Command("/version", "show installed package and runtime information"),
+        Command("/commands", "list the installed CLI command surface"),
+        Command("/commands --workflow first_run", "show a runnable workflow recipe"),
+        Command("/completion <shell>", "print shell completion for bash, zsh, or fish"),
         Command("/login", "connect or change your model API key"),
+        Command("/api", "show or change provider configuration"),
         Command("/model <name>", "set the conversation model"),
         Command("/cost", "show session token + USD usage"),
         Command("/memory", "list confirmed mechanisms in memory"),
+        Command("/tool-results", "list or clean saved large tool outputs"),
         Command("/trace", "show the run trace (mirrors to Raindrop Workshop)"),
         Command("/resume [id]", "resume a saved session"),
         Command("/export [path]", "export this session to Markdown"),
@@ -55,9 +72,29 @@ SECTIONS: list[tuple[str, list[Command]]] = [
     ]),
 ]
 
-# Bare command words the REPL handles in-process (not shelled to the CLI parser).
+# Bare command words the REPL may handle in-process before falling back to the
+# CLI parser. Keep this list aligned with the explicit branches in repl.py.
 REPL_HANDLED = {
     "exit", "quit", "q", "help", "clear", "open", "login", "connect", "model",
-    "goal", "plan", "cost", "compact", "resume", "memory", "export", "init",
-    "review", "mcp", "why", "arch", "paper", "review-paper", "demo", "trace",
+    "goal", "plan", "cost", "compact", "resume", "memory", "tool-results",
+    "export", "init", "review", "mcp", "why", "arch", "paper", "audit",
+    "verify", "review-paper", "bundle", "verify-bundle", "demo", "trace",
+    "sae", "quickstart",
+    "status",
+    "runs",
 }
+
+
+# Bare command words that should be routed to argparse when they are not handled
+# by a richer in-process shortcut. This prevents commands like
+# `quickstart --run` or `open bundle` from being treated as chat prompts.
+CLI_FALLBACK = {
+    "version", "about", "commands", "completion", "api",
+    "run", "demo", "discover", "doctor", "registry", "memory", "tool-results",
+    "cost", "resume", "inspect", "audit", "skills", "modal", "cluster", "sae",
+    "status", "runs", "open", "init", "quickstart", "selftest", "support", "diagnostics", "paper", "review-paper",
+    "verify", "bundle", "verify-bundle", "goal", "loop", "list-runs",
+}
+
+
+COMMAND_WORDS = REPL_HANDLED | CLI_FALLBACK

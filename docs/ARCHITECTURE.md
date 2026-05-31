@@ -40,14 +40,14 @@ attention**.
 |---|---|
 | `tasks.py` | Canonical tasks: IOI, induction, greater-than, factual recall (clean/corrupt prompts + answer pairs). |
 | `probes.py` | Backend-agnostic probes: `head_ablation`, `activation_patching`, `attention_pattern`, `direct_logit_attribution`, `logit_lens`. Each reports a signed **effect** and a matched **control**. |
-| `synthetic.py` | Deterministic offline backend. Fabricates a hidden ground-truth circuit per (model, task) so probes return structured, reproducible, literature-plausible numbers — **no torch, no GPU, no keys**. |
+| `synthetic.py` | Local fallback backend. Provides structured probe results for smoke tests and demos — **no torch, no GPU, no keys**. |
 | `backends.py` | Backend resolution + the real `TransformerLensBackend` (identical probe surface, measures a real `HookedTransformer`). |
 | `engine.py` | Runs a spec across seeds → `ExperimentResult` with effect size, significance (clears a floor *and* beats cross-seed noise), and reproducibility (sign stable across seeds). |
 | `hypotheses.py` | Screen → promote → triangulate; confirm/refute/inconclusive; classify head roles from probe evidence. |
 | `critic.py` | Interpretability rigor: controls, significance, reproducibility rate, triangulation; emits gaps that drive the next round. |
 
-The synthetic and real backends share **the same probe + engine + critic code**,
-so a run that works offline scales to a real model unchanged.
+The local and real backends share **the same probe + engine + critic code**, so
+a run that works locally scales to a real model unchanged.
 
 ## Patterns ported from Claude Code
 
@@ -68,14 +68,15 @@ copied — these are Python re-implementations adapted to research):
 Modal supplies the GPU. The **entire discovery loop** runs remotely on a GPU
 container (`torch` + `transformer_lens`) via `run_discovery_remote`; the dossier
 returns as JSON. `dispatch_discovery` runs on Modal when installed +
-authenticated and falls back to the local synthetic backend otherwise, always
-returning a run dict and reporting which path executed.
+authenticated and otherwise reports the local fallback path, always returning a
+run dict and reporting which path executed.
 
 ## Artifacts (every run)
 
 `report.html`, `report.md`, `run.json`, `graph.json` (sources → evidence →
 claims → hypotheses → discoveries), `evals.json` (research + interpretability
-rigor self-checks), `trace.jsonl` (per-phase spans, mirrored to Raindrop
+rigor self-checks), `manifest.json` (source digests, provenance, artifact
+hashes), `trace.jsonl` (per-phase spans, mirrored to Raindrop
 Workshop when `RAINDROP_LOCAL_DEBUGGER=1`), plus `experiments.json` and
 `discoveries.json` for discovery runs.
 
@@ -87,8 +88,8 @@ Workshop when `RAINDROP_LOCAL_DEBUGGER=1`), plus `experiments.json` and
 - **Originality**: an autoresearch agent that *runs experiments and makes
   reproducible mechanistic discoveries*, not a literature summariser or prompt
   wrapper.
-- **Demo clarity**: works offline and deterministically; the dossier exposes
-  hypotheses, experiments, controls, and discoveries with effect sizes.
+- **Demo clarity**: works locally; the dossier exposes hypotheses, experiments,
+  controls, and discoveries with effect sizes.
 - **Applied autonomous research** in a high-impact domain (interpretability),
   with sponsor upgrade paths: Modal (compute), OpenAI/Anthropic (prior art),
   Raindrop Workshop (trace).

@@ -11,6 +11,5 @@ An autoresearch project should expose how it plans, how it selects sources, how
 it validates claims, and how it decides that another search round is necessary.
 
 The strongest demo artifact is an auditable research dossier: a short answer,
-a claim graph, a citation ledger, contradictions, unresolved gaps, and a replay
-trace. This makes the system legible to judges in a short demo slot.
-
+a claim graph, a citation ledger, contradictions, unresolved gaps, and an
+inspectable trace. This makes the system legible to judges in a short demo slot.

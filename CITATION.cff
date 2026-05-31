@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use MechFerret in research or tooling, please cite it using this metadata."
+type: software
+title: "MechFerret"
+version: "0.1.0"
+license: "MIT"
+repository-code: "https://github.com/J0YY/mechferret"
+url: "https://github.com/J0YY/mechferret"
+abstract: "Offline-first autonomous research control loop with evidence memory, citation synthesis, artifact verification, and local traceability."
+authors:
+  - name: "MechFerret contributors"
+keywords:
+  - autoresearch
+  - agents
+  - retrieval
+  - citations
+  - mechanistic-interpretability

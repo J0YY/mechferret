@@ -1,4 +1,4 @@
-"""Scripted demo player — replay a believable autoresearch trace.
+"""Presenter trace player for authored walkthroughs.
 
 Reads ``.mechferret/demo.json`` from the working directory and plays it with the
 same visual language as a live session (purple banner, ❯ prompts, technical tool
@@ -6,9 +6,8 @@ lines, a thinking spinner, plain-text replies). Experiment/mechanism beats are
 recorded into the project's memory as they play, so afterwards ``/arch``,
 ``/memory`` and ``/paper`` render real data that matches the story.
 
-This exists for demos where running the real (hours-long) pipeline live isn't
-practical — it shows the trace the agent *would* have produced. Beats are data,
-authored per project in ``.mechferret/demo.json``; nothing here is paper-specific.
+This is not wired into the product-facing ``/demo`` command. It is kept as a
+presenter utility for projects that explicitly ship a ``.mechferret/demo.json``.
 """
 
 from __future__ import annotations
@@ -36,8 +35,8 @@ def load_demo(path: str | Path | None = None) -> dict:
 def play(demo: dict, render: bool = True, record: bool = True, speed: float = 1.0, reset: bool = False) -> None:
     """Play (and/or seed) a demo. render=False + record=True just seeds memory.
 
-    reset=True clears the experiment ledger + mechanisms first, so replaying the
-    same demo is deterministic (drift counts don't accumulate across replays).
+    reset=True clears the experiment ledger + mechanisms first, so repeated
+    presenter walkthroughs do not accumulate drift counts.
     """
 
     from .repl import _c, _render_reply, _tool_line
@@ -70,7 +69,7 @@ def play(demo: dict, render: bool = True, record: bool = True, speed: float = 1.
             if render:
                 _render_beat(beat, speed, _c, _render_reply, _tool_line)
         if render:
-            print(_c("\n  demo complete — try /arch, /memory, /paper, /review-paper", "38;5;141"))
+            print(_c("\n  demo complete — try /arch, /audit, /paper, /review-paper, or /quickstart", "38;5;141"))
     finally:
         if mem is not None:
             mem.close()
@@ -124,6 +123,10 @@ def _trace_beat(tracer, beat) -> None:
         tracer.event("assistant", text=beat.get("text", "")[:160])
     elif kind == "user":
         tracer.event("user_prompt", text=beat.get("text", "")[:160])
+    elif kind == "phase":
+        tracer.event("phase", text=beat.get("text", "")[:120])
+    elif kind in {"insight", "deadend", "metric"}:
+        tracer.event(kind, text=beat.get("text", "")[:160])
 
 
 def _sleep(seconds: float, speed: float) -> None:
@@ -131,22 +134,52 @@ def _sleep(seconds: float, speed: float) -> None:
         time.sleep(seconds / max(speed, 0.1))
 
 
+# colour palette (xterm-256)
+PURPLE = "38;5;141"
+CYAN = "38;5;44"
+BLUE = "38;5;75"
+GREEN = "32"
+RED = "38;5;203"
+YELLOW = "38;5;221"
+GOLD = "1;38;5;220"
+PINK = "38;5;213"
+GREY = "2"
+
+
+def _tool_color(name: str) -> str:
+    if name.startswith(("retrieval", "web")):
+        return CYAN
+    if name.startswith(("interp", "scoring", "eval", "attribut")):
+        return PURPLE
+    if name.startswith(("neuronpedia", "sae")):
+        return PINK
+    if name.startswith("novelty"):
+        return GOLD
+    return BLUE
+
+
 def _render_beat(beat, speed, _c, _render_reply, _tool_line) -> None:
     kind = beat.get("type")
-    P = "38;5;141"
     if kind == "key":  # presenter-paced break (Enter to advance on a TTY)
         if sys.stdin.isatty() and sys.stdout.isatty():
             try:
-                input(_c("  [enter] ", "2"))
+                input(_c("  [enter ↵] ", GOLD))
             except (EOFError, KeyboardInterrupt):
                 pass
         return
     text = beat.get("text", "")
-    if kind == "note":
-        print(_c(f"  {text}", "2"))
+    if kind == "phase":
+        bar = "━" * 68
+        print()
+        print(_c(f"  ┏{bar}", PURPLE))
+        print(_c(f"  ┃  {text}", "1;" + PURPLE))
+        print(_c(f"  ┗{bar}", PURPLE))
+        _sleep(0.4, speed)
+    elif kind == "note":
+        print(_c(f"  {text}", GREY))
     elif kind == "user":
-        print(_c("─" * 78, "2"))
-        print(_c("❯ ", "1;36") + text)
+        print(_c("─" * 78, GREY))
+        print(_c("❯ ", "1;36") + _c(text, "1"))
         _sleep(0.5, speed)
     elif kind == "think":
         from .spinner import Spinner
@@ -154,20 +187,39 @@ def _render_beat(beat, speed, _c, _render_reply, _tool_line) -> None:
         with Spinner():
             _sleep(float(beat.get("seconds", 1.2)), speed)
     elif kind == "tool":
-        print(_tool_line(beat.get("name", "tool"), beat.get("args", {})))
-        _sleep(float(beat.get("seconds", 0.4)), speed)
+        name = beat.get("name", "tool")
+        args = ", ".join(f"{k}={str(v)[:48]}" for k, v in beat.get("args", {}).items())
+        print("  " + _c("→ ", GREY) + _c(name, _tool_color(name)) + _c(f"({args})", GREY))
+        _sleep(float(beat.get("seconds", 0.35)), speed)
         if beat.get("result"):
-            print(_c(f"     {beat['result']}", "2"))
+            print(_c(f"     ↳ {beat['result']}", GREY))
+    elif kind == "code":
+        print("  " + _c("$ ", "2;36") + _c(text, "38;5;108"))
+        _sleep(0.3, speed)
+    elif kind == "dataset":
+        print("  " + _c("▤ ", BLUE) + _c(text, GREY))
+        _sleep(0.25, speed)
     elif kind == "experiment":
         label = beat.get("probe", "experiment")
-        mark = _c("✓", "32") if beat.get("verdict") == "good" else _c("✗", "31")
-        print(_c(f"  ⚗  {label}", "2") + f"  {mark} effect {float(beat.get('effect', 0)):+.3f}")
+        good = beat.get("verdict") == "good"
+        mark = _c("✓ good", GREEN) if good else _c("✗ weak", RED)
+        eff = _c(f"{float(beat.get('effect', 0)):+.3f}", GREEN if good else RED)
+        print("  " + _c("⚗ ", PURPLE) + _c(label, "1" if good else GREY) + f"  {mark}  effect {eff}")
         _sleep(0.3, speed)
+    elif kind == "metric":
+        print("  " + _c("📊 " + text, GOLD))
+        _sleep(0.3, speed)
+    elif kind == "insight":
+        print("  " + _c("✸ " + text, "1;" + CYAN))
+        _sleep(0.5, speed)
     elif kind == "pivot":
-        print(_c(f"  ↪ pivot: {text}", "33"))
-        _sleep(0.4, speed)
+        print("  " + _c("↪ pivot: ", "1;" + YELLOW) + _c(text, YELLOW))
+        _sleep(0.5, speed)
+    elif kind == "deadend":
+        print("  " + _c("✗ dead end: ", "1;" + RED) + _c(text, RED))
+        _sleep(0.5, speed)
     elif kind == "modal":
-        print(_c(f"  ⛁ modal: {text}", "38;5;75"))
+        print("  " + _c("⛁ modal: ", "1;" + BLUE) + _c(text, BLUE))
         _sleep(float(beat.get("seconds", 0.6)), speed)
     elif kind == "assistant":
         print()
@@ -175,7 +227,7 @@ def _render_beat(beat, speed, _c, _render_reply, _tool_line) -> None:
         print()
         _sleep(0.6, speed)
     elif kind == "mechanism":
-        print(_c(f"  ★ confirmed: {beat.get('statement', '')}", "32"))
+        print("  " + _c("★ confirmed: ", "1;" + GREEN) + _c(beat.get("statement", ""), GREEN))
         _sleep(0.3, speed)
     elif kind == "pause":
         _sleep(float(beat.get("seconds", 1.0)), speed)

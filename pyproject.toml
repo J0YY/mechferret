@@ -10,8 +10,24 @@ readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "MechFerret Hackathon Team" }]
 license = "MIT"
+license-files = ["LICENSE"]
 keywords = ["autoresearch", "agents", "retrieval", "citations", "openai", "modal", "raindrop"]
 dependencies = []
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/J0YY/mechferret"
+Repository = "https://github.com/J0YY/mechferret"
+Issues = "https://github.com/J0YY/mechferret/issues"
 
 [project.optional-dependencies]
 openai = ["openai>=1.0.0"]
@@ -29,4 +45,13 @@ mf = "mechferret.cli:main"
 include = ["mechferret*"]
 
 [tool.setuptools.package-data]
-mechferret = ["seed_corpus/*.md", "skills/*.json"]
+mechferret = [
+  "py.typed",
+  "seed_corpus/*.md",
+  "skills/*.json",
+  "templates/openvla_sae/README.md",
+  "templates/openvla_sae/configs/*.yaml",
+  "templates/openvla_sae/paper/*.md",
+  "templates/openvla_sae/scripts/*.sh",
+  "templates/openvla_sae/src/*.py",
+]

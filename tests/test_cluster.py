@@ -1,12 +1,20 @@
+import json
+import os
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
+from mechferret import cluster as cluster_mod
+from mechferret.cli import main
 from mechferret.cluster import (
     ClusterConfig,
     build_remote_command,
     build_srun_invocation,
     dispatch_discovery_cluster,
+    load_cluster_config,
 )
 
 
@@ -42,10 +50,114 @@ class ClusterTest(unittest.TestCase):
         self.assertIn("--gres gpu:a100:1", joined)
         self.assertIn("--time 02:00:00", joined)
 
+    def test_cluster_config_tolerates_malformed_file_and_env(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cluster.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "host": " cluster ",
+                        "partition": ["bad"],
+                        "gres": "",
+                        "cpus": "many",
+                        "mem": 123,
+                        "time": None,
+                        "remote_project_dir": " /proj ",
+                        "remote_setup": {"bad": "shape"},
+                        "python": "",
+                        "git_pull": "yes",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            old_paths = cluster_mod.CONFIG_PATHS
+            old_env = {key: os.environ.pop(key, None) for key in ("SLURM_CPUS", "REMOTE_HOST")}
+            cluster_mod.CONFIG_PATHS = (path,)
+            try:
+                cfg = load_cluster_config()
+                self.assertEqual(cfg.host, "cluster")
+                self.assertEqual(cfg.partition, "")
+                self.assertEqual(cfg.gres, "gpu:1")
+                self.assertEqual(cfg.cpus, 8)
+                self.assertEqual(cfg.mem, "32G")
+                self.assertEqual(cfg.time, "02:00:00")
+                self.assertEqual(cfg.remote_project_dir, "/proj")
+                self.assertEqual(cfg.remote_setup, "")
+                self.assertEqual(cfg.python, "python3")
+                self.assertTrue(cfg.git_pull)
+
+                os.environ["SLURM_CPUS"] = "0"
+                os.environ["REMOTE_HOST"] = " env-host "
+                cfg = load_cluster_config()
+                self.assertEqual(cfg.host, "env-host")
+                self.assertEqual(cfg.cpus, 8)
+            finally:
+                cluster_mod.CONFIG_PATHS = old_paths
+                for key, value in old_env.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+
+    def test_cluster_command_builders_sanitize_bad_config_values(self):
+        cfg = ClusterConfig(
+            host=[],
+            partition=[],
+            gres={},
+            cpus="many",
+            mem=[],
+            time=None,
+            remote_project_dir=[],
+            remote_setup={},
+            python="",
+            git_pull="no",
+        )
+
+        cmd = build_remote_command(cfg, ["skill"], 123, {"task": "bad"}, None, Path("runs/x"))
+        inv = build_srun_invocation(cfg, cmd)
+
+        self.assertIn("cd ''", cmd)
+        self.assertIn("python3 -m mechferret", cmd)
+        self.assertIn("--model gpt2", cmd)
+        self.assertEqual(inv[1], "")
+        self.assertIn("--cpus-per-task 8", inv[2])
+        self.assertIn("--mem 32G", inv[2])
+
     def test_dry_run_returns_command_without_executing(self):
         result = dispatch_discovery_cluster(skill="ioi-circuit", dry_run=True, out_dir=tempfile.mkdtemp())
         self.assertTrue(result["dry_run"])
         self.assertIn("ssh", result["command"])
+
+    def test_cluster_cli_json_status_setup_and_dry_run(self):
+        env = {
+            "REMOTE_HOST": "",
+            "REMOTE_PROJECT_DIR": "",
+            "SLURM_PARTITION": "",
+            "SLURM_GRES": "",
+            "SLURM_CPUS": "",
+            "SLURM_MEM": "",
+            "SLURM_TIME": "",
+            "REMOTE_RUN_SETUP": "",
+            "REMOTE_GIT_PULL": "",
+        }
+        with tempfile.TemporaryDirectory() as tmp, patch.object(cluster_mod, "CONFIG_PATHS", ()), patch.dict(os.environ, env, clear=False):
+            cases = (
+                (["cluster", "status", "--json"], "status"),
+                (["cluster", "setup", "--json"], "setup"),
+                (["cluster", "run", "--skill", "ioi-circuit", "--dry-run", "--out", str(Path(tmp) / "run"), "--json"], "run"),
+            )
+            for args, action in cases:
+                out = StringIO()
+                with redirect_stdout(out):
+                    main(args)
+                payload = json.loads(out.getvalue())
+                self.assertTrue(payload["ok"])
+                self.assertEqual(payload["action"], action)
+                if action == "run":
+                    self.assertTrue(payload["dry_run"])
+                    self.assertIn("command", payload["result"])
+                else:
+                    self.assertIn("status", payload)
 
     def test_unconfigured_falls_back_to_local(self):
         with tempfile.TemporaryDirectory() as tmp:

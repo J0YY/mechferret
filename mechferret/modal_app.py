@@ -1,10 +1,10 @@
 """Modal compute integration.
 
-MechFerret runs fully offline through the deterministic synthetic backend. When
-real measurements are wanted, Modal supplies the GPU: the *entire* discovery
-loop runs remotely on a GPU container with ``torch`` + ``transformer_lens``
-installed, and the resulting dossier comes back as JSON. This keeps a laptop in
-the loop only for orchestration, never for heavy compute.
+MechFerret can run locally through its fallback backend. When real measurements
+are wanted, Modal supplies the GPU: the *entire* discovery loop runs remotely on
+a GPU container with ``torch`` + ``transformer_lens`` installed, and the
+resulting dossier comes back as JSON. This keeps a laptop in the loop only for
+orchestration, never for heavy compute.
 
 Three layers live here:
 

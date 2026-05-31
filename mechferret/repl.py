@@ -15,6 +15,8 @@ import shlex
 import sys
 from pathlib import Path
 
+from .commands import COMMAND_WORDS
+
 try:
     import readline  # noqa: F401  (enables arrow keys + history on input())
 except ImportError:  # pragma: no cover
@@ -37,10 +39,7 @@ def _vlen(text: str) -> int:
     return len(re.sub(r"\033\[[0-9;]*m", "", text))
 
 
-KNOWN_COMMANDS = {
-    "run", "demo", "discover", "login", "api", "goal", "loop", "doctor",
-    "registry", "memory", "cost", "resume", "inspect", "skills", "modal", "cluster",
-}
+KNOWN_COMMANDS = COMMAND_WORDS
 
 HISTORY_FILE = Path.home() / ".mechferret" / "repl_history"
 
@@ -95,7 +94,7 @@ def _welcome(session: Session) -> str:
     provider, model, _key = active_provider()
     user = os.getenv("USER") or "there"
     cwd = str(Path.cwd()).replace(str(Path.home()), "~")
-    status = _c(model, PURPLE) if provider else _c("no model · /login", "33")
+    status = _c(model, PURPLE) if provider else _c("offline", "2")
 
     left = [
         _c(f"Welcome back {user.capitalize()}!", "1"),
@@ -119,7 +118,7 @@ def _welcome(session: Session) -> str:
 
 def _print_status_and_bar(agent, session) -> None:
     mode = getattr(agent, "permission_mode", "auto")
-    bits = [_c(agent.model, PURPLE) if agent.configured else _c("no model · /login", "33")]
+    bits = [_c(agent.model, PURPLE) if agent.configured else _c("offline", "2")]
     if agent.configured and agent.cost.usd:
         bits.append(_c(agent.cost.format_total(), "2"))
     bits.append(_c(f"mode:{mode}" + (" ⏸" if mode == "plan" else ""), "33" if mode == "plan" else "2"))
@@ -237,11 +236,6 @@ def run_repl() -> None:
     _ferret_walk()
     print(_welcome(session))
     print()
-    from . import demo as _demo_mod
-
-    if _demo_mod.has_demo():
-        print(_c("  a recorded research trace is available here — type /demo to replay it", "38;5;141"))
-        print()
 
     while True:
         _print_status_and_bar(agent, session)
@@ -273,7 +267,7 @@ def run_repl() -> None:
             os.system("cls" if os.name == "nt" else "clear")
             print(_welcome(session))
             continue
-        if bare == "open":
+        if bare == "open" and _uses_repl_shortcut(bare, tokens):
             _open_report(session)
             continue
         if bare in {"login", "connect"}:
@@ -296,15 +290,16 @@ def run_repl() -> None:
             else:
                 print(_c("  usage: /goal <your research objective>", "33"))
             continue
-        if bare == "demo":
-            from . import demo as demo_mod
+        if bare == "demo" and _uses_repl_shortcut(bare, tokens):
+            from .ops import print_quickstart_run, run_quickstart
 
             try:
-                demo_mod.play(demo_mod.load_demo(), render=True, record=True, reset=True)
-            except FileNotFoundError:
-                print(_c("  no demo here — this project has no .mechferret/demo.json", "33"))
+                result = run_quickstart("demo")
+                print_quickstart_run(result)
             except KeyboardInterrupt:
                 print(_c("\n  (demo stopped)", "2"))
+            except Exception as exc:  # noqa: BLE001
+                print(_c(f"  demo failed: {exc}", "31"))
             continue
         if bare == "why":
             _why()
@@ -312,10 +307,25 @@ def run_repl() -> None:
         if bare == "arch":
             _arch()
             continue
-        if bare == "paper":
-            _paper(agent, session)
+        if bare == "status" and _uses_repl_shortcut(bare, tokens):
+            _status(tokens[1:])
             continue
-        if bare == "review-paper":
+        if bare == "paper" and _uses_repl_shortcut(bare, tokens):
+            _paper(agent, session, tokens[1:])
+            continue
+        if bare == "audit" and _uses_repl_shortcut(bare, tokens):
+            _audit(tokens[1:])
+            continue
+        if bare == "quickstart" and _uses_repl_shortcut(bare, tokens):
+            from .ops import print_quickstart, quickstart
+
+            mode = tokens[1] if len(tokens) > 1 else "all"
+            try:
+                print_quickstart(quickstart(mode))
+            except ValueError as exc:
+                print(_c(f"  {exc}", "31"))
+            continue
+        if bare == "review-paper" and _uses_repl_shortcut(bare, tokens):
             _review_paper(agent, tokens[1:])
             continue
         if bare == "cost" and len(tokens) == 1:
@@ -343,7 +353,7 @@ def run_repl() -> None:
         if bare == "mcp":
             _mcp(tokens[1:])
             continue
-        if bare == "init":
+        if bare == "init" and _uses_repl_shortcut(bare, tokens):
             _init_project()
             continue
         if bare == "export":
@@ -469,31 +479,16 @@ def _resume(agent, args: list[str]) -> None:
 
 
 def _init_project() -> None:
-    import importlib.util
+    from .ops import init_project_notes
 
-    path = Path.cwd() / "MECHFERRET.md"
-    if path.exists():
-        print(_c(f"  {path.name} already exists — leaving it as is", "33"))
-        return
-    have = lambda m: importlib.util.find_spec(m) is not None
-    stack = [m for m in ("torch", "transformer_lens", "sae_lens", "nnsight") if have(m)]
-    content = f"""# MechFerret project notes
-
-This file is read into the agent's system prompt each turn. Keep it short and current.
-
-## Stack
-Installed: {", ".join(stack) or "none detected (install torch + transformer_lens for real experiments)"}
-
-## Conventions
-- Default model under study: gpt2
-- Put run outputs under runs/
-- Log seeds; every causal claim needs a negative control + reproduction across seeds.
-
-## Current goal
-(Describe the paper/result you're driving toward, and the acceptance bar.)
-"""
-    path.write_text(content, encoding="utf-8")
-    print(_c(f"  ✓ wrote {path.name} (detected: {', '.join(stack) or 'no interp stack'})", "32"))
+    result = init_project_notes(Path.cwd())
+    if result.get("created"):
+        stack = ", ".join(result.get("detected_stack") or ["no interp stack"])
+        print(_c(f"  ✓ wrote {Path(result['path']).name} (detected: {stack})", "32"))
+    else:
+        print(_c(f"  {Path(result['path']).name} already exists — leaving it as is", "33"))
+    for action in result.get("next_actions", [])[:3]:
+        print(_c(f"    - {action}", "2"))
 
 
 def _export(agent, args: list[str]) -> None:
@@ -611,117 +606,166 @@ def _arch() -> None:
     print(_c("  so a mechanism that stops reproducing (new model/code) surfaces instead of rotting.", "2"))
 
 
-def _strip_code_fences(text: str) -> str:
-    import re
+def _paper(agent, session, args: list[str] | None = None) -> None:
+    from .paper import print_paper_result, write_paper_from_artifact
 
-    m = re.search(r"```(?:latex|tex)?\n(.*?)```", text, re.S)
-    return m.group(1) if m else text
-
-
-def _paper_template(goal: str, mechs: list[dict], grouped: dict) -> str:
-    rows = "\\\\\n".join(
-        f"{m['statement'][:60]} & {m['effect_size']:.2f} & {m['reproducibility']:.2f} & {m['novelty']:.2f}"
-        for m in mechs[:12]
-    ) or "(no confirmed mechanisms yet) & & &"
-    return (
-        "\\documentclass{article}\n\\usepackage{booktabs}\\usepackage{hyperref}\n"
-        f"\\title{{MechFerret findings: {goal or 'mechanistic interpretability'}}}\n"
-        "\\author{MechFerret}\\date{}\n\\begin{document}\\maketitle\n"
-        "\\begin{abstract}Automatically generated report of confirmed mechanisms from MechFerret's "
-        "autonomous discovery loop, with effect sizes and cross-seed reproducibility.\\end{abstract}\n"
-        "\\section{Confirmed mechanisms}\n\\begin{table}[h]\\centering\n"
-        "\\begin{tabular}{lrrr}\\toprule\nMechanism & Effect & Reproducibility & Novelty\\\\\\midrule\n"
-        f"{rows}\\\\\n\\bottomrule\\end{{tabular}}\\end{{table}}\n"
-        "\\section{Method}Screen candidate heads by causal ablation; triangulate survivors with "
-        "independent probes (attention pattern, direct logit attribution, activation patching); "
-        "confirm only when $\\geq 2$ independent probes agree against a matched control.\n"
-        "\\end{document}\n"
-    )
-
-
-def _compile_tex(out_dir, tex) -> None:
-    import shutil
-    import subprocess
-
-    if not shutil.which("tectonic"):
-        print(_c("  install tectonic to build the PDF:  brew install tectonic", "33"))
-        return
-    print(_c("  compiling with tectonic…", "2"))
-    proc = subprocess.run(["tectonic", str(tex)], cwd=str(out_dir), capture_output=True, text=True)
-    pdf = Path(out_dir) / (Path(tex).stem + ".pdf")
-    if proc.returncode == 0 and pdf.exists():
-        print(_c(f"  ✓ built {pdf}", "32"))
-    else:
-        print(_c(f"  tectonic failed: {proc.stderr.strip()[:200]}", "31"))
-
-
-def _paper(agent, session) -> None:
-    from .memory import ResearchMemory
-
-    mem = ResearchMemory(".mechferret/memory.sqlite")
     try:
-        mechs = mem.recent_mechanisms(20)
-        grouped = mem.experiments_by_hypothesis()
-    finally:
-        mem.close()
-    if not mechs and not grouped:
-        print(_c("  no findings yet — run /discover first so there's something to write up", "33"))
-        return
-    out = Path("paper")
-    out.mkdir(exist_ok=True)
-    tex = out / "main.tex"
-    latex = ""
-    if agent.configured:
-        evidence = json.dumps({"goal": session.goal, "mechanisms": mechs}, indent=2)[:8000]
-        print(_c("  drafting main.tex…", "2"))
-        from .spinner import Spinner
+        parsed = _parse_run_command_args(args or [])
+        run_json = _resolve_run_json(parsed["run_json"], parsed["runs_root"], parsed["selection"])
+        print_paper_result(
+            write_paper_from_artifact(
+                run_json,
+                out_dir=parsed["out"],
+                compile_pdf=parsed["compile"],
+                compile_timeout=parsed["compile_timeout"],
+                provider=parsed["provider"],
+                model=parsed["model"],
+            )
+        )
+    except (FileNotFoundError, OSError, ValueError) as exc:
+        print(_c(f"  no run artifact to write from: {exc}", "33"))
+        print(_c("  run /quickstart --run, /demo, or /discover first, then use /paper", "33"))
 
-        try:
-            with Spinner():
-                latex = agent.send(
-                    "Write a complete, compilable LaTeX conference paper (article class; only "
-                    "booktabs/hyperref packages) reporting these interpretability findings. Output ONLY "
-                    "the LaTeX source — no markdown fences, no commentary. Include title, abstract, intro, "
-                    "method, a results table, discussion, limitations, conclusion.\n\nFindings JSON:\n" + evidence
-                ) or ""
-        except Exception as exc:  # noqa: BLE001
-            print(_c(f"  draft failed ({exc}); using a template", "33"))
-        latex = _strip_code_fences(latex)
-    if "\\documentclass" not in latex:
-        latex = _paper_template(session.goal, mechs, grouped)
-    tex.write_text(latex, encoding="utf-8")
-    print(_c(f"  ✓ wrote {tex}", "32"))
-    _compile_tex(out, tex)
+
+def _audit(args: list[str]) -> None:
+    from .audit import audit_run_artifact, print_audit
+
+    try:
+        parsed = _parse_run_command_args(args)
+        run_json = _resolve_run_json(parsed["run_json"], parsed["runs_root"], parsed["selection"])
+    except (FileNotFoundError, ValueError) as exc:
+        print(_c(f"  audit failed: {exc}", "31"))
+        return
+    print_audit(audit_run_artifact(run_json))
+
+
+def _status(args: list[str]) -> None:
+    from .ops import print_project_status, project_status
+
+    try:
+        parsed = _parse_run_command_args(args)
+    except ValueError as exc:
+        print(_c(f"  status failed: {exc}", "31"))
+        return
+    runs_root = parsed["runs_root"]
+    if parsed["run_json"]:
+        runs_root = parsed["run_json"]
+    print_project_status(project_status(runs_root=runs_root, selection=parsed["selection"]))
+
+
+def _parse_run_command_args(args: list[str]) -> dict[str, str | int | bool | None]:
+    parsed: dict[str, str | int | bool | None] = {
+        "run_json": None,
+        "runs_root": "runs",
+        "selection": "latest",
+        "out": None,
+        "provider": "auto",
+        "model": None,
+        "compile": False,
+        "compile_timeout": 60,
+    }
+    index = 0
+    while index < len(args):
+        token = args[index]
+        if token == "--compile":
+            parsed["compile"] = True
+            index += 1
+            continue
+        if token in {"--runs-root", "--select", "--out", "--provider", "--model", "--compile-timeout"}:
+            if index + 1 >= len(args):
+                raise ValueError(f"{token} requires a value")
+            value = args[index + 1]
+            if token == "--runs-root":
+                parsed["runs_root"] = value
+            elif token == "--select":
+                if value not in {"latest", "best", "ready"}:
+                    raise ValueError("--select must be latest, best, or ready")
+                parsed["selection"] = value
+            elif token == "--out":
+                parsed["out"] = value
+            elif token == "--provider":
+                if value not in {"auto", "local", "openai", "anthropic"}:
+                    raise ValueError("--provider must be auto, local, openai, or anthropic")
+                parsed["provider"] = value
+            elif token == "--model":
+                parsed["model"] = value
+            elif token == "--compile-timeout":
+                try:
+                    timeout = int(value)
+                except ValueError as exc:
+                    raise ValueError("--compile-timeout must be an integer") from exc
+                if timeout <= 0:
+                    raise ValueError("--compile-timeout must be positive")
+                parsed["compile_timeout"] = timeout
+            index += 2
+            continue
+        if token.startswith("--"):
+            raise ValueError(f"unknown option: {token}")
+        if parsed["run_json"] is not None:
+            raise ValueError(f"unexpected extra argument: {token}")
+        parsed["run_json"] = token
+        index += 1
+    return parsed
+
+
+def _resolve_run_json(run_json: str | bool | None, runs_root: str | bool | None, selection: str | bool | None) -> Path:
+    from .audit import latest_run_json
+    from .ops import select_run_artifact
+
+    if isinstance(run_json, str) and run_json:
+        return Path(run_json)
+    root = str(runs_root or "runs")
+    policy = str(selection or "latest")
+    if policy == "latest":
+        latest = latest_run_json(root)
+        if latest is None:
+            raise FileNotFoundError(f"no run artifact found under {root}/**/run.json")
+        return latest
+    selected = select_run_artifact(runs_root=root, policy=policy)
+    if selected.get("path"):
+        return Path(selected["path"])
+    actions = "; ".join(selected.get("next_actions", []))
+    suffix = f": {actions}" if actions else ""
+    raise FileNotFoundError(f"no {policy} run artifact found under {root}{suffix}")
 
 
 def _review_paper(agent, args: list[str]) -> None:
-    path = Path(args[0]) if args else Path("paper/main.tex")
-    if not path.exists():
-        print(_c(f"  no paper at {path} — run /paper first", "33"))
-        return
-    from .agent import Agent
+    from .paper import review_paper
     from .spinner import Spinner
 
-    reviewer = Agent()  # a fresh, independent instance
-    if not reviewer.configured:
-        print(_c("  connect a model first (/login)", "33"))
-        return
-    print(_c("  spinning up an independent reviewer instance…", "2"))
-    text = path.read_text(encoding="utf-8", errors="ignore")[:24000]
+    path = None
+    runs_root = "runs"
+    selection = "latest"
+    index = 0
+    while index < len(args):
+        token = args[index]
+        if token == "--runs-root" and index + 1 < len(args):
+            runs_root = args[index + 1]
+            index += 2
+            continue
+        if token == "--select" and index + 1 < len(args):
+            selection = args[index + 1]
+            index += 2
+            continue
+        if path is None:
+            path = token
+        index += 1
+    print(_c("  reviewing paper…", "2"))
     try:
         with Spinner():
-            review = reviewer.send(
-                "You are a senior ML conference reviewer (NeurIPS-style). Review this paper rigorously. "
-                "Give integer scores 1-10 for Soundness, Novelty, Clarity, Significance, and an Overall "
-                "1-10. Then list 3 strengths, 3 weaknesses, and an Accept / Borderline / Reject "
-                "recommendation. Plain text, concise.\n\n" + text
-            )
+            result = review_paper(path, runs_root=runs_root, selection=selection)
     except Exception as exc:  # noqa: BLE001
         print(_c(f"  review failed: {exc}", "31"))
         return
+    if not result["ok"]:
+        print(_c("  review not available", "33"))
+        for action in result.get("next_actions", []):
+            print(_c(f"    - {action}", "33"))
+        return
     print()
-    print(_render_reply(review))
-    print(_c(f"  ({reviewer.cost.format_total()})", "2"))
+    print(_render_reply(result["review"]))
+    if result.get("review_path"):
+        print(_c(f"  wrote {result['review_path']}", "32"))
 
 
 def _mcp(args: list[str]) -> None:
@@ -748,9 +792,9 @@ def _mcp(args: list[str]) -> None:
 
 
 def _show_trace(limit: int = 30) -> None:
-    path = Path(".mechferret/trace.jsonl")
+    path = _latest_trace_path()
     if not path.exists():
-        print(_c("  no trace yet — run /demo or chat first (spans land in .mechferret/trace.jsonl)", "33"))
+        print(_c("  no trace yet — run /demo, /discover, or chat first", "33"))
         return
     lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()[-limit:]
     raindrop = os.getenv("RAINDROP_LOCAL_DEBUGGER") or os.getenv("MECHFERRET_RAINDROP")
@@ -766,6 +810,17 @@ def _show_trace(limit: int = 30) -> None:
         detail = attrs.get("tool") or attrs.get("probe") or attrs.get("text") or attrs.get("statement") or ""
         dur = f" {ms:.0f}ms" if ms else ""
         print("    " + _c(f"{name:18}", "1;36") + _c(f"{str(detail)[:60]}{dur}", "2"))
+
+
+def _latest_trace_path() -> Path:
+    local = Path(".mechferret/trace.jsonl")
+    candidates = [local] if local.exists() else []
+    runs = Path("runs")
+    if runs.exists():
+        candidates.extend(path for path in runs.rglob("trace.jsonl") if path.is_file())
+    if not candidates:
+        return local
+    return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
 def _show_memory() -> None:
@@ -803,6 +858,10 @@ _TOOL_DISPLAY = {
     "run_discovery": "interp.discover",
     "list_skills": "skills.list",
     "environment_status": "env.status",
+    "audit_run": "eval.audit",
+    "write_paper": "paper.write",
+    "review_paper": "paper.review",
+    "openvla_sae": "sae.openvla",
 }
 
 
@@ -872,18 +931,52 @@ def _dispatch_command(tokens: list[str], bare: str) -> None:
         print(_c(f"  error: {exc}", "31"))
 
 
+def _is_short_quickstart(args: list[str]) -> bool:
+    return not args or (len(args) == 1 and args[0] in {"all", "demo", "openvla", "ci"})
+
+
+def _uses_repl_shortcut(bare: str, tokens: list[str]) -> bool:
+    if bare in {"open", "demo", "init"}:
+        return len(tokens) == 1
+    if bare == "status":
+        return not any(token in {"--json", "--db", "--notes-root", "--project-root"} for token in tokens[1:])
+    if bare == "audit":
+        return not any(token in {"--json", "--strict"} for token in tokens[1:])
+    if bare == "paper":
+        return "--help" not in tokens[1:] and "-h" not in tokens[1:]
+    if bare == "review-paper":
+        cli_only = {"--json", "--provider", "--model", "--out", "--help", "-h"}
+        return not any(token in cli_only for token in tokens[1:])
+    if bare == "quickstart":
+        return _is_short_quickstart(tokens[1:])
+    return False
+
+
 def _open_report(session: "Session") -> None:
-    if not session.last_report:
+    target = session.last_report
+    if not target:
+        latest = _latest_report()
+        target = str(latest) if latest else None
+    if not target:
         print(_c("  no report yet — runs land in ./runs (use /discover or ask the agent)", "33"))
         return
     opener = "open" if sys.platform == "darwin" else "xdg-open"
-    os.system(f"{opener} {shlex.quote(session.last_report)}")
+    os.system(f"{opener} {shlex.quote(target)}")
+
+
+def _latest_report() -> Path | None:
+    root = Path("runs")
+    if not root.exists():
+        return None
+    reports = [p for p in root.rglob("report.html") if p.is_file()]
+    return max(reports, key=lambda p: p.stat().st_mtime) if reports else None
 
 
 def _print_help() -> None:
     from .commands import SECTIONS
 
+    width = max(26, *(len(cmd.name) + 2 for _title, cmds in SECTIONS for cmd in cmds))
     for title, cmds in SECTIONS:
         print(_c(f"  {title}", PURPLE_B))
         for cmd in cmds:
-            print("    " + _c(f"{cmd.name:26}", "1;36") + _c(cmd.summary, "2"))
+            print("    " + _c(f"{cmd.name:{width}}", "1;36") + _c(cmd.summary, "2"))

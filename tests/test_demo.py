@@ -2,6 +2,8 @@ import json
 import os
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 
 from mechferret import demo
@@ -69,7 +71,10 @@ class DemoTest(unittest.TestCase):
             {"type": "pivot", "text": "p"},
             {"type": "assistant", "text": "done"},
         ] + SAMPLE["beats"]
-        demo.play(d, render=True, record=True, reset=True, speed=100.0)
+        out = StringIO()
+        with redirect_stdout(out):
+            demo.play(d, render=True, record=True, reset=True, speed=100.0)
+        self.assertIn("demo complete", out.getvalue())
         trace = Path(".mechferret/trace.jsonl")
         self.assertTrue(trace.exists())
         self.assertGreater(len(trace.read_text().splitlines()), 0)

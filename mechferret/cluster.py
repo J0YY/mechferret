@@ -29,6 +29,42 @@ CONFIG_PATHS = (
 )
 
 
+def _safe_string(value: Any, default: str = "") -> str:
+    if not isinstance(value, str):
+        return default
+    stripped = value.strip()
+    return stripped if stripped else default
+
+
+def _safe_int(value: Any, default: int, *, min_value: int = 1) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed >= min_value else default
+
+
+def _safe_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return False
+
+
+def _read_config_payload() -> dict[str, Any]:
+    for path in CONFIG_PATHS:
+        if path and path.exists():
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return {}
+            return payload if isinstance(payload, dict) else {}
+    return {}
+
+
 @dataclass(slots=True)
 class ClusterConfig:
     host: str = ""  # SSH alias or user@host (non-interactive SSH must already work)
@@ -50,29 +86,26 @@ class ClusterConfig:
 def load_cluster_config() -> ClusterConfig:
     """Env vars take precedence, then the first JSON config file found."""
 
-    payload: dict[str, Any] = {}
-    for path in CONFIG_PATHS:
-        if path and path.exists():
-            try:
-                payload = json.loads(path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                payload = {}
-            break
+    payload = _read_config_payload()
 
     def pick(env_name: str, key: str, default):
-        return os.getenv(env_name) or payload.get(key) or default
+        env_value = os.getenv(env_name)
+        if env_value not in (None, ""):
+            return env_value
+        value = payload.get(key)
+        return value if value not in (None, "") else default
 
     return ClusterConfig(
-        host=pick("REMOTE_HOST", "host", ""),
-        partition=pick("SLURM_PARTITION", "partition", ""),
-        gres=pick("SLURM_GRES", "gres", "gpu:1"),
-        cpus=int(pick("SLURM_CPUS", "cpus", 8)),
-        mem=pick("SLURM_MEM", "mem", "32G"),
-        time=pick("SLURM_TIME", "time", "02:00:00"),
-        remote_project_dir=pick("REMOTE_PROJECT_DIR", "remote_project_dir", ""),
-        remote_setup=pick("REMOTE_RUN_SETUP", "remote_setup", ""),
-        python=pick("REMOTE_PYTHON", "python", "python3"),
-        git_pull=str(pick("REMOTE_GIT_PULL", "git_pull", "")).lower() in {"1", "true", "yes"},
+        host=_safe_string(pick("REMOTE_HOST", "host", "")),
+        partition=_safe_string(pick("SLURM_PARTITION", "partition", "")),
+        gres=_safe_string(pick("SLURM_GRES", "gres", "gpu:1"), "gpu:1"),
+        cpus=_safe_int(pick("SLURM_CPUS", "cpus", 8), 8),
+        mem=_safe_string(pick("SLURM_MEM", "mem", "32G"), "32G"),
+        time=_safe_string(pick("SLURM_TIME", "time", "02:00:00"), "02:00:00"),
+        remote_project_dir=_safe_string(pick("REMOTE_PROJECT_DIR", "remote_project_dir", "")),
+        remote_setup=_safe_string(pick("REMOTE_RUN_SETUP", "remote_setup", "")),
+        python=_safe_string(pick("REMOTE_PYTHON", "python", "python3"), "python3"),
+        git_pull=_safe_bool(pick("REMOTE_GIT_PULL", "git_pull", "")),
     )
 
 
@@ -108,32 +141,44 @@ def build_remote_command(
     """The inner command run on the compute node (under srun)."""
 
     parts = []
-    if cfg.remote_setup:
-        parts.append(cfg.remote_setup)
-    parts.append(f"cd {shlex.quote(cfg.remote_project_dir)}")
-    if cfg.git_pull:
+    remote_setup = _safe_string(getattr(cfg, "remote_setup", ""))
+    remote_project_dir = _safe_string(getattr(cfg, "remote_project_dir", ""))
+    python = _safe_string(getattr(cfg, "python", "python3"), "python3")
+    if remote_setup:
+        parts.append(remote_setup)
+    parts.append(f"cd {shlex.quote(remote_project_dir)}")
+    if _safe_bool(getattr(cfg, "git_pull", False)):
         parts.append("git pull --ff-only")
-    discover = [cfg.python, "-m", "mechferret", "discover", "--backend", "transformer_lens", "--model", model, "--out", remote_out]
+    discover = [python, "-m", "mechferret", "discover", "--backend", "transformer_lens", "--model", str(model or "gpt2"), "--out", str(remote_out)]
     if skill:
-        discover += ["--skill", skill]
+        discover += ["--skill", str(skill)]
     if task:
-        discover += ["--task", task]
+        discover += ["--task", str(task)]
     if question:
-        discover.append(question)
+        discover.append(str(question))
     parts.append(" ".join(shlex.quote(token) for token in discover))
     return " && ".join(parts)
 
 
 def build_srun_invocation(cfg: ClusterConfig, remote_command: str) -> list[str]:
     srun = ["srun"]
-    if cfg.partition:
-        srun += ["--partition", cfg.partition]
-    if cfg.gres:
-        srun += ["--gres", cfg.gres]
-    srun += ["--cpus-per-task", str(cfg.cpus), "--mem", cfg.mem, "--time", cfg.time]
-    srun += ["bash", "-lc", remote_command]
+    partition = _safe_string(getattr(cfg, "partition", ""))
+    gres = _safe_string(getattr(cfg, "gres", ""))
+    if partition:
+        srun += ["--partition", partition]
+    if gres:
+        srun += ["--gres", gres]
+    srun += [
+        "--cpus-per-task",
+        str(_safe_int(getattr(cfg, "cpus", 8), 8)),
+        "--mem",
+        _safe_string(getattr(cfg, "mem", "32G"), "32G"),
+        "--time",
+        _safe_string(getattr(cfg, "time", "02:00:00"), "02:00:00"),
+    ]
+    srun += ["bash", "-lc", str(remote_command)]
     inner = " ".join(shlex.quote(token) for token in srun)
-    return ["ssh", cfg.host, inner]
+    return ["ssh", _safe_string(getattr(cfg, "host", "")), inner]
 
 
 def dispatch_discovery_cluster(

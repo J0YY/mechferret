@@ -1,6 +1,7 @@
 import unittest
+from types import SimpleNamespace
 
-from mechferret.agents import Critic, Planner
+from mechferret.agents import Critic, Planner, Synthesizer
 from mechferret.models import Claim, EvidenceChunk
 
 
@@ -32,6 +33,36 @@ class CriticTest(unittest.TestCase):
         gaps, _, metrics = Critic().evaluate("What should an autoresearch agent do?", plan, claims, evidence)
         self.assertLess(metrics["unique_citation_ratio"], 0.5)
         self.assertIn("citation concentration is high; find corroborating chunks", gaps)
+
+    def test_critic_and_synthesizer_tolerate_malformed_rows(self):
+        claims = [
+            object(),
+            SimpleNamespace(id="c1", text="Agents use retrieval evidence before synthesis.", citations="e1", confidence="bad"),
+            Claim("c2", "Agents do not use retrieval evidence before synthesis.", ["e2"], ["s2"], "0.8", 0.7),  # type: ignore[arg-type]
+        ]
+        evidence = [
+            object(),
+            SimpleNamespace(id="e1", source_id="s1", url=None),
+            EvidenceChunk("e2", "s2", "Source", "Evidence", score="bad"),  # type: ignore[arg-type]
+        ]
+
+        gaps, contradictions, metrics = Critic().evaluate("Do agents use retrieval evidence?", object(), claims, evidence)
+        self.assertGreaterEqual(metrics["claims"], 2)
+        self.assertGreaterEqual(metrics["source_diversity"], 2)
+        self.assertIsInstance(contradictions, list)
+
+        text = Synthesizer().synthesize(
+            b"Do agents use retrieval evidence?",
+            claims,
+            evidence,
+            ["needs more sources", None],
+        )
+        self.assertIn("Best-supported synthesis", text)
+        self.assertIn("needs more sources", text)
+
+    def test_citation_labels_skip_malformed_evidence(self):
+        labels = Synthesizer().citation_labels([object(), SimpleNamespace(id="e1", source_id="s1")])
+        self.assertEqual(labels, {"e1": "S1"})
 
 
 if __name__ == "__main__":

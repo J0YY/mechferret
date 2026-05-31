@@ -3,8 +3,8 @@
 ## Working title
 Sparse Autoencoders Reveal Action-Relevant Features in Vision-Language-Action Models
 
-## One-sentence thesis
-Sparse autoencoders trained on OpenVLA activations expose object, spatial, task-phase, gripper, and action-direction features, and a subset of these features causally mediates action-token predictions.
+## Hypothesis under test
+Sparse autoencoders trained on OpenVLA activations may expose object, spatial, task-phase, gripper, and action-direction features; causal tests determine whether any such features mediate action-token predictions.
 
 ## Contributions
 1. SAE training and evaluation pipeline for OpenVLA activations.

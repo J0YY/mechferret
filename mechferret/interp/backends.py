@@ -8,7 +8,7 @@ with :class:`TransformerLensBackend`.
 Resolution order for ``backend="auto"``:
 
 1. ``transformer_lens`` if importable (real measurement), unless disabled.
-2. ``synthetic`` otherwise (always available, deterministic, offline).
+2. ``synthetic`` otherwise (always available locally).
 """
 
 from __future__ import annotations
