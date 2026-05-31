@@ -3520,6 +3520,10 @@ class OpsRegistryTest(unittest.TestCase):
                 if command in {"resume", "inspect"}:
                     self.assertIn("Audit: PASS", out.getvalue())
                     self.assertIn("Artifacts: run=", out.getvalue())
+                if command == "verify":
+                    self.assertIn("Checks:", out.getvalue())
+                    self.assertIn("Detailed checks omitted", out.getvalue())
+                    self.assertNotIn("source_id_declared:", out.getvalue())
 
     def test_cli_inspect_tolerates_malformed_run_artifact(self):
         from mechferret.cli import main
