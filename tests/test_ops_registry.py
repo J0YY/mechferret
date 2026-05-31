@@ -339,6 +339,20 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertLess(command_token_names.index("bundle"), command_token_names.index("open"))
         self.assertIn("publish_dossier", [workflow["name"] for workflow in command_token_payload["workflows"]])
 
+        name_boost_search_out = StringIO()
+        with redirect_stdout(name_boost_search_out):
+            main(["commands", "--search", "open report", "--json"])
+        name_boost_payload = json.loads(name_boost_search_out.getvalue())
+        self.assertTrue(name_boost_payload["ok"])
+        self.assertEqual(name_boost_payload["commands"][0]["name"], "open")
+
+        quickstart_search_out = StringIO()
+        with redirect_stdout(quickstart_search_out):
+            main(["commands", "--search", "quickstart run", "--json"])
+        quickstart_payload = json.loads(quickstart_search_out.getvalue())
+        self.assertTrue(quickstart_payload["ok"])
+        self.assertEqual(quickstart_payload["commands"][0]["name"], "quickstart")
+
         option_search_out = StringIO()
         with redirect_stdout(option_search_out):
             main(["commands", "--search", "max gpu", "--json"])

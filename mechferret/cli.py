@@ -1496,7 +1496,7 @@ def _search_commands(commands: list[dict[str, Any]], search: str) -> list[dict[s
     scored_by_name: dict[str, tuple[int, int, dict[str, Any]]] = {
         str(command["name"]): (score, index, command)
         for index, command in enumerate(commands)
-        if (score := _search_match_score(_command_search_fields(command), terms)) > 0
+        if (score := _command_search_score(command, terms)) > 0
     }
     if len(terms) > 1 and _terms_are_command_name_tokens(commands, terms):
         for index, command in enumerate(commands):
@@ -1539,6 +1539,13 @@ def _command_name_tokens(command: dict[str, Any]) -> set[str]:
     for alias in command.get("aliases", []):
         tokens.update(_normalize_search_text(alias).split())
     return tokens
+
+
+def _command_search_score(command: dict[str, Any], terms: list[str]) -> int:
+    score = _search_match_score(_command_search_fields(command), terms)
+    if score and any(term in _command_name_tokens(command) for term in terms):
+        score += 50
+    return score
 
 
 def _search_match_score(fields: dict[str, str], terms: list[str]) -> int:
