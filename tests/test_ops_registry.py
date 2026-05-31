@@ -1599,6 +1599,11 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertTrue(result["runs"][0]["artifacts"]["graph"])
             self.assertTrue(result["runs"][0]["artifacts"]["evals"])
             self.assertFalse(result["runs"][0]["artifacts"]["bundle"])
+            self.assertIn("artifact_summary", result["runs"][0])
+            self.assertIn("artifact_readiness", result["runs"][0])
+            self.assertFalse(result["runs"][0]["artifact_readiness"]["run"]["ok"])
+            self.assertFalse(result["runs"][0]["artifact_readiness"]["sharing"]["ok"])
+            self.assertFalse(result["runs"][0]["artifact_readiness"]["setup"]["ok"])
 
             limited = list_run_artifacts(runs_root=root / "runs", limit=1, include_audit=False)
             self.assertEqual(limited["shown"], 1)
@@ -1609,6 +1614,7 @@ class OpsRegistryTest(unittest.TestCase):
             with redirect_stdout(out):
                 print_run_list(result)
             self.assertIn("[selected: best]", out.getvalue())
+            self.assertIn("lanes: run=BLOCKED share=BLOCKED setup=BLOCKED", out.getvalue())
 
     def test_list_run_artifacts_reports_ready_selection_failure(self):
         with tempfile.TemporaryDirectory() as tmp:

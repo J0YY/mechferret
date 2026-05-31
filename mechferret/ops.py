@@ -1183,6 +1183,14 @@ def print_run_list(result: dict[str, Any]) -> None:
         selected_marker = f" [selected: {row.get('selection')}]" if row.get("selected") else ""
         artifacts = ", ".join(name for name, exists in row["artifacts"].items() if exists) or "none"
         print(f"{index}. {verdict}{selected_marker} readiness={float(row['readiness_score']):.2f} claims={row['claims']} artifacts={artifacts}")
+        lanes = _mapping(row.get("artifact_readiness"))
+        if lanes:
+            print(
+                "   lanes: "
+                f"run={'READY' if _mapping(lanes.get('run')).get('ok') else 'BLOCKED'} "
+                f"share={'READY' if _mapping(lanes.get('sharing')).get('ok') else 'BLOCKED'} "
+                f"setup={'READY' if _mapping(lanes.get('setup')).get('ok') else 'BLOCKED'}"
+            )
         print(f"   {row['run_id']}  {row['path']}")
         print(f"   {row['question']}")
         if audit.get("failed_checks"):
@@ -3697,6 +3705,24 @@ def _run_list_entry(path: Path, *, include_audit: bool) -> dict[str, Any]:
         }
     artifacts = _mapping(payload.get("artifacts"))
     metrics = _mapping(payload.get("metrics"))
+    artifact_flags = {
+        "run": True,
+        "quickstart": _payload_artifact_exists(path, artifacts, "quickstart_markdown", "QUICKSTART.md"),
+        "ci": _payload_artifact_exists(path, artifacts, "ci_markdown", "CI_QUICKSTART.md"),
+        "report": _payload_artifact_exists(path, artifacts, "html", "report.html"),
+        "markdown": _payload_artifact_exists(path, artifacts, "markdown", "report.md"),
+        "graph": _payload_artifact_exists(path, artifacts, "graph", "graph.json"),
+        "evals": _payload_artifact_exists(path, artifacts, "evals", "evals.json"),
+        "experiments": _payload_artifact_exists(path, artifacts, "experiments", "experiments.json"),
+        "discoveries": _payload_artifact_exists(path, artifacts, "discoveries", "discoveries.json"),
+        "paper": _payload_artifact_exists(path, artifacts, "paper", "paper/main.tex"),
+        "pdf": _payload_artifact_exists(path, artifacts, "pdf", "paper/main.pdf"),
+        "review": _payload_artifact_exists(path, artifacts, "review", "paper/review.md"),
+        "bundle": _payload_artifact_exists(path, artifacts, "bundle", "mechferret-bundle.zip"),
+        "manifest": _payload_artifact_exists(path, artifacts, "manifest", "manifest.json"),
+        "trace": _payload_artifact_exists(path, artifacts, "trace", "trace.jsonl"),
+    }
+    artifact_summary = _artifact_summary({name: {"exists": exists} for name, exists in artifact_flags.items()})
     entry = {
         "ok": True,
         "path": str(path),
@@ -3709,22 +3735,9 @@ def _run_list_entry(path: Path, *, include_audit: bool) -> dict[str, Any]:
         "claims": len(_items(payload.get("claims", []))),
         "evidence": len(_items(payload.get("evidence", []))),
         "gaps": len(_items(payload.get("gaps", []))),
-        "artifacts": {
-            "quickstart": _payload_artifact_exists(path, artifacts, "quickstart_markdown", "QUICKSTART.md"),
-            "ci": _payload_artifact_exists(path, artifacts, "ci_markdown", "CI_QUICKSTART.md"),
-            "report": _payload_artifact_exists(path, artifacts, "html", "report.html"),
-            "markdown": _payload_artifact_exists(path, artifacts, "markdown", "report.md"),
-            "graph": _payload_artifact_exists(path, artifacts, "graph", "graph.json"),
-            "evals": _payload_artifact_exists(path, artifacts, "evals", "evals.json"),
-            "experiments": _payload_artifact_exists(path, artifacts, "experiments", "experiments.json"),
-            "discoveries": _payload_artifact_exists(path, artifacts, "discoveries", "discoveries.json"),
-            "paper": _payload_artifact_exists(path, artifacts, "paper", "paper/main.tex"),
-            "pdf": _payload_artifact_exists(path, artifacts, "pdf", "paper/main.pdf"),
-            "review": _payload_artifact_exists(path, artifacts, "review", "paper/review.md"),
-            "bundle": _payload_artifact_exists(path, artifacts, "bundle", "mechferret-bundle.zip"),
-            "manifest": _payload_artifact_exists(path, artifacts, "manifest", "manifest.json"),
-            "trace": _payload_artifact_exists(path, artifacts, "trace", "trace.jsonl"),
-        },
+        "artifacts": artifact_flags,
+        "artifact_summary": artifact_summary,
+        "artifact_readiness": _artifact_readiness(artifact_summary),
     }
     if include_audit:
         from .audit import audit_run_artifact
