@@ -1193,6 +1193,7 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertEqual(missing["ok"], missing["exists"])
             self.assertFalse(missing["exists"])
             self.assertEqual(missing["reason"], "explicit path")
+            self.assertEqual(missing["scope"], "path")
             self.assertIn("mechferret open all", " ".join(missing["next_actions"]))
             missing_out = StringIO()
             with self.assertRaises(SystemExit) as ctx:
@@ -1810,6 +1811,7 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertTrue(selected_best["exists"])
             self.assertEqual(Path(selected_best["path"]), root / "runs" / "good" / "paper" / "main.tex")
             self.assertEqual(selected_best["selection"], "best")
+            self.assertEqual(selected_best["scope"], "run")
             self.assertEqual(Path(selected_best["selected_run"]), good)
             stray_ci = root / "runs" / "stray" / "CI_QUICKSTART.md"
             stray_ci.parent.mkdir()
@@ -1820,6 +1822,7 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertEqual(Path(latest_ci["path"]), stray_ci)
             self.assertFalse(selected_ci["exists"])
             self.assertEqual(selected_ci["selection"], "best")
+            self.assertEqual(selected_ci["scope"], "run")
             self.assertEqual(selected_ci.get("selected_run", ""), "")
             self.assertIn("quickstart --mode ci --run", " ".join(selected_ci["next_actions"]))
 
@@ -1832,6 +1835,10 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertTrue(status["readiness"]["setup"]["ok"])
             self.assertTrue(status["artifact_readiness"]["setup"]["ok"])
             self.assertNotIn("quickstart --mode ci --run", " ".join(status["next_actions"]))
+            index = resolve_artifact("all", runs_root=root / "runs", selection="best")
+            self.assertEqual(index["artifacts"]["quickstart"]["scope"], "workspace")
+            self.assertEqual(index["artifacts"]["ci"]["scope"], "workspace")
+            self.assertEqual(index["artifacts"]["report"]["scope"], "run")
 
     def test_resolve_artifact_keeps_selection_guidance_when_no_run_has_artifact(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -3355,6 +3362,7 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertIn("OpenVLA SAE Quickstart", (root / "QUICKSTART.md").read_text(encoding="utf-8"))
             resolved = resolve_artifact("openvla", project_root=root)
             self.assertTrue(resolved["exists"])
+            self.assertEqual(resolved["scope"], "workspace")
             self.assertEqual(Path(resolved["path"]), root / "QUICKSTART.md")
             rerun = run_quickstart("openvla", project_root=root)
             self.assertTrue(rerun["ok"])
@@ -3373,6 +3381,7 @@ class OpsRegistryTest(unittest.TestCase):
 
             resolved = resolve_artifact("openvla", project_root=project)
             self.assertTrue(resolved["exists"])
+            self.assertEqual(resolved["scope"], "workspace")
             self.assertEqual(Path(resolved["path"]), project / "README.md")
             self.assertEqual(resolved["reason"], "OpenVLA project scaffold")
             self.assertEqual(resolved["next_actions"], [])

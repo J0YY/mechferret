@@ -3228,7 +3228,7 @@ def resolve_artifact(
     if requested == "openvla":
         path = _openvla_artifact_path(project_root)
         reason = "OpenVLA project scaffold" if path.name == "README.md" else "OpenVLA quickstart index"
-        return _artifact_result(requested, path, reason, selection=selection)
+        return _artifact_result(requested, path, reason, selection=selection, scope="workspace")
 
     selection_artifacts = {
         "quickstart": "quickstart",
@@ -3314,7 +3314,7 @@ def resolve_artifact(
         )
 
     direct = _path(requested)
-    return _artifact_result(requested, direct, "explicit path", selection=selection)
+    return _artifact_result(requested, direct, "explicit path", selection=selection, scope="path")
 
 
 def print_artifact_result(result: dict[str, Any]) -> None:
@@ -3929,6 +3929,7 @@ def _artifact_result(
     *,
     selection: str | None = None,
     selected_run: str = "",
+    scope: str = "run",
     extra_next_actions: list[str] | None = None,
 ) -> dict[str, Any]:
     exists = bool(path and path.exists())
@@ -3973,6 +3974,7 @@ def _artifact_result(
         "exists": exists,
         "ok": exists,
         "reason": reason,
+        "scope": scope,
         "next_actions": _dedupe_actions(next_actions),
     }
     if selection is not None:
@@ -4000,12 +4002,12 @@ def _artifact_index(*, runs_root: str | Path, project_root: str | Path, selectio
     if ci_path is not None and latest_run is not None and ci_path.parent != latest_run.parent:
         ci_reason = "workspace CI quickstart index"
 
-    def artifact(target: str, path: Path | None, reason: str) -> dict[str, Any]:
-        return _artifact_result(target, path, reason, selection=selection, selected_run=selected_run)
+    def artifact(target: str, path: Path | None, reason: str, *, scope: str = "run") -> dict[str, Any]:
+        return _artifact_result(target, path, reason, selection=selection, selected_run=selected_run, scope=scope)
 
     artifacts = {
-        "quickstart": artifact("quickstart", quickstart_path, quickstart_reason),
-        "ci": artifact("ci", ci_path, ci_reason),
+        "quickstart": artifact("quickstart", quickstart_path, quickstart_reason, scope="workspace"),
+        "ci": artifact("ci", ci_path, ci_reason, scope="workspace"),
         "report": artifact("report", _latest_report(latest_run), f"{reason_prefix} HTML report"),
         "markdown": artifact("markdown", _latest_run_artifact(latest_run, "markdown", "report.md"), f"{reason_prefix} Markdown report"),
         "graph": artifact("graph", _latest_run_artifact(latest_run, "graph", "graph.json"), f"{reason_prefix} evidence graph"),
@@ -4019,7 +4021,7 @@ def _artifact_index(*, runs_root: str | Path, project_root: str | Path, selectio
         "manifest": artifact("manifest", _latest_run_artifact(latest_run, "manifest", "manifest.json"), f"{reason_prefix} run manifest"),
         "pdf": artifact("pdf", _latest_run_artifact(latest_run, "pdf", "paper/main.pdf"), f"{reason_prefix} compiled paper"),
         "run": artifact("run", latest_run, f"{reason_prefix} run artifact"),
-        "openvla": artifact("openvla", openvla_path, openvla_reason),
+        "openvla": artifact("openvla", openvla_path, openvla_reason, scope="workspace"),
     }
     summary = _artifact_summary(artifacts)
     artifact_readiness = _artifact_readiness(summary)
