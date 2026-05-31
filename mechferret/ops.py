@@ -3446,8 +3446,12 @@ def _run_openvla_quickstart(*, project_root: str | Path, force: bool) -> dict[st
     root = Path(project_root)
     init = init_project(root, force=force)
     st = status(project_root=root)
+    scaffold_ok = bool(init.get("ok") or st.get("ready_local"))
+    scaffold_detail = f"{len(init['files_written'])} files written"
+    if not init.get("ok") and st.get("ready_local"):
+        scaffold_detail = "existing scaffold ready"
     steps = [
-        {"name": "init", "ok": init["ok"], "detail": f"{len(init['files_written'])} files written"},
+        {"name": "init", "ok": scaffold_ok, "detail": scaffold_detail},
         {"name": "status", "ok": st["ready_local"], "detail": f"{sum(st['files'].values())}/{len(st['files'])} files"},
     ]
     result = {
@@ -3456,7 +3460,7 @@ def _run_openvla_quickstart(*, project_root: str | Path, force: bool) -> dict[st
         "steps": steps,
         "artifacts": {"project_root": str(root)},
         "status": st,
-        "next_actions": init.get("next_actions", []) or st.get("next_actions", []),
+        "next_actions": [] if scaffold_ok and st.get("ready_local") else init.get("next_actions", []) or st.get("next_actions", []),
     }
     if root.exists():
         _write_openvla_quickstart_artifacts(root, result)

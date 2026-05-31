@@ -3344,6 +3344,10 @@ class OpsRegistryTest(unittest.TestCase):
             resolved = resolve_artifact("openvla", project_root=root)
             self.assertTrue(resolved["exists"])
             self.assertEqual(Path(resolved["path"]), root / "QUICKSTART.md")
+            rerun = run_quickstart("openvla", project_root=root)
+            self.assertTrue(rerun["ok"])
+            self.assertEqual(rerun["next_actions"], [])
+            self.assertEqual(rerun["steps"][0]["detail"], "existing scaffold ready")
 
     def test_memory_resume_and_cost_helpers(self):
         with tempfile.TemporaryDirectory() as tmp:
