@@ -2958,7 +2958,7 @@ def _api_payload(config, *, action: str, path: str | Path, provider: str = "") -
             "key": "configured" if settings and settings.api_key else "missing",
             "model": settings.model if settings and settings.model else "default",
         }
-    return {
+    payload = {
         "ok": True,
         "action": action,
         "provider": provider,
@@ -2966,6 +2966,25 @@ def _api_payload(config, *, action: str, path: str | Path, provider: str = "") -
         "config_path": str(path),
         "providers": providers,
     }
+    next_actions = []
+    suggested_next_actions = []
+    default_provider = config.default_provider
+    if default_provider in PROVIDERS and providers[default_provider]["key"] == "missing":
+        payload["ok"] = False
+        env_name = f"{default_provider.upper()}_API_KEY"
+        next_actions.append(
+            f"Configure the default provider with `mechferret login {default_provider} --api-key ${env_name}` "
+            "or switch to local with `mechferret api --provider local`."
+        )
+    for name in sorted(PROVIDERS):
+        if providers[name]["key"] == "missing" and name != default_provider:
+            env_name = f"{name.upper()}_API_KEY"
+            suggested_next_actions.append(f"Configure {name} with `mechferret login {name} --api-key ${env_name}`.")
+    if next_actions:
+        payload["next_actions"] = next_actions
+    if suggested_next_actions:
+        payload["suggested_next_actions"] = suggested_next_actions
+    return payload
 
 
 def _run_payload(run, *, command: str) -> dict[str, Any]:
