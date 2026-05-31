@@ -1407,7 +1407,9 @@ def bundle_run_artifacts(
     refresh_run_manifest(target)
     bundle_verification = verify_bundle_artifacts(bundle_path)
     if bundle_verification.get("passed"):
-        next_actions = [] if audit["passed"] else audit.get("next_actions", [])
+        next_actions = _bundle_created_next_actions(bundle_path, selection=selection)
+        if not audit["passed"]:
+            next_actions = _dedupe_actions(audit.get("next_actions", []) + next_actions)
     else:
         next_actions = bundle_verification.get("next_actions", [])
     result = {
@@ -1662,7 +1664,12 @@ def verify_bundle_artifacts(
                 "threshold": "valid zip",
             }
         )
-    return _bundle_verify_result(target, checks, [recreate_action])
+    return _bundle_verify_result(
+        target,
+        checks,
+        [recreate_action],
+        success_next_actions=_bundle_verified_next_actions(target, selection=selection, selected_lookup=selected_lookup),
+    )
 
 
 def _add_bundle_semantic_checks(
@@ -3055,14 +3062,41 @@ def _bundle_recreate_command(*, selection: str, selected_lookup: bool) -> str:
     return "mechferret bundle"
 
 
-def _bundle_verify_result(path: Path, checks: list[dict[str, Any]], next_actions: list[str]) -> dict[str, Any]:
+def _bundle_created_next_actions(bundle_path: Path, *, selection: str) -> list[str]:
+    select_flag = f" --select {_policy(selection)}"
+    quoted_bundle = shlex.quote(str(bundle_path))
+    return _dedupe_actions(
+        [
+            f"Run `mechferret verify-bundle {quoted_bundle} --strict` before sharing the archive.",
+            f"Run `mechferret open bundle{select_flag}` to locate the run-bound archive later.",
+            f"Run `mechferret status{select_flag} --json` to inspect share readiness metadata.",
+        ]
+    )
+
+
+def _bundle_verified_next_actions(path: Path, *, selection: str, selected_lookup: bool) -> list[str]:
+    select_flag = f" --select {_policy(selection)}" if selected_lookup else ""
+    actions = [f"Run `mechferret open {shlex.quote(str(path))}` to locate the verified archive."]
+    if selected_lookup:
+        actions.append(f"Run `mechferret status{select_flag} --json` to inspect the selected run readiness metadata.")
+    return _dedupe_actions(actions)
+
+
+def _bundle_verify_result(
+    path: Path,
+    checks: list[dict[str, Any]],
+    next_actions: list[str],
+    *,
+    success_next_actions: list[str] | None = None,
+) -> dict[str, Any]:
     failed = [check["name"] for check in checks if not check.get("passed")]
+    result_actions = next_actions if failed else success_next_actions or []
     return {
         "path": str(path) if str(path) != "." else "",
         "passed": not failed,
         "checks": checks,
         "failed_checks": failed,
-        "next_actions": [] if not failed else next_actions,
+        "next_actions": result_actions,
     }
 
 

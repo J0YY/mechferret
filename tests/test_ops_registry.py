@@ -2164,6 +2164,8 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertIn("bundle --select latest", " ".join(latest["next_actions"]))
             self.assertTrue(best["passed"])
             self.assertEqual(Path(best["path"]), Path(bundle["path"]))
+            self.assertIn("mechferret open", " ".join(best["next_actions"]))
+            self.assertIn("mechferret status --select best --json", " ".join(best["next_actions"]))
 
     def test_bundle_run_artifacts_self_verifies_after_review_artifact_is_added(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -2189,6 +2191,8 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertTrue(bundle["ok"], bundle["bundle_verification"]["failed_checks"])
             verification = verify_bundle_artifacts(bundle["path"])
             self.assertTrue(verification["passed"], verification["failed_checks"])
+            self.assertIn("mechferret open", " ".join(verification["next_actions"]))
+            self.assertIn(str(bundle["path"]), " ".join(verification["next_actions"]))
             self.assertNotIn("bundle_run_manifest_ledger_sha256", verification["failed_checks"])
             self.assertNotIn("bundle_run_manifest_ledger_bytes", verification["failed_checks"])
 
@@ -2275,6 +2279,9 @@ class OpsRegistryTest(unittest.TestCase):
             bundle_verification = result["bundle_verification"]
             self.assertTrue(bundle_verification["passed"])
             self.assertEqual(bundle_verification["path"], str(bundle))
+            self.assertIn("mechferret verify-bundle", " ".join(result["next_actions"]))
+            self.assertIn("mechferret open bundle --select latest", " ".join(result["next_actions"]))
+            self.assertIn("mechferret status --select latest --json", " ".join(result["next_actions"]))
             missing_optional = {item["name"]: item for item in result["missing_optional"]}
             self.assertIn("CI quickstart summary", missing_optional)
             self.assertIn("OpenVLA quickstart guide", missing_optional)
@@ -2285,6 +2292,8 @@ class OpsRegistryTest(unittest.TestCase):
                 print_bundle_result(result)
             rendered_bundle = bundle_out.getvalue()
             self.assertIn("Missing optional context:", rendered_bundle)
+            self.assertIn("Next actions:", rendered_bundle)
+            self.assertIn("mechferret verify-bundle", rendered_bundle)
             self.assertIn("CI quickstart summary", rendered_bundle)
             self.assertIn("quickstart --mode ci --run", rendered_bundle)
             self.assertNotIn("ci_markdown", rendered_bundle)
