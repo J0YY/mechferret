@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 from mechferret.costs import estimate_run_cost
 from mechferret.discovery import DiscoveryController
-from mechferret.ops import bundle_run_artifacts, doctor, init_project_notes, list_run_artifacts, memory_recent, memory_summary, print_artifact_result, print_project_status, print_run_list, project_status, quickstart, resolve_artifact, run_quickstart, select_run_artifact, selftest, summarize_run_artifact, verify_bundle_artifacts, verify_run_artifacts
+from mechferret.ops import bundle_run_artifacts, doctor, init_project_notes, list_run_artifacts, memory_recent, memory_summary, print_artifact_result, print_bundle_result, print_project_status, print_run_list, project_status, quickstart, resolve_artifact, run_quickstart, select_run_artifact, selftest, summarize_run_artifact, verify_bundle_artifacts, verify_run_artifacts
 from mechferret.provenance import refresh_run_manifest
 from mechferret.registry import all_items, items_by_kind
 from mechferret.controller import MechFerret
@@ -2001,6 +2001,19 @@ class OpsRegistryTest(unittest.TestCase):
             bundle_verification = result["bundle_verification"]
             self.assertTrue(bundle_verification["passed"])
             self.assertEqual(bundle_verification["path"], str(bundle))
+            missing_optional = {item["name"]: item for item in result["missing_optional"]}
+            self.assertIn("CI quickstart summary", missing_optional)
+            self.assertIn("OpenVLA quickstart guide", missing_optional)
+            self.assertIn("quickstart --mode ci --run", " ".join(result["missing_optional_actions"]))
+
+            bundle_out = StringIO()
+            with redirect_stdout(bundle_out):
+                print_bundle_result(result)
+            rendered_bundle = bundle_out.getvalue()
+            self.assertIn("Missing optional context:", rendered_bundle)
+            self.assertIn("CI quickstart summary", rendered_bundle)
+            self.assertIn("quickstart --mode ci --run", rendered_bundle)
+            self.assertNotIn("ci_markdown", rendered_bundle)
             payload = json.loads((root / "runs" / "demo" / "run.json").read_text(encoding="utf-8"))
             self.assertEqual(Path(payload["artifacts"]["bundle"]), bundle)
             self.assertTrue(verify_run_artifacts(root / "runs" / "demo" / "run.json")["passed"])

@@ -1388,6 +1388,8 @@ def bundle_run_artifacts(
         "artifacts": {"bundle": str(bundle_path)},
         "files": files,
         "missing": missing,
+        "missing_optional": _bundle_missing_optional(missing),
+        "missing_optional_actions": _bundle_missing_optional_actions(missing),
         "manifest": manifest,
         "bundle_verification": bundle_verification,
         "next_actions": next_actions,
@@ -1408,7 +1410,13 @@ def print_bundle_result(result: dict[str, Any]) -> None:
         print(f"Bundle verify: {'PASS' if bundle_verification.get('passed') else 'WARN'}")
         if bundle_verification.get("failed_checks"):
             print(f"Bundle failures: {', '.join(bundle_verification['failed_checks'][:4])}")
-    if result.get("missing"):
+    if result.get("missing_optional"):
+        print("Missing optional context:")
+        for item in result["missing_optional"][:8]:
+            print(f"  - {item.get('name', '')}")
+            if item.get("action"):
+                print(f"    action: {item['action']}")
+    elif result.get("missing"):
         print("Missing optional files:")
         for label in result["missing"][:8]:
             print(f"  - {label}")
@@ -1416,6 +1424,49 @@ def print_bundle_result(result: dict[str, Any]) -> None:
         print("Next actions:")
         for action in result["next_actions"][:8]:
             print(f"  - {action}")
+
+
+def _bundle_missing_optional(missing: list[str]) -> list[dict[str, Any]]:
+    missing_set = set(missing)
+    groups = [
+        (
+            {"quickstart_markdown", "quickstart_json"},
+            "local quickstart index",
+            "Run `mechferret quickstart --run` to include the local quickstart guide.",
+        ),
+        (
+            {"ci_markdown", "ci_json"},
+            "CI quickstart summary",
+            "Run `mechferret quickstart --mode ci --run` to include release-gate notes.",
+        ),
+        (
+            {"project_notes"},
+            "project notes",
+            "Run `mechferret init` to include MECHFERRET.md.",
+        ),
+        (
+            {"openvla_quickstart", "openvla_quickstart_json"},
+            "OpenVLA quickstart guide",
+            "Run `mechferret quickstart --mode openvla --run` to include OpenVLA setup notes.",
+        ),
+    ]
+    items: list[dict[str, Any]] = []
+    grouped_labels: set[str] = set()
+    for labels, name, action in groups:
+        present = sorted(label for label in labels if label in missing_set)
+        if not present:
+            continue
+        grouped_labels.update(present)
+        items.append({"name": name, "labels": present, "action": action})
+    for label in sorted(missing_set - grouped_labels):
+        items.append({"name": label.replace("_", " "), "labels": [label], "action": ""})
+    return items
+
+
+def _bundle_missing_optional_actions(missing: list[str]) -> list[str]:
+    return _dedupe_actions(
+        [_text(item.get("action")) for item in _bundle_missing_optional(missing) if item.get("action")]
+    )
 
 
 def verify_bundle_artifacts(
