@@ -3348,7 +3348,9 @@ def print_artifact_result(result: dict[str, Any]) -> None:
         for name, item in result["artifacts"].items():
             marker = "found" if item["exists"] else "missing"
             path = item["path"] or "(none)"
-            print(f"{marker:8} {name}: {path}")
+            scope = _text(item.get("scope"))
+            scope_label = f" [{scope}]" if scope and scope != "run" else ""
+            print(f"{marker:8} {name}{scope_label}: {path}")
             if not item["exists"] and item.get("next_actions"):
                 print(f"         action: {item['next_actions'][0]}")
         if result.get("next_actions"):

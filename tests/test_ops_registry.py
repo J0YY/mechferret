@@ -3300,6 +3300,7 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertIn("Readiness:", out.getvalue())
             self.assertIn("Complete: no", out.getvalue())
             self.assertIn("discovery 2/2", out.getvalue())
+            self.assertIn("openvla [workspace]:", out.getvalue())
 
     def test_run_quickstart_ci_executes_release_gates_with_summary(self):
         with tempfile.TemporaryDirectory() as tmp:
