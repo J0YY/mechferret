@@ -774,6 +774,61 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertIn("Next actions:", rendered)
         self.assertIn("mechferret discover --skill ioi-circuit --backend synthetic --json", rendered)
 
+    def test_cli_compute_status_json_reports_next_actions(self):
+        from mechferret.cli import main
+
+        modal_status = {
+            "installed": False,
+            "authenticated": False,
+            "gpu": "A10G",
+            "app": "mechferret-interp",
+            "torch_local": False,
+            "transformer_lens_local": False,
+        }
+        with patch("mechferret.modal_app.modal_status", return_value=modal_status):
+            modal_out = StringIO()
+            with redirect_stdout(modal_out):
+                main(["modal", "status", "--json"])
+        modal_payload = json.loads(modal_out.getvalue())
+        self.assertEqual(modal_payload["next_action"], "install")
+        self.assertIn("mechferret modal setup --json", " ".join(modal_payload["next_actions"]))
+
+        cluster_status = {
+            "configured": False,
+            "host": "",
+            "remote_project_dir": "",
+            "ssh_ok": False,
+            "partition": "",
+            "gres": "gpu:1",
+            "cpus": 8,
+            "mem": "32G",
+            "time": "02:00:00",
+            "remote_setup": "",
+            "python": "python3",
+            "git_pull": False,
+        }
+        with patch("mechferret.cluster.cluster_status", return_value=cluster_status):
+            cluster_out = StringIO()
+            with redirect_stdout(cluster_out):
+                main(["cluster", "status", "--json"])
+        cluster_payload = json.loads(cluster_out.getvalue())
+        self.assertEqual(cluster_payload["next_action"], "setup")
+        self.assertIn("mechferret cluster setup --json", " ".join(cluster_payload["next_actions"]))
+
+        configured_status = dict(
+            cluster_status,
+            configured=True,
+            host="gpu-box",
+            remote_project_dir="/work/mechferret",
+        )
+        with patch("mechferret.cluster.cluster_status", return_value=configured_status):
+            text_out = StringIO()
+            with redirect_stdout(text_out):
+                main(["cluster", "status"])
+        rendered = text_out.getvalue()
+        self.assertIn("Next actions:", rendered)
+        self.assertIn("mechferret cluster run --skill ioi-circuit --dry-run --json", rendered)
+
     def test_cli_api_json_redacts_keys_and_reports_updates(self):
         from mechferret.cli import main
 

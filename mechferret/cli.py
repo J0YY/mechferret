@@ -2705,8 +2705,9 @@ def handle_modal(args) -> None:
 
     status = modal_status()
     if args.action == "status":
+        payload = _modal_payload("status", status)
         if args.json:
-            print(json.dumps(_modal_payload("status", status), indent=2, sort_keys=True))
+            print(json.dumps(payload, indent=2, sort_keys=True))
             return
         print(f"Modal installed:       {status['installed']}")
         print(f"Modal authenticated:   {status['authenticated']}")
@@ -2719,10 +2720,12 @@ def handle_modal(args) -> None:
             print("\nAuthenticate with: modal token new")
         else:
             print("\nReady. Run: mechferret /modal run --skill ioi-circuit")
+        _print_next_actions(payload.get("next_actions", []))
         return
     if args.action == "setup":
+        payload = _modal_payload("setup", status)
         if args.json:
-            print(json.dumps(_modal_payload("setup", status), indent=2, sort_keys=True))
+            print(json.dumps(payload, indent=2, sort_keys=True))
             return
         print("Modal setup steps:")
         print("  1. pip install -e '.[modal,interp]'")
@@ -2730,6 +2733,7 @@ def handle_modal(args) -> None:
         print("  3. (optional) modal secret create openai-api-key OPENAI_API_KEY=sk-...")
         print("  4. mechferret /modal run --skill ioi-circuit")
         print(f"\nCurrent status: installed={status['installed']} authenticated={status['authenticated']}")
+        _print_next_actions(payload.get("next_actions", []))
         return
     if args.action == "deploy":
         if args.json:
@@ -2764,8 +2768,9 @@ def handle_cluster(args) -> None:
 
     if args.action == "status":
         status = cluster_status()
+        payload = _cluster_payload("status", status)
         if args.json:
-            print(json.dumps(_cluster_payload("status", status), indent=2, sort_keys=True))
+            print(json.dumps(payload, indent=2, sort_keys=True))
             return
         print(f"Configured:   {status['configured']}")
         print(f"Host:         {status['host'] or '(unset: REMOTE_HOST)'}")
@@ -2776,13 +2781,16 @@ def handle_cluster(args) -> None:
         print(f"Env setup:    {status['remote_setup'] or '(unset: REMOTE_RUN_SETUP)'}")
         if not status["configured"]:
             print("\nRun `mechferret /cluster setup` for connection steps.")
+        _print_next_actions(payload.get("next_actions", []))
         return
     if args.action == "setup":
+        status = cluster_status(load_cluster_config())
+        payload = _cluster_payload("setup", status)
         if args.json:
-            status = cluster_status(load_cluster_config())
-            print(json.dumps(_cluster_payload("setup", status), indent=2, sort_keys=True))
+            print(json.dumps(payload, indent=2, sort_keys=True))
             return
         _print_cluster_setup()
+        _print_next_actions(payload.get("next_actions", []))
         return
     # action == "run"
     skill = args.skill or (None if (args.question or args.task) else "ioi-circuit")
@@ -2826,6 +2834,7 @@ def _modal_payload(action: str, status: dict[str, Any]) -> dict[str, Any]:
             payload["next_action"] = "authenticate"
         else:
             payload["next_action"] = "run"
+        payload["next_actions"] = _modal_next_actions(action, status)
     elif action == "setup":
         payload["steps"] = [
             "pip install -e '.[modal,interp]'",
@@ -2833,11 +2842,43 @@ def _modal_payload(action: str, status: dict[str, Any]) -> dict[str, Any]:
             "modal secret create openai-api-key OPENAI_API_KEY=<redacted>",
             "mechferret /modal run --skill ioi-circuit",
         ]
+        payload["next_actions"] = _modal_next_actions(action, status)
     elif action == "deploy":
         payload["command"] = "modal deploy mechferret/modal_app.py"
         payload["app"] = status.get("app")
         payload["gpu"] = status.get("gpu")
+        payload["next_actions"] = _modal_next_actions(action, status)
     return payload
+
+
+def _modal_next_actions(action: str, status: dict[str, Any]) -> list[str]:
+    if action == "status":
+        if not status.get("installed"):
+            return [
+                "Run `mechferret modal setup --json` for Modal install and auth steps.",
+                "Install Modal support with `pip install -e '.[modal,interp]'`.",
+            ]
+        if not status.get("authenticated"):
+            return [
+                "Run `modal token new` to authenticate Modal.",
+                "Run `mechferret modal status --json` to verify authentication.",
+            ]
+        return [
+            "Run `mechferret modal run --skill ioi-circuit --json` to launch a remote discovery run.",
+            "Run `mechferret modal deploy --json` to inspect the deploy command.",
+        ]
+    if action == "setup":
+        return [
+            "Install Modal support with `pip install -e '.[modal,interp]'`.",
+            "Run `modal token new` to authenticate Modal.",
+            "Run `mechferret modal run --skill ioi-circuit --json` after setup succeeds.",
+        ]
+    if action == "deploy":
+        return [
+            "Run `modal deploy mechferret/modal_app.py` to deploy the GPU app.",
+            "Run `mechferret modal run --skill ioi-circuit --json` to execute a discovery run.",
+        ]
+    return []
 
 
 def _cluster_payload(action: str, status: dict[str, Any]) -> dict[str, Any]:
@@ -2849,6 +2890,7 @@ def _cluster_payload(action: str, status: dict[str, Any]) -> dict[str, Any]:
     }
     if action == "status":
         payload["next_action"] = "dry_run" if status.get("configured") else "setup"
+        payload["next_actions"] = _cluster_next_actions(action, status)
     elif action == "setup":
         payload["env"] = [
             "REMOTE_HOST",
@@ -2867,7 +2909,28 @@ def _cluster_payload(action: str, status: dict[str, Any]) -> dict[str, Any]:
             "export REMOTE_PROJECT_DIR=<remote-project-dir>",
             "mechferret /cluster run --skill ioi-circuit --dry-run",
         ]
+        payload["next_actions"] = _cluster_next_actions(action, status)
     return payload
+
+
+def _cluster_next_actions(action: str, status: dict[str, Any]) -> list[str]:
+    if action == "status":
+        if status.get("configured"):
+            return [
+                "Run `mechferret cluster run --skill ioi-circuit --dry-run --json` to inspect the SSH+srun command.",
+                "Run `mechferret cluster run --skill ioi-circuit --json` when the dry run looks right.",
+            ]
+        return [
+            "Run `mechferret cluster setup --json` for environment variables and connection steps.",
+            "Set at least `REMOTE_HOST` and `REMOTE_PROJECT_DIR` before running cluster jobs.",
+        ]
+    if action == "setup":
+        return [
+            "Set `REMOTE_HOST` and `REMOTE_PROJECT_DIR` for your login node and remote checkout.",
+            "Run `mechferret cluster status --json` to verify configuration.",
+            "Run `mechferret cluster run --skill ioi-circuit --dry-run --json` before launching a job.",
+        ]
+    return []
 
 
 def _dispatch_payload(kind: str, result: dict[str, Any], *, skill: str | None, task: str | None, model: str) -> dict[str, Any]:
