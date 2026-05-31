@@ -1,186 +1,242 @@
 # MechFerret
 
-**MechFerret is an autoresearch agent for interpretability.**
+**MechFerret is a prompt-to-paper autoresearch pipeline for interpretability.**
 
-In plain terms: it is a research assistant that tries to figure out what is
-going on inside AI models.
+The goal is not "ask an AI to explain a model once." The goal is much bigger:
+help more people, especially beginners, turn an interpretability idea into a
+real research project and eventually a paper.
 
-You give it a question like:
+You start with a prompt like:
 
 ```text
-Which parts of GPT-2 are responsible for this behavior?
+I want to do an interpretability project on induction heads.
 ```
 
-MechFerret turns that into a research run. It looks at prior work, makes a few
-testable guesses, runs experiments on model components, checks whether the
-results are real, and writes up what it found.
+MechFerret helps turn that into:
 
-The important bit is that it does not just write a summary. It actually runs the
-interpretability experiments.
+- a research direction
+- prior work and citations
+- concrete hypotheses
+- experiments to run
+- evidence tracking
+- follow-up gaps
+- a paper outline or LaTeX draft
+- a reviewer-style critique
+- a trace of what happened along the way
+
+In other words: **prompt -> research plan -> experiments -> evidence -> paper**.
+
+That is the product. MechFerret is meant to make interpretability research feel
+less like "you need to already be an expert with a giant notebook stack" and
+more like "you can start with an idea and get pulled into a real research
+workflow."
 
 ## Why Interpretability?
 
-AI models are getting wildly capable, but most of the time we still interact
-with them like black boxes. We give them text, images, code, or data. They give
-us an answer. The scary part is the middle: we usually do not know what
-calculation happened inside the model to produce that answer.
+Interpretability is one of the best possible domains for an autoresearch agent.
 
-Interpretability is the field that tries to open up that middle.
+AI is becoming more important every year, but we still do not understand these
+models nearly well enough. Interpretability is the field trying to change that.
+It studies what models learn, how internal features work, what circuits appear,
+why behaviors emerge, and how we can make AI systems easier to understand and
+debug.
 
-Instead of asking only "did the model get the answer right?", interpretability
-asks:
+That matters for humanity.
 
-- What internal parts caused the answer?
-- Did the model use a sensible strategy or a shortcut?
-- Can we find the circuit that implements a behavior?
-- If we remove or change that part, does the behavior go away?
-- Can we explain the model in a way a human researcher can audit?
+Better interpretability means:
 
-That is why this is such a good domain for autoresearch. There are tons of
-candidate model parts to test, tons of possible prompts, tons of possible
-controls, and lots of small experiments that need to be run carefully. A human
-can do this, but it is slow. An agent can help by doing the repetitive research
-loop: pick a hypothesis, run the check, compare against controls, keep the good
-leads, drop the weak ones, and write down exactly what happened.
+- safer AI systems
+- more understandable failures
+- better debugging tools
+- better tools for studying model internals
+- stronger scientific foundations for AI
+- more people able to contribute to AI safety and model understanding
 
-We picked interpretability for Track 3 because it is not just another research
-domain. It is the domain that helps us understand the systems that will do more
-and more research everywhere else. If we make interpretability faster, cheaper,
-and easier to audit, that helps AI safety, model debugging, and every future
-agent built on top of these models.
+This is why we picked interpretability as the applied domain. If autoresearch
+can speed up interpretability, it does not just help one field publish more
+papers. It helps the field that tries to understand the systems everyone else
+will build on top of.
 
-That is the bet behind MechFerret: make the "open the black box" loop feel more
-like running a tool and less like hand-driving a pile of fragile notebooks.
+There is also a huge access problem. Interpretability is exciting, but it is
+hard to enter. A beginner has to figure out the literature, pick a problem, set
+up experiments, understand what counts as evidence, avoid overclaiming, and
+write the work up in a way that looks like a real ML paper.
 
-## What It Does
+MechFerret is built for that gap.
 
-MechFerret runs an end-to-end interpretability research loop:
+It is not replacing researchers. It is giving new researchers a guided path
+from "I have an idea" to "I have a structured project with evidence, gaps, and a
+paper draft."
 
-```text
-question
-  -> read prior context
-  -> make testable hypotheses
-  -> run model experiments
-  -> compare against controls
-  -> keep results that reproduce
-  -> check the evidence from multiple angles
-  -> write a report with the full trail
-```
+## What MechFerret Actually Is
 
-For the demo, MechFerret focuses on classic mechanistic interpretability tasks
-like Indirect Object Identification in GPT-2.
+MechFerret is an interpretability research operating system.
 
-Example sentence:
+It has a conversational interface, but the useful part is the pipeline behind
+it:
 
 ```text
-When John and Mary went to the store, Mary gave a drink to ___
+prompt
+  -> understand the research goal
+  -> search and summarize prior work
+  -> suggest concrete interp directions
+  -> turn a direction into hypotheses
+  -> run or script experiments
+  -> track evidence and mechanisms
+  -> show the evidence architecture
+  -> draft a paper
+  -> review the paper
+  -> keep memory so the project can continue
 ```
 
-GPT-2 often completes that with `John`. Interpretability asks: which attention
-heads made that happen? Are there heads that copy the right name? Are there
-heads that notice the repeated name? If we remove those heads, does the answer
-change?
+The system is designed around the shape of an actual research project, not just
+a one-off answer.
 
-MechFerret takes that kind of question and runs the workflow:
+Some examples of what it can do:
 
-- screens candidate attention heads
-- promotes the promising ones into specific hypotheses
-- tests them with multiple probes
-- checks each result against negative controls
-- verifies that the effect is stable across seeds
-- writes a report with the evidence for each claimed mechanism
+- replay a recorded research trace with `/demo`
+- explain why interpretability is the domain with `/why`
+- show how evidence supports claims with `/arch`
+- generate `paper/main.tex` with `/paper`
+- ask an independent reviewer agent to score the draft with `/review-paper`
+- run discovery-style interpretability experiments with `/discover`
+- remember confirmed findings and experiment results across sessions
+- stream trace events to Raindrop Workshop
+- dispatch heavier experiment work to Modal
 
-The result is a dossier, not just a paragraph. You get the answer, the
-experiments, the controls, the confidence scores, the open gaps, and the trace
-of what the agent did.
+The important shift is this: MechFerret is not just "an assistant that knows
+about interpretability." It is a workflow for producing interpretability
+research artifacts.
+
+## Who This Is For
+
+MechFerret is especially for people who want to do interpretability research but
+do not yet know how to turn an idea into a paper.
+
+That includes:
+
+- beginners trying to enter mechanistic interpretability
+- hackathon teams trying to build a serious research demo quickly
+- researchers who want a faster way to scaffold projects
+- people with an interp idea who need help turning it into experiments
+- anyone who wants a traceable research pipeline instead of a one-off chat
+  transcript
+
+The dream version is simple: a motivated beginner can show up with curiosity,
+use MechFerret to pick a tractable direction, run the loop, and end up with
+something close to a publishable artifact.
+
+Not a guaranteed accepted paper. But a real path toward one.
 
 ## The Hackathon Story
 
 This is built for the Raindrop autoresearch hackathon, specifically **Track 3:
 Applied Autonomous Research**.
 
-Our applied domain is interpretability.
+Our applied domain is interpretability because interpretability is good for
+humanity, hard to enter, and perfect for research automation.
 
-The core idea is simple:
+The project we want to show is:
 
-> If AI agents are going to help with serious research, we should also build
-> agents that research the AI systems themselves.
+> An autoresearch agent that helps interpretability research itself.
 
-MechFerret is meant to show that loop clearly. It is not a chatbot that says
-"here are some papers." It is an agent that takes a model behavior, investigates
-the model internals, runs checks, and gives you artifacts you can inspect.
+That is different from a normal literature assistant. A literature assistant
+can summarize papers. MechFerret tries to move the whole research process
+forward: idea, plan, prior work, experiments, evidence, draft, review, iterate.
 
-What we want judges to see:
+What judges should see:
 
-- **Technical depth:** it has a real research loop with hypotheses,
-  experiments, controls, budgets, memory, and reports.
-- **Originality:** it applies autoresearch to interpretability itself, not just
-  web search or summarization.
-- **Demo clarity:** the offline demo runs quickly and produces readable files.
-- **Raindrop fit:** every step can be traced, replayed, and inspected.
-- **Modal fit:** the same loop can move from a deterministic local demo to GPU
-  experiments on real models.
+- **Applied domain:** interpretability, because understanding AI systems is
+  important and more people should be able to contribute.
+- **Autonomous research loop:** the system does more than answer questions; it
+  keeps state, runs tools, records evidence, and writes outputs.
+- **Beginner leverage:** it helps someone go from prompt to paper-shaped
+  research instead of staring at a blank repo.
+- **Raindrop fit:** the agent's steps are visible as a trace, not hidden in a
+  chat transcript.
+- **Modal fit:** when research needs compute, experiments can move to a Modal
+  GPU while the same project loop stays intact.
 
 ## Why Not Just A Claude Code Skill?
 
-A Claude Code skill is great when you want to teach an assistant a workflow. You
-can write instructions like "when doing interpretability, look for prior work,
-make hypotheses, run checks, and summarize results."
+A Claude Code skill is useful for giving an assistant instructions. You can
+write a skill that says:
 
-But MechFerret is doing something different.
+```text
+When doing interpretability research, read prior work, propose hypotheses,
+write experiments, and draft a paper.
+```
 
-A skill is mostly guidance. MechFerret is a runnable research system.
+That is helpful, but it is not enough.
 
-That matters because interpretability research is not just a writing task. The
-hard part is keeping the whole experiment loop honest:
+MechFerret is better because it turns the workflow into an actual system. The
+research state lives outside the assistant's vibes. It has commands, memory,
+traces, artifacts, experiment ledgers, and paper generation.
 
-- Which model behavior are we testing?
-- Which model components are candidates?
-- What exactly was ablated or patched?
-- What was the negative control?
-- Did the result reproduce?
-- Did another probe agree?
-- Where is the experiment log?
-- Can we run the same thing on a GPU?
-- Can we inspect the agent's decisions after the fact?
+The difference is:
 
-A Claude Code skill can remind an agent to care about those things. MechFerret
-actually implements them.
-
-Here is the difference:
-
-| A Claude Code skill | MechFerret |
+| Claude Code skill | MechFerret |
 | --- | --- |
-| Tells an assistant how to approach interpretability work. | Runs an interpretability research loop end to end. |
-| Depends on the assistant to remember and follow the process. | Has code paths for planning, screening, experiments, controls, criticism, and reports. |
-| Usually produces prose or code edits. | Produces experiment artifacts: `experiments.json`, `discoveries.json`, `evals.json`, `graph.json`, and `trace.jsonl`. |
-| Does not own compute. | Can run locally, on Modal GPUs, or on a SLURM cluster. |
-| Does not automatically create an audit trail. | Writes a trace that can mirror into Raindrop Workshop. |
-| Is hard to replay exactly. | Stores structured runs and repeatable skill configs. |
+| Tells an assistant what to do. | Gives the researcher an end-to-end pipeline. |
+| Lives mostly as instructions in context. | Stores project state, memory, traces, and artifacts. |
+| Can suggest a paper structure. | Writes `paper/main.tex` from recorded findings. |
+| Can remind you to evaluate evidence. | Tracks experiments, mechanisms, claims, gaps, and drift. |
+| Can say "run this on a GPU." | Has Modal dispatch for heavier runs. |
+| Produces a chat unless you manually organize outputs. | Produces reports, JSON ledgers, traces, and paper files. |
+| Helps an expert move faster. | Also helps a beginner know what the next research step is. |
 
-The exciting part is that MechFerret can still feel like an assistant, but the
-important research mechanics live in software instead of vibes. The agent is not
-just saying "I think this head matters." It is running the check, comparing the
-control, writing the result, and showing the trail.
+The key point: a skill is a recipe. MechFerret is the kitchen.
 
-That is why this is stronger than a skill file. A skill can describe the
-researcher we want. MechFerret is the research machine.
+For a beginner, that matters a lot. They do not just need a list of best
+practices. They need a guided path, persistent project memory, commands that
+produce real files, and a way to see whether their evidence is paper-worthy.
 
-## How Modal Fits In
+That is why MechFerret is more than a Claude Code skill. It is infrastructure
+for making interpretability research easier to start, continue, audit, and
+write up.
 
-The local demo is deterministic on purpose. It works without a GPU, without API
-keys, and without installing heavy model packages. That makes it great for a
-live demo.
+## How The Pipeline Feels
 
-But interpretability gets much more interesting when you run against real
-models. That is where Modal comes in.
+In the interactive prompt:
 
-MechFerret can send the heavy model work to Modal:
+```bash
+mechferret
+```
 
-- Modal starts a GPU container.
-- The container installs `torch` and `transformer_lens`.
-- MechFerret runs the same discovery loop against a real model.
-- The result comes back as the same kind of report.
+You can do things like:
+
+```text
+/why            explain why interpretability is the right domain
+/demo           replay this project's research trace
+/arch           show how the evidence supports the claims
+/paper          generate paper/main.tex
+/review-paper   have a separate reviewer agent critique the paper
+/trace          show recent trace events
+/memory         show remembered findings
+```
+
+The intended loop is:
+
+1. Start with a research prompt.
+2. Let the agent help shape it into a tractable interp project.
+3. Use tools and experiments to collect evidence.
+4. Use `/arch` to see whether the evidence actually supports the claim.
+5. Use `/paper` to turn the project into a draft.
+6. Use `/review-paper` to get a harsh review.
+7. Iterate.
+
+That is the prompt-to-paper story.
+
+## Modal
+
+Some parts of interpretability research are light: reading papers, planning,
+writing, reviewing, organizing evidence.
+
+Some parts need real compute.
+
+Modal is the compute path. When the project needs heavier model experiments,
+MechFerret can dispatch work to a Modal GPU container instead of pretending
+everything should run on a laptop.
 
 The Modal integration lives in `mechferret/modal_app.py`.
 
@@ -199,67 +255,49 @@ The default GPU is `A10G`. You can change it with:
 export MECHFERRET_MODAL_GPU=A100
 ```
 
-The nice part is that `/modal run` is demo-safe. If Modal is installed and
-authenticated, MechFerret runs remotely. If not, it falls back to the local
-synthetic backend and still produces a report, while telling you which path it
-used.
+For the hackathon, Modal shows that the pipeline is not only a local scripted
+demo. It has a path to real compute when an interpretability project needs it.
 
-Direct Modal entrypoint:
+## Raindrop Workshop
 
-```bash
-modal run mechferret/modal_app.py --skill ioi-circuit
+Raindrop is the visibility layer.
+
+For autoresearch, the trace is part of the product. We do not just want a final
+paper draft. We want to see what the agent did to get there: what it searched,
+what tools it ran, what evidence it recorded, where it changed direction, and
+what artifacts it wrote.
+
+MechFerret writes trace events to:
+
+```text
+.mechferret/trace.jsonl
 ```
 
-## How Raindrop Fits In
-
-Raindrop is how we make the agent's work visible.
-
-A final answer is not enough for an autoresearch system. You want to see what it
-tried, what it skipped, what it trusted, what failed, and why it stopped.
-
-MechFerret writes a trace for every run:
+Discovery runs also write traces under their run directory, such as:
 
 ```text
 runs/demo/trace.jsonl
 ```
 
-That trace includes spans for:
-
-- loading prior context
-- recalling memory
-- optional provider research
-- each experiment round
-- experiment batches
-- critic summaries
-- final synthesis
-- artifact writing
-- errors, if something fails
-
-To mirror the trace into Raindrop Workshop:
+To stream spans into Raindrop Workshop:
 
 ```bash
 export RAINDROP_LOCAL_DEBUGGER=1
 raindrop workshop
-mechferret discover --skill ioi-circuit --out runs/raindrop-demo
+mechferret
 ```
 
-By default, traces are posted to:
+By default, traces post to:
 
 ```text
 http://127.0.0.1:5899/v1/traces
 ```
 
-You can override that with:
+The local trace file is always written, even if Workshop is not running. So the
+demo can be live and reviewable, but the pipeline does not depend on the
+debugger being up.
 
-```bash
-export RAINDROP_ENDPOINT=http://127.0.0.1:5899/v1/traces
-```
-
-The local `trace.jsonl` file is always written, even if Raindrop Workshop is not
-running. So the observability path is useful live, but it never becomes a hard
-dependency.
-
-## Quick Demo
+## Quickstart
 
 Install:
 
@@ -268,28 +306,27 @@ pipx install .
 pipx ensurepath
 ```
 
-Run the headline interpretability discovery:
+Open the prompt:
+
+```bash
+mechferret
+```
+
+Useful demo flow:
+
+```text
+/why
+/demo
+/arch
+/paper
+/review-paper
+```
+
+Run the deterministic discovery path:
 
 ```bash
 mechferret discover --skill ioi-circuit --out runs/demo
 open runs/demo/report.html
-```
-
-Look at the audit trail:
-
-```bash
-cat runs/demo/discoveries.json
-cat runs/demo/experiments.json
-cat runs/demo/evals.json
-cat runs/demo/trace.jsonl
-```
-
-Run with Raindrop Workshop:
-
-```bash
-export RAINDROP_LOCAL_DEBUGGER=1
-raindrop workshop
-mechferret discover --skill ioi-circuit --out runs/raindrop-demo
 ```
 
 Run on Modal:
@@ -299,96 +336,36 @@ mechferret /modal status
 mechferret /modal run --skill ioi-circuit --out runs/modal-demo
 ```
 
-## What Gets Written
+## What Gets Produced
 
-Every run writes a small research packet:
+Depending on the path you run, MechFerret can produce:
 
-- `report.html` - the readable report
-- `report.md` - the Markdown version
-- `run.json` - the full structured run
-- `experiments.json` - every experiment, target, probe, effect, control, and
-  backend
-- `discoveries.json` - mechanisms that cleared the evidence bar
-- `graph.json` - source -> evidence -> claim -> hypothesis -> discovery
-- `evals.json` - self-checks for rigor
-- `trace.jsonl` - the replayable trace for Raindrop or local inspection
+- `.mechferret/memory.sqlite` - project memory
+- `.mechferret/trace.jsonl` - replayable trace
+- `paper/main.tex` - generated paper draft
+- `paper/main.pdf` - compiled paper, if `tectonic` is installed
+- `runs/*/report.html` - readable research report
+- `runs/*/report.md` - Markdown report
+- `runs/*/run.json` - full structured run
+- `runs/*/experiments.json` - experiment records
+- `runs/*/discoveries.json` - confirmed findings
+- `runs/*/graph.json` - evidence graph
+- `runs/*/evals.json` - self-checks and rigor checks
 
-This is a big part of the project. The output should make it easy to answer:
-
-- What did the agent claim?
-- What evidence supports it?
-- What controls did it run?
-- What is still uncertain?
-- Could someone replay or audit this?
-
-## Running It Locally
-
-The core package has no required runtime dependencies and works offline on
-Python 3.11+.
-
-Install with `pipx`:
-
-```bash
-pipx install .
-pipx ensurepath
-```
-
-For development:
-
-```bash
-pipx install --force --editable .
-```
-
-Or run without installing:
-
-```bash
-python3 -m mechferret discover --skill ioi-circuit --out runs/demo
-```
-
-Optional extras:
-
-```bash
-pip install -e '.[modal,interp]'      # Modal + real model backend
-pip install -e '.[openai]'            # OpenAI provider research
-pip install -e '.[anthropic]'         # Anthropic provider research
-pip install -e '.[all]'               # everything
-```
-
-## Interactive Mode
-
-Run:
-
-```bash
-mechferret
-```
-
-Useful commands inside the prompt:
-
-```text
-/why                         why we picked interpretability
-/skills                      list built-in research playbooks
-/modal status                check Modal setup
-/modal run --skill ioi-circuit
-/doctor                      check the local environment
-/open                        open the last report
-/memory --recent 5           show recent remembered runs
-```
-
-The `/why` command is especially useful for demos. It gives the casual version
-of why interpretability is the right applied domain for this project.
+The point of these files is to make the research legible. A beginner should be
+able to see what happened, what is supported, what is weak, and what to do next.
 
 ## Skills
 
-Skills are reusable research playbooks. They live in `mechferret/skills/` and
-define things like:
+Skills are reusable research playbooks in `mechferret/skills/`.
+
+They define things like:
 
 - the task
 - the model
-- how many candidate components to screen
-- which probes to run
-- how many seeds to use
-- what counts as "good enough"
-- the compute budget
+- the experiment budget
+- the evidence bar
+- the stopping condition
 
 List them:
 
@@ -409,65 +386,42 @@ Built-in skills:
 - `logit-lens-sweep`
 - `factual-recall-trace`
 
-## How The Research Loop Works
+Skills are useful, but they are only one piece. The bigger value is that
+MechFerret wraps skills in memory, tracing, reports, paper generation, review,
+and compute dispatch.
 
-For readers who want the slightly more technical version, the system has two
-loops.
+## Local Setup
 
-First, there is the context loop. It loads local source documents, remembered
-findings, optional URLs, and optional provider research. This gives the agent a
-grounding layer so it knows what prior work already says.
+The core package has no required runtime dependencies and works offline on
+Python 3.11+.
 
-Second, there is the experiment loop. This is the interpretability part:
-
-1. Pick a task, like IOI or induction.
-2. Make candidate hypotheses about model components.
-3. Run a broad screen to find promising candidates.
-4. Promote the best candidates into specific hypotheses.
-5. Test each one from multiple angles.
-6. Compare against controls.
-7. Keep only results that reproduce.
-8. Write discoveries and gaps.
-
-The code for this lives mostly in:
-
-- `mechferret/discovery.py`
-- `mechferret/interp/`
-- `mechferret/modal_app.py`
-- `mechferret/tracing.py`
-
-## Why The Evidence Bar Matters
-
-Interpretability can be tempting to overclaim. A model has lots of moving parts,
-and a single pretty plot can look more convincing than it really is.
-
-MechFerret tries to avoid that by asking for several kinds of evidence:
-
-- Did the target part have an effect?
-- Did the matched control stay quiet?
-- Did the result reproduce across seeds?
-- Did more than one kind of probe agree?
-- Did the critic find remaining gaps?
-
-That makes the final report much more useful. It does not just say "we found a
-thing." It says what was tested, what passed, what failed, and what should be
-tested next.
-
-## Other Compute Paths
-
-Modal is the main remote GPU path for the hackathon demo.
-
-There is also a generic SLURM path for people with their own cluster:
+Install with `pipx`:
 
 ```bash
-mechferret /cluster setup
-mechferret /cluster status
-mechferret /cluster run --skill ioi-circuit --dry-run
-mechferret /cluster run --skill ioi-circuit
+pipx install .
+pipx ensurepath
 ```
 
-The point is that the research loop is portable. You can run it locally,
-dispatch it to Modal, or point it at another GPU environment.
+For development:
+
+```bash
+pipx install --force --editable .
+```
+
+Or run without installing:
+
+```bash
+python3 -m mechferret
+```
+
+Optional extras:
+
+```bash
+pip install -e '.[modal,interp]'      # Modal + real model backend
+pip install -e '.[openai]'            # OpenAI provider research
+pip install -e '.[anthropic]'         # Anthropic provider research
+pip install -e '.[all]'               # everything
+```
 
 ## Development
 
@@ -477,16 +431,16 @@ Run tests:
 python3 -m unittest discover -s tests
 ```
 
-Run the main demo path:
+Run the prompt:
 
 ```bash
-python3 -m mechferret discover --skill ioi-circuit --out runs/demo
+python3 -m mechferret
 ```
 
 More docs:
 
 - `docs/ARCHITECTURE.md`
 - `docs/DEMO_SCRIPT.md`
-- `mechferret/repl.py` for `/why`
+- `mechferret/repl.py` for `/why`, `/paper`, and `/review-paper`
 - `mechferret/modal_app.py` for Modal dispatch
 - `mechferret/tracing.py` for Raindrop traces
