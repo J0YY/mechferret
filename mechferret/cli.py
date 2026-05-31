@@ -1632,15 +1632,19 @@ def _workflow_search_text(workflow: dict[str, Any]) -> str:
 
 
 def _suggest_commands(commands: list[dict[str, Any]], query: str) -> list[str]:
+    query_text = str(query).strip()
     by_word: dict[str, str] = {}
     for command in commands:
         primary = str(command["name"])
         by_word[primary] = primary
         for alias in command.get("aliases", []):
             by_word[str(alias)] = primary
-    matches = difflib.get_close_matches(str(query), list(by_word), n=8, cutoff=0.55)
+    matches = difflib.get_close_matches(query_text, list(by_word), n=8, cutoff=0.55)
     suggestions: list[str] = []
     for match in matches:
+        score = difflib.SequenceMatcher(None, query_text, match).ratio()
+        if query_text[:1] != match[:1] and score < 0.8:
+            continue
         primary = by_word[match]
         if primary not in suggestions:
             suggestions.append(primary)

@@ -537,6 +537,14 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertIn("run", missing_payload["available"])
         self.assertEqual(missing_err.getvalue(), "")
 
+        unrelated_out = StringIO()
+        with self.assertRaises(SystemExit) as ctx:
+            with redirect_stdout(unrelated_out):
+                main(["commands", "nope", "--json"])
+        self.assertEqual(ctx.exception.code, 1)
+        unrelated_payload = json.loads(unrelated_out.getvalue())
+        self.assertEqual(unrelated_payload["suggestions"], [])
+
         typo_err = StringIO()
         with self.assertRaises(SystemExit) as ctx:
             with redirect_stderr(typo_err):
