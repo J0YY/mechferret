@@ -3349,6 +3349,34 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertEqual(rerun["next_actions"], [])
             self.assertEqual(rerun["steps"][0]["detail"], "existing scaffold ready")
 
+    def test_resolve_openvla_accepts_ready_scaffold_without_generated_index(self):
+        from mechferret.openvla_sae import init_project
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / "openvla"
+            init = init_project(project)
+            self.assertTrue(init["ok"])
+            self.assertFalse((project / "QUICKSTART.md").exists())
+
+            resolved = resolve_artifact("openvla", project_root=project)
+            self.assertTrue(resolved["exists"])
+            self.assertEqual(Path(resolved["path"]), project / "README.md")
+            self.assertEqual(resolved["reason"], "OpenVLA project scaffold")
+            self.assertEqual(resolved["next_actions"], [])
+
+            def fake_run(_command, **_kwargs):
+                return SimpleNamespace(returncode=0, stdout="ok\n", stderr="")
+
+            with patch("mechferret.ops.subprocess.run", fake_run):
+                run_quickstart("ci", out_dir=root / "runs" / "demo", db_path=root / "memory.sqlite")
+
+            index = resolve_artifact("all", runs_root=root / "runs", project_root=project)
+            self.assertTrue(index["setup_ready"])
+            self.assertTrue(index["artifact_readiness"]["setup"]["ok"])
+            self.assertEqual(index["artifact_summary"]["groups"]["setup"]["missing_artifacts"], [])
+            self.assertNotIn("quickstart --mode openvla", " ".join(index["next_actions"]))
+
     def test_memory_resume_and_cost_helpers(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -92,7 +92,8 @@ python3 -m mechferret sae openvla commands
 ```
 
 The OpenVLA quickstart writes `projects/openvla_sae/QUICKSTART.md` with the
-next manifest/cache/train commands.
+next manifest/cache/train commands. When the tracked scaffold already exists,
+`mechferret open openvla` resolves `projects/openvla_sae/README.md` directly.
 
 For arbitrary `mechferret run` questions, pass `--source`, `--url`, memory from
 a prior run, or a configured live provider. The packaged seed corpus is only

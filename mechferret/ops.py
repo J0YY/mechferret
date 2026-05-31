@@ -3220,8 +3220,9 @@ def resolve_artifact(
     if requested in {"all", "artifacts"}:
         return _artifact_index(runs_root=runs_root, project_root=project_root, selection=selection)
     if requested == "openvla":
-        path = project_root / "QUICKSTART.md"
-        return _artifact_result(requested, path, "OpenVLA quickstart index", selection=selection)
+        path = _openvla_artifact_path(project_root)
+        reason = "OpenVLA project scaffold" if path.name == "README.md" else "OpenVLA quickstart index"
+        return _artifact_result(requested, path, reason, selection=selection)
 
     selection_artifacts = {
         "quickstart": "quickstart",
@@ -3841,6 +3842,21 @@ def _run_list_entry(path: Path, *, include_audit: bool) -> dict[str, Any]:
     return entry
 
 
+def _openvla_artifact_path(project_root: Path) -> Path:
+    quickstart_path = project_root / "QUICKSTART.md"
+    if quickstart_path.exists():
+        return quickstart_path
+    try:
+        from .openvla_sae import status
+
+        scaffold_status = status(project_root=project_root)
+    except Exception:
+        return quickstart_path
+    if scaffold_status.get("ready_local") and (project_root / "README.md").exists():
+        return project_root / "README.md"
+    return quickstart_path
+
+
 def _run_artifact_flags(run_json: Path, artifacts: dict[str, Any]) -> dict[str, bool]:
     return {
         "run": True,
@@ -3967,6 +3983,9 @@ def _artifact_index(*, runs_root: str | Path, project_root: str | Path, selectio
     latest_run = _selected_run_json(runs_root, selection=selection)
     reason_prefix = "latest" if selection == "latest" else f"{selection}-selected"
     selected_run = str(latest_run) if latest_run else ""
+    openvla_path = _openvla_artifact_path(project_root)
+    openvla_reason = "OpenVLA project scaffold" if openvla_path.name == "README.md" else "OpenVLA quickstart index"
+
     def artifact(target: str, path: Path | None, reason: str) -> dict[str, Any]:
         return _artifact_result(target, path, reason, selection=selection, selected_run=selected_run)
 
@@ -3986,7 +4005,7 @@ def _artifact_index(*, runs_root: str | Path, project_root: str | Path, selectio
         "manifest": artifact("manifest", _latest_run_artifact(latest_run, "manifest", "manifest.json"), f"{reason_prefix} run manifest"),
         "pdf": artifact("pdf", _latest_run_artifact(latest_run, "pdf", "paper/main.pdf"), f"{reason_prefix} compiled paper"),
         "run": artifact("run", latest_run, f"{reason_prefix} run artifact"),
-        "openvla": artifact("openvla", project_root / "QUICKSTART.md", "OpenVLA quickstart index"),
+        "openvla": artifact("openvla", openvla_path, openvla_reason),
     }
     summary = _artifact_summary(artifacts)
     artifact_readiness = _artifact_readiness(summary)
