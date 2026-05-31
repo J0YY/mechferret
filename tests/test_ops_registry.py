@@ -1803,6 +1803,9 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertIn("mechferret paper --select ready", " ".join(ready["next_actions"]))
 
             (root / "runs" / "demo" / "QUICKSTART.md").unlink()
+            latest_quickstart = resolve_artifact("quickstart", runs_root=root / "runs", selection="latest")
+            self.assertFalse(latest_quickstart["exists"])
+            self.assertIn("fresh local quickstart dossier", " ".join(latest_quickstart["next_actions"]))
             quickstart = resolve_artifact("quickstart", runs_root=root / "runs", selection="best")
             quickstart_actions = " ".join(quickstart["next_actions"])
             self.assertFalse(quickstart["exists"])
@@ -1814,8 +1817,13 @@ class OpsRegistryTest(unittest.TestCase):
             index = resolve_artifact("all", runs_root=root / "runs", selection="best")
             index_actions = " ".join(index["next_actions"])
             self.assertFalse(index["artifacts"]["quickstart"]["exists"])
+            self.assertIn("fresh local quickstart dossier", " ".join(index["artifacts"]["quickstart"]["next_actions"]))
             self.assertIn("fresh local quickstart dossier", index_actions)
             self.assertNotIn(stale_quickstart_guidance, index_actions)
+            index_out = StringIO()
+            with redirect_stdout(index_out):
+                print_artifact_result(index)
+            self.assertIn("action: Run `mechferret quickstart --run`", index_out.getvalue())
 
     def test_verify_bundle_artifacts_supports_run_selection(self):
         with tempfile.TemporaryDirectory() as tmp:

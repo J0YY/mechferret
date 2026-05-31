@@ -3248,6 +3248,8 @@ def print_artifact_result(result: dict[str, Any]) -> None:
             marker = "found" if item["exists"] else "missing"
             path = item["path"] or "(none)"
             print(f"{marker:8} {name}: {path}")
+            if not item["exists"] and item.get("next_actions"):
+                print(f"         action: {item['next_actions'][0]}")
         if result.get("next_actions"):
             print("Next actions:")
             for action in result["next_actions"]:
@@ -3816,7 +3818,7 @@ def _artifact_result(
             next_actions.append(f"Run `mechferret bundle{select_flag}` to package the selected dossier for sharing.")
         elif target == "pdf" and selected_run:
             next_actions.append(f"Run `mechferret paper{select_flag} --compile` to create a compiled PDF.")
-        elif target == "quickstart" and not selected_run:
+        elif target == "quickstart":
             if not any("mechferret quickstart --run" in action for action in next_actions):
                 next_actions.append("Run `mechferret quickstart --run` to create a fresh local quickstart dossier.")
         elif target in {"report", "run", "markdown", "graph", "evals", "trace"} and not selected_run:
