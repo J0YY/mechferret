@@ -687,6 +687,8 @@ class OpsRegistryTest(unittest.TestCase):
                 self.assertIn("zsh", payload["script"])
                 self.assertIn("fish", payload["script"])
                 self.assertIn("install_hint", payload)
+                self.assertEqual(payload["next_actions"], [payload["install_hint"]])
+                self.assertIn(f"mechferret completion {shell}", payload["next_actions"][0])
                 if shell in {"bash", "zsh"}:
                     self.assertIn("--json", payload["script"])
                 if shell == "zsh":

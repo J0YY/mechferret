@@ -2370,6 +2370,7 @@ def _completion_payload(parser: argparse.ArgumentParser, shell: str, *, executab
         "command": executable,
         "script": script,
         "install_hint": hint,
+        "next_actions": [hint],
     }
 
 
