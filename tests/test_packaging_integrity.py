@@ -82,6 +82,8 @@ class PackagingIntegrityTest(unittest.TestCase):
         self.assertIn("python -m json.tool doctor.json > /dev/null", workflow)
         self.assertIn("python -m mechferret commands --workflow --json > workflows.json", workflow)
         self.assertIn("python -m json.tool workflows.json > /dev/null", workflow)
+        self.assertIn("python -m mechferret next --json > next.json", workflow)
+        self.assertIn("python -m json.tool next.json > /dev/null", workflow)
         self.assertIn("python -m mechferret quickstart --mode ci --json > quickstart.json", workflow)
         self.assertIn("python -m json.tool quickstart.json > /dev/null", workflow)
         self.assertIn("python -m mechferret selftest --json > selftest.json", workflow)
@@ -181,6 +183,7 @@ class PackagingIntegrityTest(unittest.TestCase):
             "docs:",
             "docs-check:",
             "workflows:",
+            "next:",
             "quickstart:",
             "selftest:",
             "support:",
@@ -188,6 +191,7 @@ class PackagingIntegrityTest(unittest.TestCase):
             "compile:",
             "doctor:",
             "workflows-json:",
+            "next-json:",
             "quickstart-json:",
             "selftest-json:",
             "support-json:",
@@ -203,6 +207,7 @@ class PackagingIntegrityTest(unittest.TestCase):
         self.assertIn("python3 -m mechferret commands --markdown --out docs/CLI.md", makefile)
         self.assertIn("python3 -m mechferret commands --examples --markdown --out docs/CLI_EXAMPLES.md", makefile)
         self.assertIn("python3 -m mechferret commands --workflow", makefile)
+        self.assertIn("python3 -m mechferret next", makefile)
         self.assertIn("tests.test_docs_integrity.DocsIntegrityTest.test_cli_reference_is_generated_from_parser", makefile)
         self.assertIn("tests.test_docs_integrity.DocsIntegrityTest.test_cli_examples_reference_is_generated_from_parser", makefile)
         self.assertIn("python3 -m mechferret quickstart --run", makefile)
@@ -212,6 +217,7 @@ class PackagingIntegrityTest(unittest.TestCase):
         self.assertIn("python3 -m compileall -q mechferret tests", makefile)
         self.assertIn("python3 -m mechferret doctor --strict", makefile)
         self.assertIn("python3 -m mechferret commands --workflow --json", makefile)
+        self.assertIn("python3 -m mechferret next --json", makefile)
         self.assertIn("python3 -m mechferret quickstart --mode ci --json", makefile)
         self.assertIn("python3 -m mechferret selftest --json", makefile)
         self.assertIn("python3 -m mechferret support --report /tmp/mechferret-support.json --json", makefile)
@@ -220,7 +226,7 @@ class PackagingIntegrityTest(unittest.TestCase):
         self.assertIn("term=$$(printf '\\144\\145\\164\\145\\162\\155\\151\\156\\151\\163\\164\\151\\143')", makefile)
         self.assertIn("TODO: ''write|TODO: ''motivate|TODO: ''describe", makefile)
         self.assertIn("structure-only local ''scaffold|local mode writes ''only", makefile)
-        self.assertIn("check: docs-check test compile doctor workflows-json quickstart-json selftest-json support-json diff-check language-scan placeholder-scan clean-bytecode", makefile)
+        self.assertIn("check: docs-check test compile doctor workflows-json next-json quickstart-json selftest-json support-json diff-check language-scan placeholder-scan clean-bytecode", makefile)
 
     def test_contributing_points_to_makefile_release_loop(self):
         contributing = Path("CONTRIBUTING.md").read_text(encoding="utf-8")

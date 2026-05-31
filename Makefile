@@ -1,11 +1,12 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help docs docs-check workflows quickstart selftest support test compile doctor workflows-json quickstart-json selftest-json support-json diff-check language-scan placeholder-scan clean-bytecode check wheel clean
+.PHONY: help docs docs-check workflows next quickstart selftest support test compile doctor workflows-json next-json quickstart-json selftest-json support-json diff-check language-scan placeholder-scan clean-bytecode check wheel clean
 
 help:
 	@printf '%s\n' 'MechFerret contributor commands:'
 	@printf '%s\n' '  make docs             Regenerate CLI reference docs'
 	@printf '%s\n' '  make workflows        List runnable workflow recipes'
+	@printf '%s\n' '  make next             Print the next recommended project actions'
 	@printf '%s\n' '  make quickstart       Create a local demo dossier'
 	@printf '%s\n' '  make selftest         Run fast local readiness checks'
 	@printf '%s\n' '  make support          Write a shareable self-test report'
@@ -23,6 +24,9 @@ docs-check:
 
 workflows:
 	python3 -m mechferret commands --workflow
+
+next:
+	python3 -m mechferret next
 
 quickstart:
 	python3 -m mechferret quickstart --run
@@ -44,6 +48,9 @@ doctor:
 
 workflows-json:
 	python3 -m mechferret commands --workflow --json | python3 -m json.tool > /dev/null
+
+next-json:
+	python3 -m mechferret next --json | python3 -m json.tool > /dev/null
 
 quickstart-json:
 	python3 -m mechferret quickstart --mode ci --json | python3 -m json.tool > /dev/null
@@ -70,7 +77,7 @@ placeholder-scan:
 clean-bytecode:
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
 
-check: docs-check test compile doctor workflows-json quickstart-json selftest-json support-json diff-check language-scan placeholder-scan clean-bytecode
+check: docs-check test compile doctor workflows-json next-json quickstart-json selftest-json support-json diff-check language-scan placeholder-scan clean-bytecode
 
 wheel:
 	python3 -m pip wheel . -w /tmp/mechferret-wheels --no-deps

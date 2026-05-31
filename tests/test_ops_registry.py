@@ -82,8 +82,8 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertIn("publish_dossier", workflow_names)
         first_run = next(workflow for workflow in payload["workflows"] if workflow["name"] == "first_run")
         self.assertEqual(
-            first_run["commands"][:4],
-            ["mechferret init", "mechferret quickstart --run", "mechferret status", "mechferret support"],
+            first_run["commands"][:5],
+            ["mechferret init", "mechferret quickstart --run", "mechferret status", "mechferret next", "mechferret support"],
         )
         names = {command["name"] for command in payload["commands"]}
         self.assertIn("run", names)
@@ -286,6 +286,7 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertIn("## Support Report", workflow_markdown)
         self.assertNotIn("## Workflows", workflow_markdown)
         self.assertIn("- `mechferret support --json`", workflow_markdown)
+        self.assertIn("- `mechferret next --json`", workflow_markdown)
 
         with tempfile.TemporaryDirectory() as tmp:
             markdown_path = Path(tmp) / "refs" / "research.md"

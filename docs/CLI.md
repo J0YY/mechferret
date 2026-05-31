@@ -9,6 +9,7 @@ Create project notes, build a local dossier, inspect status, and write a support
 - `mechferret init`
 - `mechferret quickstart --run`
 - `mechferret status`
+- `mechferret next`
 - `mechferret support`
 
 ### Publish Dossier
@@ -28,6 +29,7 @@ Collect redacted diagnostics and artifact state for issues or pull requests.
 - `mechferret support --json`
 - `mechferret doctor --strict`
 - `mechferret status --json`
+- `mechferret next --json`
 - `mechferret open all --json`
 
 ### OpenVLA SAE

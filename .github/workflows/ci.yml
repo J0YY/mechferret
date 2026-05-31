@@ -33,11 +33,13 @@ jobs:
           python -m mechferret doctor --strict
           python -m mechferret doctor --json > doctor.json
           python -m mechferret commands --workflow --json > workflows.json
+          python -m mechferret next --json > next.json
           python -m mechferret quickstart --mode ci --json > quickstart.json
           python -m mechferret selftest --json > selftest.json
           python -m mechferret support --report "$RUNNER_TEMP/support-selftest.json" --json > support.json
           python -m json.tool doctor.json > /dev/null
           python -m json.tool workflows.json > /dev/null
+          python -m json.tool next.json > /dev/null
           python -m json.tool quickstart.json > /dev/null
           python -m json.tool selftest.json > /dev/null
           python -m json.tool support.json > /dev/null
