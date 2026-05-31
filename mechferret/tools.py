@@ -25,7 +25,7 @@ RESULTS_DIR = Path(".mechferret/tool_results")
 def _truncate(text: str, limit: int = MAX_OUTPUT) -> str:
     if len(text) <= limit:
         return text
-    return text[:limit] + f"\n… [truncated {len(text) - limit} chars]"
+    return text[:limit] + "\n… [output truncated]"
 
 
 def _persist_if_large(name: str, result: str) -> str:
@@ -37,11 +37,7 @@ def _persist_if_large(name: str, result: str) -> str:
     digest = hashlib.sha256(result.encode("utf-8", "ignore")).hexdigest()[:12]
     path = RESULTS_DIR / f"{name}_{digest}.txt"
     path.write_text(result, encoding="utf-8")
-    preview = result[:MAX_OUTPUT]
-    return (
-        f"{preview}\n… [full {len(result)} chars saved to {path}; "
-        f"read_file that path for the rest]"
-    )
+    return f"{result[:MAX_OUTPUT]}\n… [full output saved to {path} — read_file it for the rest]"
 
 
 # --- coding tools -------------------------------------------------------------------
@@ -231,6 +227,36 @@ def tool_run_discovery(args: dict[str, Any]) -> str:
     })
 
 
+def tool_verify_novelty(args: dict[str, Any]) -> str:
+    from .knowledge import search_arxiv
+
+    idea = args.get("idea", "")
+    queries = args.get("queries") or ([idea] if idea else [])
+    seen: set[str] = set()
+    related = []
+    for q in queries[:3]:
+        try:
+            _, papers = search_arxiv(q, max_results=5)
+        except Exception:  # noqa: BLE001
+            papers = []
+        for p in papers:
+            if p["title"] in seen:
+                continue
+            seen.add(p["title"])
+            related.append({"title": p["title"], "url": p["url"], "published": p.get("published", "")})
+    return json.dumps({
+        "idea": idea,
+        "related_papers": related[:8],
+        "guidance": "If multiple related papers already do essentially this, novelty is LOW; "
+                    "if the specific angle is unaddressed, novelty is HIGHER. State a verdict.",
+    })
+
+
+def tool_present_options(args: dict[str, Any]) -> str:
+    # Headless fallback; the REPL intercepts this for an interactive picker.
+    return json.dumps({"options": [o.get("title", "") for o in args.get("options", [])]})
+
+
 def tool_list_skills(_args: dict[str, Any]) -> str:
     from .skills import list_skills
 
@@ -273,11 +299,21 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {"name": "web_search", "description": "Search the web (returns title + url results). Use for current information and finding sources.",
      "parameters": _obj({"query": {"type": "string"}, "max_results": {"type": "integer"}}, ["query"])},
     {"name": "web_fetch", "description": "Fetch a URL and return its readable text content.",
-     "parameters": _obj({"url": {"type": "string"}, "max_chars": {"type": "integer"}}, ["url"])},
+     "parameters": _obj({"url": {"type": "string"}}, ["url"])},
     {"name": "arxiv_search", "description": "Search arXiv for papers. sort_by: relevance | submittedDate | lastUpdatedDate. Use for literature grounding.",
      "parameters": _obj({"query": {"type": "string", "description": "arXiv query, e.g. 'cat:cs.LG AND (abs:sparse autoencoder OR abs:linear probe)'"}, "max_results": {"type": "integer"}, "sort_by": {"type": "string", "enum": ["relevance", "submittedDate", "lastUpdatedDate"]}}, ["query"])},
     {"name": "neuronpedia_search", "description": "Semantic search over SAE-feature explanations for a model on Neuronpedia (e.g. model_id 'gpt2-small').",
      "parameters": _obj({"model_id": {"type": "string"}, "query": {"type": "string"}}, ["model_id", "query"])},
+    {"name": "verify_novelty", "description": "Check whether prior papers already pursued an idea (searches arXiv). Call this for each proposed research direction before presenting it.",
+     "parameters": _obj({"idea": {"type": "string", "description": "the research idea/direction to novelty-check"}, "queries": {"type": "array", "items": {"type": "string"}, "description": "optional arXiv queries to probe for prior work"}}, ["idea"])},
+    {"name": "present_options", "description": "Present 2-5 research directions to the user as an interactive, expandable picker and return their choice. Use this instead of writing options as prose.",
+     "parameters": _obj({"options": {"type": "array", "items": {"type": "object", "properties": {
+         "title": {"type": "string"},
+         "summary": {"type": "string", "description": "one line"},
+         "detail": {"type": "string", "description": "a fuller paragraph: what the project is about"},
+         "citations": {"type": "array", "items": {"type": "string"}, "description": "key paper titles/URLs"},
+         "novelty": {"type": "string", "description": "novelty verdict from verify_novelty"},
+     }, "required": ["title", "summary"]}}}, ["options"])},
     {"name": "run_discovery", "description": "Run the autonomous interpretability discovery loop to find/confirm mechanisms (heads/circuits) for a behaviour.",
      "parameters": _obj({"question": {"type": "string"}, "skill": {"type": "string", "enum": ["ioi-circuit", "find-induction-heads", "logit-lens-sweep", "factual-recall-trace"]}, "task": {"type": "string", "enum": ["ioi", "induction", "greater_than", "factual_recall"]}, "model": {"type": "string"}}, [])},
     {"name": "list_skills", "description": "List available interpretability playbooks/skills.", "parameters": _obj({}, [])},
@@ -296,6 +332,8 @@ HANDLERS: dict[str, Callable[[dict[str, Any]], str]] = {
     "web_fetch": tool_web_fetch,
     "arxiv_search": tool_arxiv_search,
     "neuronpedia_search": tool_neuronpedia_search,
+    "verify_novelty": tool_verify_novelty,
+    "present_options": tool_present_options,
     "run_discovery": tool_run_discovery,
     "list_skills": tool_list_skills,
     "environment_status": tool_environment_status,
@@ -314,6 +352,8 @@ META: dict[str, dict[str, Any]] = {
     "web_fetch": {"read_only": True, "permission": "network"},
     "arxiv_search": {"read_only": True, "permission": "network"},
     "neuronpedia_search": {"read_only": True, "permission": "network"},
+    "verify_novelty": {"read_only": True, "permission": "network"},
+    "present_options": {"read_only": False, "permission": "local"},
     "run_discovery": {"read_only": False, "permission": "gpu"},
     "list_skills": {"read_only": True, "permission": "local"},
     "environment_status": {"read_only": True, "permission": "local"},

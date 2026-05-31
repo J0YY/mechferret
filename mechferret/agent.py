@@ -30,15 +30,26 @@ BASE_SYSTEM_PROMPT = """You are MechFerret, an agentic coding assistant speciali
 
 You have real tools: run shell commands (bash), read/write/edit files, glob and
 grep the codebase, search the web, fetch URLs, search arXiv, query Neuronpedia
-for SAE features, run the interpretability discovery loop, and list skills. Use
-them — don't guess. When the user wants to investigate a model's internals, plan
-a paper, or run experiments, gather evidence with the search tools, then write
-and run real code (TransformerLens / SAELens / nnsight) with bash, reading
-results back. Prefer concrete action over speculation.
+for SAE features, verify the novelty of an idea, present interactive options, run
+the interpretability discovery loop, and list skills. Use them — don't guess.
+When the user wants to investigate a model's internals, plan a paper, or run
+experiments, gather evidence with the search tools, then write and run real code
+(TransformerLens / SAELens / nnsight) with bash, reading results back.
 
-Be precise about experimental rigor: controls, multiple seeds, reproducibility,
-and triangulation across independent probes before claiming a mechanism. Keep
-replies concise; cite files and paper URLs you actually read."""
+Workflow when the user wants to plan research:
+1. Gather evidence with retrieval tools (arxiv_search, web_search, web_fetch).
+2. For each candidate direction, call verify_novelty to check whether prior
+   papers already did it; fold the verdict into the proposal.
+3. Call present_options with 2-5 concrete directions (each with a one-line
+   summary, a fuller detail paragraph, key citations, and the novelty verdict)
+   so the user can browse and pick. Do NOT write the options out as prose.
+
+OUTPUT RULES (important):
+- Plain text only. No markdown: no #, *, **, backticks, tables, or '-' bullets.
+- Be concise. A few short paragraphs, not an essay. Lead with the answer.
+- Cite paper URLs and file paths you actually read, inline.
+- Be precise about rigor: controls, multiple seeds, reproducibility, and
+  triangulation across independent probes before claiming a mechanism."""
 
 MAX_TOOL_STEPS = 12
 MAX_TOKENS = int(os.getenv("MECHFERRET_MAX_TOKENS", "4096"))
@@ -129,6 +140,7 @@ class Agent:
         self.on_tool = on_tool or (lambda name, args: None)
         self.on_text: Callable[[str], None] = lambda text: None  # incremental assistant text
         self.confirm: Callable[[str, dict, str], bool] | None = None
+        self.on_options: Callable[[list], str] | None = None  # interactive option picker
         self.permission_mode = "auto"  # auto | plan
         self.messages: list[dict[str, Any]] = []  # provider-native message history
         self.cost = CostTracker()
@@ -206,7 +218,7 @@ class Agent:
             return "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text").strip()
         data = _http_post(
             "https://api.openai.com/v1/chat/completions",
-            {"model": self.model, "messages": [{"role": "system", "content": COMPACT_SYSTEM}, {"role": "user", "content": convo}]},
+            {"model": self.model, "messages": [{"role": "system", "content": COMPACT_SYSTEM}, {"role": "user", "content": convo}], "max_completion_tokens": 1024},
             {"authorization": f"Bearer {self._key}", "content-type": "application/json"},
         )
         return (data["choices"][0]["message"].get("content") or "").strip()
@@ -251,6 +263,14 @@ class Agent:
 
     def _dispatch(self, name: str, args: dict) -> str:
         """Permission-gate a tool call, then run it."""
+
+        if name == "present_options":
+            options = args.get("options", []) or []
+            self.on_tool(name, args)
+            if self.on_options:
+                choice = self.on_options(options)
+                return json.dumps({"user_selected": choice})
+            return _run_tool(name, args)  # headless fallback
 
         meta = tool_meta(name)
         decision = permissions.decide(
@@ -325,7 +345,8 @@ class Agent:
         ]
         final_text: list[str] = []
         for _ in range(MAX_TOOL_STEPS):
-            payload = {"model": self.model, "messages": self.messages, "tools": tools, "tool_choice": "auto", "max_tokens": MAX_TOKENS}
+            # Newer OpenAI models renamed max_tokens -> max_completion_tokens.
+            payload = {"model": self.model, "messages": self.messages, "tools": tools, "tool_choice": "auto", "max_completion_tokens": MAX_TOKENS}
             data = _http_post(
                 "https://api.openai.com/v1/chat/completions",
                 payload,
@@ -392,6 +413,10 @@ def _http_post(url: str, payload: dict, headers: dict) -> dict:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(f"provider HTTP {exc.code}: {detail[:300]}") from exc
+        try:
+            message = json.loads(detail).get("error", {}).get("message", "") or detail
+        except (json.JSONDecodeError, AttributeError):
+            message = detail
+        raise RuntimeError(f"provider {exc.code}: {message.strip()[:200]}") from exc
     except (urllib.error.URLError, TimeoutError) as exc:
         raise RuntimeError(f"network error calling provider: {exc}") from exc

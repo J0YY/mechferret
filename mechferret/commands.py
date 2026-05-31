@@ -21,6 +21,7 @@ REPL_COMMANDS = [
     Command("<your prompt>", "talk to the model; it runs tools/experiments when you ask"),
     Command("/login", "connect or change your model API key"),
     Command("/model <name>", "set the conversation model"),
+    Command("/goal <text>", "set the research objective shown in the sticky line"),
     Command("/plan", "toggle plan mode (approve write/exec/GPU tools)"),
     Command("/cost", "show session token + USD usage"),
     Command("/compact", "summarise older turns to free context"),
@@ -36,11 +37,12 @@ REPL_COMMANDS = [
     Command("/cluster <action>", "status | setup | run  (your own SLURM cluster)"),
     Command("/doctor /registry", "environment and capabilities"),
     Command("/open", "open the last run's HTML dossier"),
-    Command("/clear  /exit", "redraw welcome · quit"),
+    Command("/clear", "redraw the welcome screen"),
+    Command("ctrl-c / /exit", "quit"),
 ]
 
 # Bare command words the REPL handles in-process (not shelled to the CLI parser).
 REPL_HANDLED = {
     "exit", "quit", "q", "help", "clear", "open", "login", "connect", "model",
-    "plan", "cost", "compact", "resume", "memory", "export", "init", "review", "mcp",
+    "goal", "plan", "cost", "compact", "resume", "memory", "export", "init", "review", "mcp",
 }

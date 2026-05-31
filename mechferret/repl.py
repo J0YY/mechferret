@@ -43,12 +43,11 @@ KNOWN_COMMANDS = {
 
 HISTORY_FILE = Path.home() / ".mechferret" / "repl_history"
 
-# Small, cute ferret — width-stable ASCII so the box stays aligned.
+# Small, cute ferret — equal-width lines so it centers as one aligned block.
 FERRET = [
-    "  ___",
-    " (o.o)__",
-    "  >.<   )",
-    '  (")_(")',
+    " /\\_/\\ ",
+    "( o.o )",
+    " > ^ < ",
 ]
 
 
@@ -57,26 +56,36 @@ class Session:
         self.out_root = Path("runs")
         self.last_report: str | None = None
         self.run_count = 0
+        self.goal = ""
+        self.step = ""
 
 
 # --- welcome screen ------------------------------------------------------------------
 
 def _two_column_box(left: list[str], right: list[str]) -> str:
-    left_w = 38
-    right_w = WIDTH - left_w - 5  # borders + separator
+    """A snug, content-sized box; every cell centered in its column."""
+
+    lw = max((_vlen(x) for x in left), default=0)
+    rw = max((_vlen(x) for x in right), default=0)
     rows = max(len(left), len(right))
-    left += [""] * (rows - len(left))
-    right += [""] * (rows - len(right))
+
+    def vcenter(col: list[str]) -> list[str]:
+        gap = rows - len(col)
+        top = gap // 2
+        return [""] * top + list(col) + [""] * (gap - top)
+
+    def cell(s: str, w: int) -> str:
+        pad = w - _vlen(s)
+        a = pad // 2
+        return " " * a + s + " " * (pad - a)
+
+    L, R = vcenter(left), vcenter(right)
+    body = [f"│ {cell(l, lw)} │ {cell(r, rw)} │" for l, r in zip(L, R)]
+    inner = _vlen(body[0]) - 2  # chars between the two border columns
     title = _c(f" MechFerret v{VERSION} ", PURPLE_B)
-    top = "╭─── " + title + "─" * (WIDTH - _vlen(title) - 6) + "╮"
-    bottom = "╰" + "─" * (WIDTH - 2) + "╯"
-    lines = [top]
-    for l, r in zip(left, right):
-        lpad = l + " " * max(0, left_w - _vlen(l))
-        rpad = r + " " * max(0, right_w - _vlen(r))
-        lines.append("│ " + lpad + " │ " + rpad + " │")
-    lines.append(bottom)
-    return "\n".join(lines)
+    top = "╭─" + title + "─" * max(0, inner - _vlen(title) - 1) + "╮"
+    bottom = "╰" + "─" * inner + "╯"
+    return "\n".join([top, *body, bottom])
 
 
 def _welcome(session: Session) -> str:
@@ -85,35 +94,29 @@ def _welcome(session: Session) -> str:
     provider, model, _key = active_provider()
     user = os.getenv("USER") or "there"
     cwd = str(Path.cwd()).replace(str(Path.home()), "~")
-    status = (
-        _c(model, PURPLE) if provider
-        else _c("no model connected", "33") + _c(" · /login", "2")
-    )
+    status = _c(model, PURPLE) if provider else _c("no model · /login", "33")
 
     left = [
-        "",
         _c(f"Welcome back {user.capitalize()}!", "1"),
-        "",
+        *[_c(line, PURPLE) for line in FERRET],
+        _c("mechferret", PURPLE_B),
+        status,
+        _c(cwd, "2"),
     ]
-    left += [_c(line, PURPLE) for line in FERRET]
-    left += [_c("mechferret", PURPLE_B), "", status, _c(cwd, "2")]
-
     right = [
         _c("About", "1"),
-        _c("agentic interpretability", "2"),
-        _c("research CLI", "2"),
+        _c("agentic interp research agent", "2"),
         "",
         _c("Help", "1"),
-        _c("<prompt>   chat + run work", "2"),
-        _c("/login     connect a model", "2"),
-        _c("/model     pick the model", "2"),
-        _c("/help      all commands", "2"),
-        _c("/exit      quit", "2"),
+        _c("/login   connect a model", "2"),
+        _c("/model   pick the model", "2"),
+        _c("/help    all commands", "2"),
+        _c("ctrl-c   quit", "2"),
     ]
     return _two_column_box(left, right)
 
 
-def _print_status_and_bar(agent) -> None:
+def _print_status_and_bar(agent, session) -> None:
     mode = getattr(agent, "permission_mode", "auto")
     bits = [_c(agent.model, PURPLE) if agent.configured else _c("no model · /login", "33")]
     if agent.configured and agent.cost.usd:
@@ -121,6 +124,37 @@ def _print_status_and_bar(agent) -> None:
     bits.append(_c(f"mode:{mode}" + (" ⏸" if mode == "plan" else ""), "33" if mode == "plan" else "2"))
     print(_c("─" * WIDTH, "2"))
     print("  " + _c(" · ", "2").join(bits))
+    # sticky tl;dr line: research goal + current step
+    tldr = []
+    if session.goal:
+        tldr.append(_c(f"🎯 {session.goal}", PURPLE))
+    tldr.append(_c(f"◴ {session.step or 'ready — type a prompt, or /goal to set an objective'}", "2"))
+    print("  " + _c(" · ", "2").join(tldr))
+
+
+def _ferret_walk() -> None:
+    """A tiny ferret scampers across the screen before the welcome box appears."""
+
+    if not _COLOR:
+        return
+    import time
+
+    n = len(FERRET)
+    span = max(8, WIDTH - 14)
+    sys.stdout.write("\n" * n)  # reserve n lines
+    for step in range(span // 2 + 1):
+        x = step * 2
+        sys.stdout.write(f"\x1b[{n}A")  # cursor up to top of the reserved block
+        for i, line in enumerate(FERRET):
+            bob = 1 if (step + i) % 2 == 0 else 0  # little gait wiggle
+            sys.stdout.write("\r\x1b[2K" + _c(" " * (x + bob) + line, PURPLE) + "\n")
+        sys.stdout.flush()
+        time.sleep(0.03)
+    sys.stdout.write(f"\x1b[{n}A")  # clear the walk and reset cursor for the box
+    for _ in range(n):
+        sys.stdout.write("\r\x1b[2K\n")
+    sys.stdout.write(f"\x1b[{n}A")
+    sys.stdout.flush()
 
 
 # --- history -------------------------------------------------------------------------
@@ -199,19 +233,18 @@ def run_repl() -> None:
     session = Session()
     agent = Agent()
     _setup_history()
+    _ferret_walk()
     print(_welcome(session))
     print()
 
     while True:
-        _print_status_and_bar(agent)
+        _print_status_and_bar(agent, session)
         try:
             line = input(_c("❯ ", "1;36")).strip()
-        except EOFError:
+        except (EOFError, KeyboardInterrupt):
+            # Ctrl-C / Ctrl-D at the prompt quits.
             print()
             break
-        except KeyboardInterrupt:
-            print(_c("  (Ctrl-D or /exit to quit)", "2"))
-            continue
         if not line:
             continue
 
@@ -245,6 +278,15 @@ def run_repl() -> None:
             agent.permission_mode = "auto" if agent.permission_mode == "plan" else "plan"
             on = agent.permission_mode == "plan"
             print(_c(f"  plan mode {'ON — write/exec/GPU tools will ask before running' if on else 'OFF'}", "33"))
+            continue
+        if bare == "goal":
+            if len(tokens) > 1:
+                session.goal = " ".join(tokens[1:])
+                print(_c(f"  🎯 goal set: {session.goal}", PURPLE))
+            elif session.goal:
+                print(_c(f"  🎯 current goal: {session.goal}", PURPLE))
+            else:
+                print(_c("  usage: /goal <your research objective>", "33"))
             continue
         if bare == "cost" and len(tokens) == 1:
             print(_c(f"  session: {agent.cost.format_total()}  ·  model {agent.model}  ·  denied tools: {len(agent.denials)}", "2"))
@@ -281,7 +323,7 @@ def run_repl() -> None:
             if not diff.strip():
                 print(_c("  no uncommitted changes to review", "33"))
                 continue
-            _chat(agent, (
+            _chat(agent, session, (
                 "Review this git diff for an interpretability-research codebase. Flag correctness bugs, "
                 "missing experimental controls or seed logging, data leakage into activations/probes, "
                 "and reproducibility issues. Be specific with file:line.\n\n" + diff[:40000]
@@ -293,13 +335,13 @@ def run_repl() -> None:
             continue
 
         # Plain text => talk to the model.
-        _chat(agent, line)
+        _chat(agent, session, line)
 
     _save_history()
     print(_c("bye 👋", "2"))
 
 
-def _chat(agent, text: str) -> None:
+def _chat(agent, session, text: str) -> None:
     from .spinner import Spinner
 
     if not agent.configured:
@@ -308,7 +350,13 @@ def _chat(agent, text: str) -> None:
             return
         agent.reload()
     spinner = Spinner()
-    agent.on_tool = lambda name, args: spinner.log(_tool_line(name, args))
+    session.step = "thinking…"
+
+    def _on_tool(name, args):
+        session.step = f"running {name}"
+        spinner.log(_tool_line(name, args))
+
+    agent.on_tool = _on_tool
 
     def _confirm(name, args, reason):
         from .picker import select
@@ -321,29 +369,43 @@ def _chat(agent, text: str) -> None:
                 return False
 
     agent.confirm = _confirm
+
+    def _on_options(options):
+        from .picker import select_rich
+
+        with spinner.pause():
+            choice = select_rich(_c("  Pick a direction  (↑/↓ move · → expand · enter select · esc skip)", "1"), options)
+        spinner.log(_c(f"  ✓ selected: {choice}", "32") if choice != "none" else _c("  (skipped)", "2"))
+        return choice
+
+    agent.on_options = _on_options
     streamed = {"any": False}
 
     def _emit(block: str):
         streamed["any"] = True
-        spinner.log("\n" + _indent(block.strip()) + "\n")
+        spinner.log("\n" + _render_reply(block) + "\n")
 
     agent.on_text = _emit
     try:
         with spinner:
             reply = agent.send(text)
     except KeyboardInterrupt:
-        print(_c("  (interrupted)", "2"))
+        session.step = "interrupted"
+        print(_c("  (interrupted — Ctrl-C again at the prompt to quit)", "2"))
         return
     except Exception as exc:  # noqa: BLE001
+        session.step = "error"
         print(_c(f"  error: {exc}", "31"))
         if "401" in str(exc) or "authentication" in str(exc).lower():
             print(_c("  Your API key may be invalid — reconnect with /login.", "33"))
         return
     if not streamed["any"] and reply:
         print()
-        print(_indent(reply))
+        print(_render_reply(reply))
     print(_c(f"  ({agent.cost.format_total()})", "2"))
     print()
+    first_line = next((ln for ln in (reply or "").strip().splitlines() if ln.strip()), "")
+    session.step = (first_line[:60] + "…") if len(first_line) > 60 else (first_line or "ready")
 
 
 def _resume(agent, args: list[str]) -> None:
@@ -449,13 +511,70 @@ def _show_memory() -> None:
         print(_c(f"      {r['model']} · effect {r['effect_size']:.2f} · repro {r['reproducibility']:.2f} · novelty {r['novelty']:.2f}", "2"))
 
 
+# Technical-sounding labels shown in the chain of thought (model still calls the real names).
+_TOOL_DISPLAY = {
+    "bash": "shell.exec",
+    "read_file": "fs.read",
+    "write_file": "fs.write",
+    "edit_file": "fs.patch",
+    "list_dir": "fs.list",
+    "glob": "fs.glob",
+    "grep": "code.search",
+    "web_search": "retrieval.web",
+    "web_fetch": "retrieval.fetch",
+    "arxiv_search": "retrieval.arxiv",
+    "neuronpedia_search": "neuronpedia.query",
+    "verify_novelty": "novelty.verify",
+    "present_options": "options.present",
+    "run_discovery": "interp.discover",
+    "list_skills": "skills.list",
+    "environment_status": "env.status",
+}
+
+
+def _display_name(name: str) -> str:
+    if name.startswith("mcp__"):
+        return "mcp." + name[len("mcp__"):].replace("__", ".")
+    return _TOOL_DISPLAY.get(name, name)
+
+
 def _tool_line(name: str, args: dict) -> str:
     detail = ", ".join(f"{k}={str(v)[:40]}" for k, v in args.items() if v) or ""
-    return _c(f"  → {name}({detail})", "2")
+    return _c(f"  → {_display_name(name)}({detail})", "2")
 
 
 def _indent(text: str) -> str:
     return "\n".join("  " + line for line in (text or "").splitlines())
+
+
+def _strip_markdown(text: str) -> str:
+    """Flatten any markdown the model emits to clean plain text."""
+
+    import re
+
+    out = []
+    for line in (text or "").splitlines():
+        s = line
+        if re.match(r"^\s*([-=*_]\s*){3,}$", s):  # horizontal rules / table separators
+            continue
+        s = re.sub(r"^\s{0,3}#{1,6}\s*", "", s)  # headings
+        s = s.replace("```", "")
+        s = re.sub(r"\*\*(.+?)\*\*", r"\1", s)  # bold
+        s = re.sub(r"__(.+?)__", r"\1", s)
+        s = re.sub(r"`([^`]+)`", r"\1", s)  # inline code
+        s = re.sub(r"(?<![*\w])\*(?!\s)(.+?)(?<!\s)\*(?![*\w])", r"\1", s)  # italics
+        if re.match(r"^\s*\|.*\|\s*$", s):  # table row -> spaced cells (skip separator rows)
+            cells = [c.strip() for c in s.strip().strip("|").split("|")]
+            if all(re.match(r"^:?-{2,}:?$", c) for c in cells):
+                continue
+            s = "   ".join(cells)
+        s = re.sub(r"^(\s*)[-*+]\s+", r"\1• ", s)  # bullets -> •
+        out.append(s)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+
+
+def _render_reply(text: str) -> str:
+    return _indent(_strip_markdown(text))
 
 
 def _set_model(agent, args: list[str]) -> None:

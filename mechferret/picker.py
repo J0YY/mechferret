@@ -30,6 +30,138 @@ def select(prompt: str, options: Sequence, multi: bool = False):
     return _select_tty(prompt, options, multi)
 
 
+def select_rich(prompt: str, options: list[dict]):
+    """Expandable option picker. options: [{title, summary, detail, citations, novelty}].
+
+    Returns the chosen title, or "none" if cancelled. Up/Down move, Right/Tab/d
+    expands detail for the highlighted option, Enter selects, Esc/q skips.
+    """
+
+    options = list(options)
+    if not options:
+        return "none"
+    interactive = sys.stdin.isatty() and sys.stdout.isatty()
+    if interactive:
+        try:
+            import termios  # noqa: F401
+            import tty  # noqa: F401
+        except ImportError:
+            interactive = False
+    if not interactive:
+        return _select_rich_fallback(prompt, options)
+    return _select_rich_tty(prompt, options)
+
+
+def _wrap(text: str, width: int = 72) -> list[str]:
+    import textwrap
+
+    lines: list[str] = []
+    for para in (text or "").splitlines() or [""]:
+        lines.extend(textwrap.wrap(para, width) or [""])
+    return lines
+
+
+def _select_rich_fallback(prompt, options):
+    out = sys.stderr
+    if prompt:
+        out.write(prompt + "\n")
+    for i, o in enumerate(options, 1):
+        out.write(f"  {i}. {o.get('title', '')} — {o.get('summary', '')}\n")
+        if o.get("novelty"):
+            out.write(f"      novelty: {o['novelty']}\n")
+    out.write("Enter number to select (blank to skip): ")
+    out.flush()
+    line = sys.stdin.readline()
+    if not line.strip():
+        return "none"
+    try:
+        idx = int(line.strip()) - 1
+    except ValueError:
+        return "none"
+    return options[idx]["title"] if 0 <= idx < len(options) else "none"
+
+
+def _select_rich_tty(prompt, options):
+    import termios
+    import tty
+
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    write, flush = sys.stdout.write, sys.stdout.flush
+    cursor = 0
+    expanded = False
+    prev_lines = 0
+
+    def build() -> list[str]:
+        rows: list[str] = []
+        for i, o in enumerate(options):
+            mark = "❯ " if i == cursor else "  "
+            head = f"{mark}{o.get('title', '')}  —  {o.get('summary', '')}"
+            rows.append("\x1b[7m" + head + "\x1b[0m" if i == cursor else head)
+            if i == cursor and expanded:
+                for dl in _wrap(o.get("detail") or o.get("summary", "")):
+                    rows.append("      " + dl)
+                if o.get("novelty"):
+                    rows.append("      novelty: " + str(o["novelty"]))
+                cites = o.get("citations") or []
+                if cites:
+                    rows.append("      cite: " + "; ".join(str(c) for c in cites[:4]))
+        rows.append("\x1b[2m  ↑/↓ move · → expand · enter select · esc skip\x1b[0m")
+        return rows
+
+    def render(first: bool):
+        nonlocal prev_lines
+        if not first:
+            write(f"\x1b[{prev_lines}A")
+        rows = build()
+        for r in rows:
+            write("\r\x1b[2K" + r + "\n")
+        # clear any leftover lines from a taller previous render
+        for _ in range(max(0, prev_lines - len(rows))):
+            write("\r\x1b[2K\n")
+        if prev_lines > len(rows):
+            write(f"\x1b[{prev_lines - len(rows)}A")
+        prev_lines = len(rows)
+        flush()
+
+    def read_key():
+        ch = sys.stdin.read(1)
+        if ch == "\x1b":
+            seq = sys.stdin.read(2)
+            return {"[A": "up", "[B": "down", "[C": "right", "[D": "left"}.get(seq, "esc")
+        return ch
+
+    write("\x1b[?25l")
+    flush()
+    if prompt:
+        write(prompt + "\n")
+        flush()
+    try:
+        tty.setcbreak(fd)
+        render(first=True)
+        while True:
+            key = read_key()
+            if key in ("up", "k"):
+                cursor = (cursor - 1) % len(options)
+                expanded = False
+                render(False)
+            elif key in ("down", "j"):
+                cursor = (cursor + 1) % len(options)
+                expanded = False
+                render(False)
+            elif key in ("right", "d", " ", "\t", "left"):
+                expanded = not expanded
+                render(False)
+            elif key in ("\r", "\n"):
+                return options[cursor].get("title", "none")
+            elif key in ("esc", "q", "\x03"):
+                return "none"
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        write("\x1b[?25h")
+        flush()
+
+
 def _select_fallback(prompt, options, multi):
     out = sys.stderr
     if prompt:
