@@ -3327,6 +3327,8 @@ def print_artifact_result(result: dict[str, Any]) -> None:
         print(f"Artifacts: {'found' if result['exists'] else 'missing'}")
         print(f"Target: {result['target']}")
         print(f"Reason: {result['reason']}")
+        if result.get("selected_run"):
+            print(f"Selected run: {result['selected_run']}")
         print(
             "Summary: "
             f"{summary['found']}/{summary['total']} found; "
@@ -3362,6 +3364,12 @@ def print_artifact_result(result: dict[str, Any]) -> None:
     print(f"Target: {result['target']}")
     print(f"Path: {result['path']}")
     print(f"Reason: {result['reason']}")
+    if result.get("scope"):
+        print(f"Scope: {result['scope']}")
+    if result.get("selection"):
+        print(f"Selection: {result['selection']}")
+    if result.get("selected_run"):
+        print(f"Selected run: {result['selected_run']}")
     if result.get("next_actions"):
         print("Next actions:")
         for action in result["next_actions"]:

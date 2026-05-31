@@ -1813,6 +1813,13 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertEqual(selected_best["selection"], "best")
             self.assertEqual(selected_best["scope"], "run")
             self.assertEqual(Path(selected_best["selected_run"]), good)
+            selected_best_out = StringIO()
+            with redirect_stdout(selected_best_out):
+                print_artifact_result(selected_best)
+            selected_best_text = selected_best_out.getvalue()
+            self.assertIn("Scope: run", selected_best_text)
+            self.assertIn("Selection: best", selected_best_text)
+            self.assertIn("Selected run:", selected_best_text)
             stray_ci = root / "runs" / "stray" / "CI_QUICKSTART.md"
             stray_ci.parent.mkdir()
             stray_ci.write_text("# stale CI summary\n", encoding="utf-8")
@@ -3301,6 +3308,7 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertIn("Complete: no", out.getvalue())
             self.assertIn("discovery 2/2", out.getvalue())
             self.assertIn("openvla [workspace]:", out.getvalue())
+            self.assertIn("Selected run:", out.getvalue())
 
     def test_run_quickstart_ci_executes_release_gates_with_summary(self):
         with tempfile.TemporaryDirectory() as tmp:
