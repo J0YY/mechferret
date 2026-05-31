@@ -1670,7 +1670,8 @@ class OpsRegistryTest(unittest.TestCase):
                 print_run_list(result)
             rendered = out.getvalue()
             self.assertIn("[selected: best]", rendered)
-            self.assertIn("lanes: run=READY share=BLOCKED setup=BLOCKED", rendered)
+            self.assertIn("lanes: run=READY share=BLOCKED", rendered)
+            self.assertNotIn("setup=BLOCKED", rendered)
             self.assertIn("Line one Line two with enough context", rendered)
             self.assertNotIn("\n\nLine two", rendered)
 
@@ -1823,6 +1824,9 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertEqual(Path(status["latest_run"]["path"]), good)
             self.assertEqual(status["state"], "ready")
             self.assertTrue((root / "MECHFERRET.md").exists())
+            self.assertTrue(status["readiness"]["setup"]["ok"])
+            self.assertTrue(status["artifact_readiness"]["setup"]["ok"])
+            self.assertNotIn("quickstart --mode ci --run", " ".join(status["next_actions"]))
 
     def test_resolve_artifact_keeps_selection_guidance_when_no_run_has_artifact(self):
         with tempfile.TemporaryDirectory() as tmp:

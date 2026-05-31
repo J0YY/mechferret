@@ -1203,8 +1203,7 @@ def print_run_list(result: dict[str, Any]) -> None:
             print(
                 "   lanes: "
                 f"run={'READY' if _mapping(lanes.get('run')).get('ok') else 'BLOCKED'} "
-                f"share={'READY' if _mapping(lanes.get('sharing')).get('ok') else 'BLOCKED'} "
-                f"setup={'READY' if _mapping(lanes.get('setup')).get('ok') else 'BLOCKED'}"
+                f"share={'READY' if _mapping(lanes.get('sharing')).get('ok') else 'BLOCKED'}"
             )
         print(f"   {row['run_id']}  {row['path']}")
         print(f"   {_line_preview(row.get('question'))}")
@@ -3985,13 +3984,21 @@ def _artifact_index(*, runs_root: str | Path, project_root: str | Path, selectio
     selected_run = str(latest_run) if latest_run else ""
     openvla_path = _openvla_artifact_path(project_root)
     openvla_reason = "OpenVLA project scaffold" if openvla_path.name == "README.md" else "OpenVLA quickstart index"
+    quickstart_path = _latest_quickstart_index(runs_root, latest_run, allow_global_fallback=True)
+    ci_path = _latest_ci_quickstart_index(runs_root, latest_run, allow_global_fallback=True)
+    quickstart_reason = f"{reason_prefix} quickstart index"
+    if quickstart_path is not None and latest_run is not None and quickstart_path.parent != latest_run.parent:
+        quickstart_reason = "workspace quickstart index"
+    ci_reason = f"{reason_prefix} CI quickstart index"
+    if ci_path is not None and latest_run is not None and ci_path.parent != latest_run.parent:
+        ci_reason = "workspace CI quickstart index"
 
     def artifact(target: str, path: Path | None, reason: str) -> dict[str, Any]:
         return _artifact_result(target, path, reason, selection=selection, selected_run=selected_run)
 
     artifacts = {
-        "quickstart": artifact("quickstart", _latest_quickstart_index(runs_root, latest_run, allow_global_fallback=selection == "latest"), f"{reason_prefix} quickstart index"),
-        "ci": artifact("ci", _latest_ci_quickstart_index(runs_root, latest_run, allow_global_fallback=selection == "latest"), f"{reason_prefix} CI quickstart index"),
+        "quickstart": artifact("quickstart", quickstart_path, quickstart_reason),
+        "ci": artifact("ci", ci_path, ci_reason),
         "report": artifact("report", _latest_report(latest_run), f"{reason_prefix} HTML report"),
         "markdown": artifact("markdown", _latest_run_artifact(latest_run, "markdown", "report.md"), f"{reason_prefix} Markdown report"),
         "graph": artifact("graph", _latest_run_artifact(latest_run, "graph", "graph.json"), f"{reason_prefix} evidence graph"),
