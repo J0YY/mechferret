@@ -169,6 +169,15 @@ class OpsRegistryTest(unittest.TestCase):
         group_names = {command["name"] for command in group_payload["commands"]}
         self.assertIn("bundle", group_names)
         self.assertNotIn("run", group_names)
+        self.assertIn("mechferret open report --select best", " ".join(group_payload["next_actions"]))
+        self.assertIn("mechferret cost --select best --json", " ".join(group_payload["next_actions"]))
+
+        compute_group_json_out = StringIO()
+        with redirect_stdout(compute_group_json_out):
+            main(["commands", "--group", "compute", "--json"])
+        compute_group_payload = json.loads(compute_group_json_out.getvalue())
+        self.assertIn("mechferret modal status --json", " ".join(compute_group_payload["next_actions"]))
+        self.assertIn("mechferret cluster run --skill ioi-circuit --dry-run --json", " ".join(compute_group_payload["next_actions"]))
 
         search_out = StringIO()
         with redirect_stdout(search_out):

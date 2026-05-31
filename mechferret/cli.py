@@ -1349,7 +1349,7 @@ def _command_index_payload(
             if next_actions:
                 payload["next_actions"] = next_actions
         return payload
-    return {
+    payload = {
         "ok": True,
         "name": "mechferret",
         "version": __version__,
@@ -1358,6 +1358,11 @@ def _command_index_payload(
         "workflows": _command_workflows_payload() if not group else [],
         "commands": commands,
     }
+    if group:
+        next_actions = _command_next_actions(commands)
+        if next_actions:
+            payload["next_actions"] = next_actions
+    return payload
 
 
 def _exit_on_unknown_command(parser: argparse.ArgumentParser, argv: list[str]) -> None:
