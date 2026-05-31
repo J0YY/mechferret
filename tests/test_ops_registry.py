@@ -1468,6 +1468,10 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertEqual(payload["state"], "needs_setup")
             self.assertFalse(payload["run_ready"])
             self.assertFalse(payload["share_ready"])
+            self.assertEqual(payload["actions"], [item["action"] for item in payload["action_plan"]])
+            self.assertEqual(payload["action_plan"][0]["category"], "required")
+            self.assertTrue(payload["action_plan"][0]["required"])
+            self.assertIn("reason", payload["action_plan"][0])
             self.assertIn("mechferret init", " ".join(payload["actions"]))
             self.assertIn("mechferret quickstart --run", " ".join(payload["actions"]))
 
@@ -1502,6 +1506,9 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertEqual(payload["run_selection"], "best")
             self.assertTrue(payload["selected_run"]["exists"])
             self.assertEqual(len(payload["actions"]), 2)
+            self.assertEqual(len(payload["action_plan"]), 2)
+            self.assertEqual(payload["actions"], [item["action"] for item in payload["action_plan"]])
+            self.assertTrue(all(item["reason"] for item in payload["action_plan"]))
             self.assertTrue(any("review-paper --select best" in action for action in payload["actions"]))
 
             text_out = StringIO()
@@ -1527,6 +1534,7 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertIn("Project state:", rendered)
             self.assertIn("Run readiness: READY", rendered)
             self.assertIn("Next actions:", rendered)
+            self.assertIn("reason:", rendered)
 
     def test_list_run_artifacts_orders_recent_runs_and_reports_status(self):
         with tempfile.TemporaryDirectory() as tmp:

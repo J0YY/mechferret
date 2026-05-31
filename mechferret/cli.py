@@ -1737,7 +1737,13 @@ def _next_payload(status: dict[str, Any], *, limit: int = 5) -> dict[str, Any]:
     required = [str(action) for action in status.get("next_actions", []) if str(action).strip()]
     suggested = [str(action) for action in status.get("suggested_next_actions", []) if str(action).strip()]
     advisory = [str(action) for action in status.get("advisory_actions", []) if str(action).strip()]
-    actions = _dedupe_text_actions([*required, *suggested, *advisory])[:limit]
+    action_plan = _next_action_plan(
+        required=required,
+        suggested=suggested,
+        advisory=advisory,
+        status=status,
+        limit=limit,
+    )
     return {
         "ok": True,
         "command": "next",
@@ -1750,7 +1756,8 @@ def _next_payload(status: dict[str, Any], *, limit: int = 5) -> dict[str, Any]:
             "path": (status.get("selected_run") or {}).get("path", ""),
             "exists": bool((status.get("selected_run") or {}).get("exists")),
         },
-        "actions": actions,
+        "actions": [item["action"] for item in action_plan],
+        "action_plan": action_plan,
         "required_actions": required,
         "suggested_actions": suggested,
         "advisory_actions": advisory,
@@ -1768,16 +1775,77 @@ def _coerce_int(value: Any, default: int) -> int:
         return default
 
 
-def _dedupe_text_actions(actions: list[str]) -> list[str]:
-    result: list[str] = []
+def _next_action_plan(
+    *,
+    required: list[str],
+    suggested: list[str],
+    advisory: list[str],
+    status: dict[str, Any],
+    limit: int,
+) -> list[dict[str, Any]]:
+    categories = [
+        ("required", required),
+        ("suggested", suggested),
+        ("advisory", advisory),
+    ]
+    result: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for action in actions:
-        normalized = " ".join(action.replace("MECHFERRET.md ", "").split())
-        if not normalized or normalized in seen:
-            continue
-        seen.add(normalized)
-        result.append(action)
+    for category, actions in categories:
+        for action in actions:
+            normalized = " ".join(action.replace("MECHFERRET.md ", "").split())
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            result.append(
+                {
+                    "rank": len(result) + 1,
+                    "category": category,
+                    "required": category == "required",
+                    "action": action,
+                    "reason": _next_action_reason(action, category=category, status=status),
+                }
+            )
+            if len(result) >= limit:
+                return result
     return result
+
+
+def _next_action_reason(action: str, *, category: str, status: dict[str, Any]) -> str:
+    normalized = action.lower()
+    if "mechferret init" in normalized:
+        return "Project notes are missing, so the agent has no durable local brief to read."
+    if "quickstart --mode ci" in normalized:
+        return "The CI quickstart artifact is missing, so rerun it to refresh the local release-gate summary."
+    if "quickstart --mode openvla" in normalized:
+        return "The OpenVLA quickstart artifacts are missing, so scaffold them before using that workflow."
+    if "quickstart --run" in normalized:
+        selected = status.get("selected_run") or {}
+        if selected.get("exists"):
+            return "The local quickstart index is missing, so rerun the demo path to refresh setup artifacts."
+        return "No selected run artifact is ready yet, so the local demo dossier is the shortest working path."
+    if "paper" in normalized and "review-paper" not in normalized:
+        return "The selected run is usable, but a run-bound paper draft is missing or stale."
+    if "review-paper" in normalized:
+        return "A draft exists or can be generated, but it has not been critiqued by a configured reviewer."
+    if "bundle" in normalized:
+        return "Sharing is blocked until the selected dossier is packaged and its bundle verifies cleanly."
+    if "verify" in normalized:
+        return "Artifact verification found drift, so rerun the verifier before trusting downstream artifacts."
+    if "open report" in normalized:
+        return "The selected run has a report available for human inspection."
+    if "open quickstart" in normalized:
+        return "The quickstart index lists the produced artifacts and exact follow-up commands."
+    if "doctor" in normalized:
+        return "Local environment checks reported setup work that can affect the project state."
+    if "selftest" in normalized:
+        return "The self-test path refreshes a compact support report for debugging or issue filing."
+    if category == "required":
+        return "This action addresses the current blocking project state."
+    if category == "advisory":
+        return "This action comes from the selected run audit and can improve research quality."
+    if status.get("run_ready"):
+        return "The selected run is ready, so this is a useful next publishing or inspection step."
+    return "This is the next useful setup or inspection step for the current project state."
 
 
 def _print_next_payload(result: dict[str, Any]) -> None:
@@ -1787,10 +1855,11 @@ def _print_next_payload(result: dict[str, Any]) -> None:
     selected = result.get("selected_run") or {}
     if selected.get("exists"):
         print(f"Selected run: {selected.get('path', '')}")
-    if result.get("actions"):
+    if result.get("action_plan"):
         print("Next actions:")
-        for action in result["actions"]:
-            print(f"  - {action}")
+        for item in result["action_plan"]:
+            print(f"  - {item['action']}")
+            print(f"    reason: {item['reason']}")
     else:
         print("Next actions: none")
 
