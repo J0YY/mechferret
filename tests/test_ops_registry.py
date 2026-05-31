@@ -789,6 +789,10 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertIn("artifact_summary", result["project_status"])
             self.assertIn("artifact_readiness", result["project_status"])
             self.assertIn("readiness", result["project_status"])
+            self.assertIn("readiness_summary", result["project_status"])
+            result_summary = {item["name"]: item for item in result["project_status"]["readiness_summary"]}
+            self.assertFalse(result_summary["setup"]["ready"])
+            self.assertFalse(result_summary["run"]["ready"])
             self.assertFalse(result["project_status"]["run_ready"])
             self.assertFalse(result["project_status"]["share_ready"])
             self.assertIn("quickstart --run", " ".join(result["project_status"]["suggested_next_actions"]))
@@ -816,6 +820,7 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertEqual(payload["mode"], "core")
             self.assertEqual(Path(payload["artifacts"]["selftest_report"]), root / "cli-selftest.json")
             self.assertIn("readiness", payload["project_status"])
+            self.assertIn("readiness_summary", payload["project_status"])
             self.assertIn("quickstart --run", " ".join(payload["project_status"]["suggested_next_actions"]))
             self.assertTrue((root / "cli-selftest.json").exists())
 
@@ -844,6 +849,9 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertEqual(support_payload["project_status"]["run_selection"], "best")
             self.assertIn("artifact_summary", support_payload["project_status"])
             self.assertIn("readiness", support_payload["project_status"])
+            self.assertIn("readiness_summary", support_payload["project_status"])
+            support_summary = {item["name"]: item for item in support_payload["project_status"]["readiness_summary"]}
+            self.assertIn("project_notes", support_summary["setup"]["reason"])
             self.assertEqual(support_payload["report"]["kind"], "support")
             self.assertTrue(support_payload["report"]["shareable"])
             self.assertEqual(support_payload["report"]["privacy"]["credential_values"], "omitted")
@@ -868,6 +876,8 @@ class OpsRegistryTest(unittest.TestCase):
                 )
             plain_text = plain_out.getvalue()
             self.assertIn("Status selection: best", plain_text)
+            self.assertIn("Readiness lanes:", plain_text)
+            self.assertIn("setup: BLOCKED", plain_text)
             self.assertIn("Project status next actions:", plain_text)
             self.assertIn("Suggested next actions:", plain_text)
             self.assertIn("quickstart --run", plain_text)

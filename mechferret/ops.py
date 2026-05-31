@@ -315,6 +315,7 @@ def selftest(
             "state": status.get("state", "unknown"),
             "run_selection": status.get("run_selection", selection),
             "readiness": status.get("readiness", {}),
+            "readiness_summary": status.get("readiness_summary", []),
             "run_ready": status.get("run_ready", False),
             "share_ready": status.get("share_ready", False),
             "selected_run": status.get("selected_run", {}),
@@ -373,6 +374,14 @@ def print_selftest(result: dict[str, Any]) -> None:
                 f"share={'READY' if sharing.get('ok') else 'BLOCKED'}; "
                 f"setup={'READY' if setup.get('ok') else 'BLOCKED'}"
             )
+        readiness_summary = [item for item in status.get("readiness_summary", []) if isinstance(item, dict)]
+        if readiness_summary:
+            print("Readiness lanes:")
+            for item in readiness_summary:
+                name = _text(item.get("name")) or "lane"
+                state = "READY" if item.get("ready") else "BLOCKED"
+                reason = _text(item.get("reason"))
+                print(f"  - {name}: {state}" + (f" ({reason})" if reason else ""))
     artifacts = result.get("artifacts", {})
     if artifacts:
         print("Artifacts:")
