@@ -1156,6 +1156,8 @@ def list_run_artifacts(
     next_actions = [] if candidates else ["Run `mechferret quickstart --run` to create a dossier."]
     if candidates and not selected_result.get("run"):
         next_actions.extend(selected_result.get("next_actions", []))
+    if selected_result.get("run"):
+        next_actions.extend(_run_listing_next_actions(selected_result["run"], selection=selection))
     selection_failure = {
         "nearest_run": selected_result.get("nearest_run"),
         "nearest_path": selected_result.get("nearest_path", ""),
@@ -1177,6 +1179,28 @@ def list_run_artifacts(
         "selection_failure": selection_failure,
         "next_actions": _dedupe_actions(next_actions),
     }
+
+
+def _run_listing_next_actions(selected: dict[str, Any], *, selection: str) -> list[str]:
+    select_flag = f" --select {_policy(selection, 'best')}"
+    actions = [
+        f"Run `mechferret inspect{select_flag} --json` to inspect the selected run ledger.",
+        f"Run `mechferret open report{select_flag}` to read the selected report.",
+        f"Run `mechferret cost{select_flag} --json` to estimate provider and processing cost.",
+    ]
+    artifacts = _mapping(selected.get("artifacts"))
+    audit = _mapping(selected.get("audit"))
+    lanes = _mapping(selected.get("artifact_readiness"))
+    sharing = _mapping(lanes.get("sharing"))
+    if audit and not audit.get("passed"):
+        actions.append(f"Run `mechferret audit{select_flag} --strict` to review failed audit gates.")
+    if not artifacts.get("paper"):
+        actions.append(f"Run `mechferret paper{select_flag}` to generate a run-bound draft.")
+    elif not artifacts.get("review"):
+        actions.append(f"Run `mechferret review-paper{select_flag}` with a configured provider to critique the draft.")
+    if not sharing.get("ok"):
+        actions.append(f"Run `mechferret bundle{select_flag}` to package the selected dossier for sharing.")
+    return _dedupe_actions(actions)
 
 
 def print_run_list(result: dict[str, Any]) -> None:

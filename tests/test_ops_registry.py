@@ -1878,6 +1878,11 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertFalse(result["runs"][0]["artifact_readiness"]["sharing"]["ok"])
             self.assertNotIn("setup", result["runs"][0]["artifact_readiness"])
             self.assertNotIn("setup", result["runs"][0]["artifact_summary"]["groups"])
+            actions = " ".join(result["next_actions"])
+            self.assertIn("mechferret inspect --select best --json", actions)
+            self.assertIn("mechferret open report --select best", actions)
+            self.assertIn("mechferret cost --select best --json", actions)
+            self.assertIn("mechferret bundle --select best", actions)
 
             limited = list_run_artifacts(runs_root=root / "runs", limit=1, include_audit=False)
             self.assertEqual(limited["shown"], 1)
@@ -1892,6 +1897,8 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertIn("[selected: best]", rendered)
             self.assertIn("lanes: run=READY share=BLOCKED", rendered)
             self.assertNotIn("setup=BLOCKED", rendered)
+            self.assertIn("Next actions:", rendered)
+            self.assertIn("mechferret inspect --select best --json", rendered)
             self.assertIn("Line one Line two with enough context", rendered)
             self.assertNotIn("\n\nLine two", rendered)
 
@@ -2013,7 +2020,9 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertEqual(Path(limited_listing["selected"]["path"]), good)
             self.assertEqual(limited_listing["selected_rank"], 2)
             self.assertFalse(limited_listing["selected_visible"])
-            self.assertIn("Increase `--limit` to at least 2", " ".join(limited_listing["next_actions"]))
+            limited_actions = " ".join(limited_listing["next_actions"])
+            self.assertIn("Increase `--limit` to at least 2", limited_actions)
+            self.assertIn("mechferret inspect --select best --json", limited_actions)
             limited_out = StringIO()
             with redirect_stdout(limited_out):
                 print_run_list(limited_listing)
