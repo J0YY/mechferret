@@ -48,7 +48,7 @@ DEMO_QUESTION = (
 )
 
 COMMAND_GROUPS = [
-    ("Start", {"quickstart", "selftest", "support", "init", "status", "doctor", "commands", "completion", "version"}),
+    ("Start", {"quickstart", "selftest", "support", "init", "status", "next", "doctor", "commands", "completion", "version"}),
     ("Research", {"run", "demo", "goal", "discover", "sae"}),
     ("Artifacts", {"runs", "open", "resume", "inspect", "audit", "verify", "paper", "review-paper", "bundle", "verify-bundle", "cost"}),
     ("Config", {"login", "api", "memory", "tool-results", "registry", "skills", "repl"}),
@@ -130,6 +130,7 @@ COMMAND_EXAMPLES = {
     "cluster": ["mechferret cluster run --skill ioi-circuit --dry-run --json"],
     "init": ["mechferret init", "mechferret init --json"],
     "status": ["mechferret status --select best", "mechferret status --json"],
+    "next": ["mechferret next", "mechferret next --json", "mechferret next --select best --limit 3"],
     "runs": ["mechferret runs --select best", "mechferret runs --json"],
     "repl": ["mechferret repl"],
     "open": ["mechferret open report --select best", "mechferret open all"],
@@ -305,6 +306,15 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("--project-root", default="projects/openvla_sae", help="OpenVLA project root.")
     status.add_argument("--select", choices=["latest", "best", "ready"], default="latest", help="Run-selection policy for run-bound status.")
     status.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
+
+    next_cmd = sub.add_parser("next", aliases=["/next"], help="Print the next recommended project actions.")
+    next_cmd.add_argument("--runs-root", default="runs", help="Root to search for run artifacts.")
+    next_cmd.add_argument("--db", default=".mechferret/memory.sqlite", help="SQLite memory path.")
+    next_cmd.add_argument("--notes-root", default=".", help="Directory containing MECHFERRET.md.")
+    next_cmd.add_argument("--project-root", default="projects/openvla_sae", help="OpenVLA project root.")
+    next_cmd.add_argument("--select", choices=["latest", "best", "ready"], default="latest", help="Run-selection policy for run-bound status.")
+    next_cmd.add_argument("--limit", type=int, default=5, help="Maximum actions to print.")
+    next_cmd.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
 
     runs_cmd = sub.add_parser("runs", aliases=["/runs", "list-runs"], help="List recent run artifacts with audit and artifact status.")
     runs_cmd.add_argument("--runs-root", default="runs", help="Root to search for run artifacts.")
@@ -747,6 +757,19 @@ def main(argv: list[str] | None = None) -> None:
             print(json.dumps(result, indent=2, sort_keys=True))
         else:
             print_project_status(result)
+    elif args.command in {"next", "/next"}:
+        status = project_status(
+            runs_root=args.runs_root,
+            db_path=args.db,
+            notes_root=args.notes_root,
+            project_root=args.project_root,
+            selection=args.select,
+        )
+        result = _next_payload(status, limit=args.limit)
+        if args.json:
+            print(json.dumps(result, indent=2, sort_keys=True))
+        else:
+            _print_next_payload(result)
     elif args.command in {"runs", "/runs", "list-runs"}:
         result = list_run_artifacts(runs_root=args.runs_root, limit=args.limit, include_audit=not args.no_audit, selection=args.select)
         if args.json:
@@ -1705,6 +1728,69 @@ def _write_command_output(out_path: str | Path, rendered: str, *, format_name: s
         "bytes": len(rendered.encode("utf-8")),
         "count": count,
     }
+
+
+def _next_payload(status: dict[str, Any], *, limit: int = 5) -> dict[str, Any]:
+    limit = max(1, _coerce_int(limit, 5))
+    required = [str(action) for action in status.get("next_actions", []) if str(action).strip()]
+    suggested = [str(action) for action in status.get("suggested_next_actions", []) if str(action).strip()]
+    advisory = [str(action) for action in status.get("advisory_actions", []) if str(action).strip()]
+    actions = _dedupe_text_actions([*required, *suggested, *advisory])[:limit]
+    return {
+        "ok": True,
+        "command": "next",
+        "state": status.get("state", "unknown"),
+        "ready": bool(status.get("ok")),
+        "run_ready": bool(status.get("run_ready")),
+        "share_ready": bool(status.get("share_ready")),
+        "run_selection": status.get("run_selection", "latest"),
+        "selected_run": {
+            "path": (status.get("selected_run") or {}).get("path", ""),
+            "exists": bool((status.get("selected_run") or {}).get("exists")),
+        },
+        "actions": actions,
+        "required_actions": required,
+        "suggested_actions": suggested,
+        "advisory_actions": advisory,
+        "artifact_readiness": status.get("artifact_readiness", {}),
+        "readiness": status.get("readiness", {}),
+    }
+
+
+def _coerce_int(value: Any, default: int) -> int:
+    if type(value) is bool:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _dedupe_text_actions(actions: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for action in actions:
+        normalized = " ".join(action.replace("MECHFERRET.md ", "").split())
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(action)
+    return result
+
+
+def _print_next_payload(result: dict[str, Any]) -> None:
+    print(f"Project state: {result.get('state', 'unknown')}")
+    print(f"Run readiness: {'READY' if result.get('run_ready') else 'BLOCKED'}")
+    print(f"Share readiness: {'READY' if result.get('share_ready') else 'BLOCKED'}")
+    selected = result.get("selected_run") or {}
+    if selected.get("exists"):
+        print(f"Selected run: {selected.get('path', '')}")
+    if result.get("actions"):
+        print("Next actions:")
+        for action in result["actions"]:
+            print(f"  - {action}")
+    else:
+        print("Next actions: none")
 
 
 def _print_command_detail(command: dict[str, Any]) -> None:

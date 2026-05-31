@@ -92,6 +92,7 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertIn("sae", names)
         self.assertIn("selftest", names)
         self.assertIn("support", names)
+        self.assertIn("next", names)
         self.assertNotIn("/run", names)
         self.assertEqual(sorted(COMMAND_EXAMPLES), sorted(names))
 
@@ -117,6 +118,7 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertIn("mechferret paper --select best --json", by_name["paper"]["examples"])
         self.assertIn("mechferret selftest --json", by_name["selftest"]["examples"])
         self.assertIn("mechferret support", by_name["support"]["examples"])
+        self.assertIn("mechferret next --json", by_name["next"]["examples"])
 
         text_out = StringIO()
         with redirect_stdout(text_out):
@@ -1425,6 +1427,8 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertIn("Bundle verify: WARN", status_out.getvalue())
 
     def test_project_status_guides_empty_project(self):
+        from mechferret.cli import main
+
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             status = project_status(
@@ -1440,6 +1444,88 @@ class OpsRegistryTest(unittest.TestCase):
             suggestions = " ".join(status["suggested_next_actions"])
             self.assertIn("mechferret init", suggestions)
             self.assertIn("mechferret quickstart --run", suggestions)
+
+            next_out = StringIO()
+            with redirect_stdout(next_out):
+                main(
+                    [
+                        "next",
+                        "--runs-root",
+                        str(root / "runs"),
+                        "--db",
+                        str(root / "memory.sqlite"),
+                        "--notes-root",
+                        str(root),
+                        "--project-root",
+                        str(root / "openvla"),
+                        "--json",
+                    ]
+                )
+            payload = json.loads(next_out.getvalue())
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["command"], "next")
+            self.assertEqual(payload["state"], "needs_setup")
+            self.assertFalse(payload["run_ready"])
+            self.assertFalse(payload["share_ready"])
+            self.assertIn("mechferret init", " ".join(payload["actions"]))
+            self.assertIn("mechferret quickstart --run", " ".join(payload["actions"]))
+
+    def test_next_command_summarizes_ready_project_actions(self):
+        from mechferret.cli import main
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            run_quickstart("demo", out_dir=root / "runs" / "demo", db_path=root / "memory.sqlite")
+
+            json_out = StringIO()
+            with redirect_stdout(json_out):
+                main(
+                    [
+                        "next",
+                        "--runs-root",
+                        str(root / "runs"),
+                        "--db",
+                        str(root / "memory.sqlite"),
+                        "--notes-root",
+                        str(root),
+                        "--project-root",
+                        str(root / "openvla"),
+                        "--select",
+                        "best",
+                        "--limit",
+                        "2",
+                        "--json",
+                    ]
+                )
+            payload = json.loads(json_out.getvalue())
+            self.assertEqual(payload["run_selection"], "best")
+            self.assertTrue(payload["selected_run"]["exists"])
+            self.assertEqual(len(payload["actions"]), 2)
+            self.assertTrue(any("review-paper --select best" in action for action in payload["actions"]))
+
+            text_out = StringIO()
+            with redirect_stdout(text_out):
+                main(
+                    [
+                        "next",
+                        "--runs-root",
+                        str(root / "runs"),
+                        "--db",
+                        str(root / "memory.sqlite"),
+                        "--notes-root",
+                        str(root),
+                        "--project-root",
+                        str(root / "openvla"),
+                        "--select",
+                        "best",
+                        "--limit",
+                        "1",
+                    ]
+                )
+            rendered = text_out.getvalue()
+            self.assertIn("Project state:", rendered)
+            self.assertIn("Run readiness: READY", rendered)
+            self.assertIn("Next actions:", rendered)
 
     def test_list_run_artifacts_orders_recent_runs_and_reports_status(self):
         with tempfile.TemporaryDirectory() as tmp:

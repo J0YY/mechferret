@@ -25,6 +25,7 @@ SECTIONS: list[tuple[str, list[Command]]] = [
     ]),
     ("Research", [
         Command("/status", "show setup, selected run, audit/verify state, artifacts, and next actions"),
+        Command("/next", "print the next recommended project actions"),
         Command("/runs", "list recent run artifacts with audit and artifact status"),
         Command("/quickstart", "show the recommended demo/OpenVLA/CI command path"),
         Command("/selftest", "run offline readiness checks and optionally verify demo artifacts"),
@@ -92,7 +93,7 @@ CLI_FALLBACK = {
     "version", "about", "commands", "completion", "api",
     "run", "demo", "discover", "doctor", "registry", "memory", "tool-results",
     "cost", "resume", "inspect", "audit", "skills", "modal", "cluster", "sae",
-    "status", "runs", "open", "init", "quickstart", "selftest", "support", "diagnostics", "paper", "review-paper",
+    "status", "next", "runs", "open", "init", "quickstart", "selftest", "support", "diagnostics", "paper", "review-paper",
     "verify", "bundle", "verify-bundle", "goal", "loop", "list-runs",
 }
 

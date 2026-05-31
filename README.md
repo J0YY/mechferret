@@ -70,6 +70,7 @@ for a runnable cheat sheet, see [docs/CLI_EXAMPLES.md](docs/CLI_EXAMPLES.md).
 Useful next commands:
 
 ```bash
+python3 -m mechferret next
 python3 -m mechferret commands --group start
 python3 -m mechferret commands --workflow
 python3 -m mechferret commands --workflow publish_dossier

@@ -182,6 +182,37 @@ Examples:
 - `mechferret status --select best`
 - `mechferret status --json`
 
+### `next`
+
+Aliases: `/next`
+
+Print the next recommended project actions.
+
+Usage:
+
+```text
+usage: mechferret next [-h] [--runs-root RUNS_ROOT] [--db DB]
+                       [--notes-root NOTES_ROOT] [--project-root PROJECT_ROOT]
+                       [--select {latest,best,ready}] [--limit LIMIT] [--json]
+```
+
+Options:
+
+- `-h`, `--help`: show this help message and exit
+- `--runs-root`: Root to search for run artifacts.
+- `--db`: SQLite memory path.
+- `--notes-root`: Directory containing MECHFERRET.md.
+- `--project-root`: OpenVLA project root.
+- `--select`: choices: `latest`, `best`, `ready`; Run-selection policy for run-bound status.
+- `--limit`: Maximum actions to print.
+- `--json`: Print machine-readable JSON.
+
+Examples:
+
+- `mechferret next`
+- `mechferret next --json`
+- `mechferret next --select best --limit 3`
+
 ### `quickstart`
 
 Aliases: `/quickstart`

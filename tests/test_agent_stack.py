@@ -401,7 +401,7 @@ class AgentStackTest(unittest.TestCase):
         for handled in (
             "login", "model", "plan", "cost", "compact", "resume", "memory",
             "tool-results", "export", "init", "goal", "why", "arch", "paper",
-            "audit", "bundle", "verify-bundle", "sae", "quickstart", "status",
+            "audit", "bundle", "verify-bundle", "sae", "quickstart", "status", "next",
             "runs", "open", "version", "commands", "completion", "api",
         ):
             self.assertIn(handled, names)

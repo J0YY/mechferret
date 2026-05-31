@@ -65,6 +65,12 @@
 - `mechferret status --select best`
 - `mechferret status --json`
 
+## `next`
+
+- `mechferret next`
+- `mechferret next --json`
+- `mechferret next --select best --limit 3`
+
 ## `runs`
 
 - `mechferret runs --select best`
