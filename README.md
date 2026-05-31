@@ -31,6 +31,8 @@ less like "you need to already be an expert with a giant notebook stack" and
 more like "you can start with an idea and get pulled into a real research
 workflow."
 
+![Prompt to paper pipeline](docs/exports/mechferret_prompt_to_paper.png)
+
 ## Why Interpretability?
 
 Interpretability is one of the best possible domains for an autoresearch agent.
@@ -68,9 +70,14 @@ It is not replacing researchers. It is giving new researchers a guided path
 from "I have an idea" to "I have a structured project with evidence, gaps, and a
 paper draft."
 
+![Why interpretability needs autoresearch](docs/exports/mechferret_autoresearch_argument.png)
+
 ## What MechFerret Actually Is
 
-MechFerret is an interpretability research operating system.
+MechFerret is an interpretability research operating system. The interface feels
+like a coding-agent prompt, but the project is organized around research
+objects: sources, claims, hypotheses, experiment specs, results, mechanisms,
+gaps, traces, and paper drafts.
 
 It has a conversational interface, but the useful part is the pipeline behind
 it:
@@ -92,7 +99,25 @@ prompt
 The system is designed around the shape of an actual research project, not just
 a one-off answer.
 
-Some examples of what it can do:
+Under the hood, MechFerret keeps a few pieces separate:
+
+- **Agent shell:** the CLI/REPL, provider chat, commands, sessions, and tool
+  routing.
+- **Literature loop:** retrieves prior work, extracts claims, tracks citations,
+  and identifies gaps.
+- **Discovery loop:** turns an interp direction into hypotheses and experiment
+  specs.
+- **Experiment engine:** runs or scripts probes, compares effects against
+  controls, and records reproducibility.
+- **Memory:** keeps confirmed findings and experiment records across sessions.
+- **Paper layer:** turns accumulated findings into `paper/main.tex` and lets a
+  separate reviewer agent critique the draft.
+- **Observability:** emits a trace that can be inspected locally or streamed to
+  Raindrop Workshop.
+
+![MechFerret architecture](docs/exports/mechferret_architecture_clean.png)
+
+Some examples of what it can do from the prompt:
 
 - replay a recorded research trace with `/demo`
 - explain why interpretability is the domain with `/why`
@@ -107,6 +132,30 @@ Some examples of what it can do:
 The important shift is this: MechFerret is not just "an assistant that knows
 about interpretability." It is a workflow for producing interpretability
 research artifacts.
+
+## The Evidence Contract
+
+The reason this is more than a writing assistant is that every paper-shaped
+claim is supposed to trace back to concrete research state.
+
+For an interpretability project, MechFerret tries to keep track of:
+
+- **Sources:** papers, notes, docs, web results, and remembered prior runs.
+- **Claims:** compact statements extracted from sources or produced by the
+  research loop.
+- **Hypotheses:** testable ideas about a mechanism, feature, circuit, task, or
+  experimental direction.
+- **Experiment specs:** what to run, on what target, with what control, seeds,
+  and budget.
+- **Results:** effects, controls, significance, reproducibility, and failure
+  notes.
+- **Gaps:** what is still missing before a paper claim is strong.
+- **Draft text:** the paper output generated from the current evidence, not
+  from an empty prompt.
+
+That contract is what makes the pipeline useful for beginners. It teaches the
+shape of real research: do not just write the claim; connect it to evidence,
+show what would falsify it, and be honest about what is still weak.
 
 ## Who This Is For
 
@@ -156,6 +205,8 @@ What judges should see:
   chat transcript.
 - **Modal fit:** when research needs compute, experiments can move to a Modal
   GPU while the same project loop stays intact.
+
+![Hackathon architecture](docs/exports/mechferret_hackathon_architecture.png)
 
 ## Why Not Just A Claude Code Skill?
 
@@ -226,6 +277,24 @@ The intended loop is:
 7. Iterate.
 
 That is the prompt-to-paper story.
+
+## Research Modes
+
+MechFerret supports a few different levels of "realness" because a research
+pipeline has to be useful before every GPU job or full experiment is ready.
+
+| Mode | What it is for | Output |
+| --- | --- | --- |
+| Recorded demo | Replays a known research trace for a crisp live demo. | Memory, trace, `/arch`, `/paper` inputs. |
+| Literature loop | Grounds a direction in sources and prior work. | Sources, claims, gaps, dossier. |
+| Discovery loop | Runs structured interp experiments for skills like IOI. | Experiments, discoveries, graph, evals. |
+| Paper loop | Converts current findings into a draft and review cycle. | `paper/main.tex`, optional PDF, reviewer scores. |
+| Modal path | Runs heavier experiment work on GPU infrastructure. | Same artifact contract, larger compute. |
+
+This matters because beginners need scaffolding at every stage. Early on, they
+need help choosing a tractable direction. Later, they need experiment structure.
+At the end, they need a paper narrative and a critical review. MechFerret tries
+to keep those stages connected instead of treating them as separate tools.
 
 ## Modal
 
