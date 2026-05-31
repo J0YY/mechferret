@@ -3914,6 +3914,16 @@ class OpsRegistryTest(unittest.TestCase):
                 self.assertEqual([row["path"] for row in result["would_delete"]], [str(old)])
                 self.assertTrue(old.exists())
                 self.assertTrue(new.exists())
+
+                list_json_out = StringIO()
+                with redirect_stdout(list_json_out):
+                    main(["tool-results", "--limit", "5", "--json"])
+                listed = json.loads(list_json_out.getvalue())
+                actions = " ".join(listed["next_actions"])
+                self.assertIn("mechferret tool-results --clean --json", actions)
+                self.assertIn("mechferret tool-results --clean --confirm", actions)
+                self.assertNotIn("clean_tool_results", actions)
+                self.assertNotIn("read_file", actions)
             finally:
                 tools.RESULTS_DIR = original_dir
 

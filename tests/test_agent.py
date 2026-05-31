@@ -1025,6 +1025,11 @@ class AgentToolTest(unittest.TestCase):
                 self.assertEqual(listed["count"], 2)
                 self.assertEqual(listed["shown"], 2)
                 self.assertTrue(next(row for row in listed["results"] if row["path"] == str(old))["is_json"])
+                listed_actions = " ".join(listed["next_actions"])
+                self.assertIn("mechferret tool-results --clean --json", listed_actions)
+                self.assertIn("mechferret tool-results --clean --confirm", listed_actions)
+                self.assertNotIn("clean_tool_results", listed_actions)
+                self.assertNotIn("read_file", listed_actions)
 
                 dry = json.loads(tools.run_tool("clean_tool_results", {"keep_latest": 1, "max_age_days": 0, "dry_run": True}))
                 self.assertTrue(dry["dry_run"])

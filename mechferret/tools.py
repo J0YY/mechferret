@@ -293,8 +293,9 @@ def tool_list_tool_results(args: dict[str, Any]) -> str:
     count, rows = _saved_tool_result_rows(limit)
     actions = []
     if count:
-        actions.append("Use read_file on a result path to inspect the full saved output.")
-        actions.append("Use clean_tool_results with dry_run=true first, then confirm=true to remove stale saved outputs.")
+        actions.append("Open a path from `results[].path` to inspect the full saved output.")
+        actions.append("Preview cleanup with `mechferret tool-results --clean --json`.")
+        actions.append("Delete stale saved outputs with `mechferret tool-results --clean --confirm` after reviewing the preview.")
     return json.dumps(
         {
             "ok": True,
