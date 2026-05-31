@@ -1492,6 +1492,9 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertEqual(payload["action_plan"][0]["category"], "required")
             self.assertTrue(payload["action_plan"][0]["required"])
             self.assertIn("reason", payload["action_plan"][0])
+            next_summary = {item["name"]: item for item in payload["readiness_summary"]}
+            self.assertFalse(next_summary["setup"]["ready"])
+            self.assertFalse(next_summary["run"]["ready"])
             self.assertIn("mechferret init", " ".join(payload["actions"]))
             self.assertIn("mechferret quickstart --run", " ".join(payload["actions"]))
 
@@ -1529,6 +1532,9 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertEqual(len(payload["action_plan"]), 2)
             self.assertEqual(payload["actions"], [item["action"] for item in payload["action_plan"]])
             self.assertTrue(all(item["reason"] for item in payload["action_plan"]))
+            summary_by_name = {item["name"]: item for item in payload["readiness_summary"]}
+            self.assertTrue(summary_by_name["run"]["ready"])
+            self.assertFalse(summary_by_name["setup"]["ready"])
             self.assertTrue(any("review-paper --select best" in action for action in payload["actions"]))
 
             text_out = StringIO()
@@ -1553,6 +1559,7 @@ class OpsRegistryTest(unittest.TestCase):
             rendered = text_out.getvalue()
             self.assertIn("Project state:", rendered)
             self.assertIn("Run readiness: READY", rendered)
+            self.assertIn("Setup readiness: BLOCKED", rendered)
             self.assertIn("Next actions:", rendered)
             self.assertIn("reason:", rendered)
 

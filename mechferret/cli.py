@@ -1763,6 +1763,7 @@ def _next_payload(status: dict[str, Any], *, limit: int = 5) -> dict[str, Any]:
         "advisory_actions": advisory,
         "artifact_readiness": status.get("artifact_readiness", {}),
         "readiness": status.get("readiness", {}),
+        "readiness_summary": status.get("readiness_summary", []),
     }
 
 
@@ -1852,6 +1853,10 @@ def _print_next_payload(result: dict[str, Any]) -> None:
     print(f"Project state: {result.get('state', 'unknown')}")
     print(f"Run readiness: {'READY' if result.get('run_ready') else 'BLOCKED'}")
     print(f"Share readiness: {'READY' if result.get('share_ready') else 'BLOCKED'}")
+    readiness_by_name = {str(item.get("name")): item for item in result.get("readiness_summary", []) if isinstance(item, dict)}
+    setup = readiness_by_name.get("setup")
+    if setup:
+        print(f"Setup readiness: {'READY' if setup.get('ready') else 'BLOCKED'}")
     selected = result.get("selected_run") or {}
     if selected.get("exists"):
         print(f"Selected run: {selected.get('path', '')}")
