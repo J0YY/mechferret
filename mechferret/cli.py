@@ -1324,6 +1324,7 @@ def _command_index_payload(
             "query": query,
             **({"group": group} if group else {}),
             "count": 1,
+            "next_actions": _command_next_actions([selected]),
             "commands": [selected],
         }
     if search:
@@ -1342,6 +1343,10 @@ def _command_index_payload(
         }
         if not filtered and not workflows:
             payload["next_actions"] = EMPTY_COMMAND_SEARCH_NEXT_ACTIONS
+        else:
+            next_actions = _command_next_actions(filtered, workflows)
+            if next_actions:
+                payload["next_actions"] = next_actions
         return payload
     return {
         "ok": True,
@@ -1423,6 +1428,29 @@ def _command_examples_payload(
     if not rows:
         result["next_actions"] = EMPTY_COMMAND_EXAMPLES_NEXT_ACTIONS
     return result
+
+
+def _command_next_actions(
+    commands: list[dict[str, Any]],
+    workflows: list[dict[str, Any]] | None = None,
+    *,
+    limit: int = 6,
+) -> list[str]:
+    actions: list[str] = []
+    seen: set[str] = set()
+    for command in commands:
+        for example in command.get("examples", []):
+            action = str(example).strip()
+            if action and action not in seen:
+                seen.add(action)
+                actions.append(action)
+    for workflow in workflows or []:
+        for example in workflow.get("next_actions", workflow.get("commands", [])):
+            action = str(example).strip()
+            if action and action not in seen:
+                seen.add(action)
+                actions.append(action)
+    return actions[:limit]
 
 
 def _command_workflow_payload(name: str) -> dict[str, Any]:

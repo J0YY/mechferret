@@ -342,6 +342,7 @@ class OpsRegistryTest(unittest.TestCase):
                 for option in command["options"]
             )
         )
+        self.assertIn('mechferret run "What should I investigate?" --seed-corpus', " ".join(search_payload["next_actions"]))
 
         multi_term_search_out = StringIO()
         with redirect_stdout(multi_term_search_out):
@@ -350,6 +351,7 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertTrue(multi_term_payload["ok"])
         self.assertEqual([command["name"] for command in multi_term_payload["commands"]], ["verify-bundle"])
         self.assertEqual([workflow["name"] for workflow in multi_term_payload["workflows"]], ["publish_dossier"])
+        self.assertIn("mechferret verify-bundle --select best --strict", " ".join(multi_term_payload["next_actions"]))
 
         command_token_search_out = StringIO()
         with redirect_stdout(command_token_search_out):
@@ -360,6 +362,7 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertLess(command_token_names.index("paper"), command_token_names.index("open"))
         self.assertLess(command_token_names.index("bundle"), command_token_names.index("open"))
         self.assertIn("publish_dossier", [workflow["name"] for workflow in command_token_payload["workflows"]])
+        self.assertIn("mechferret paper --select best --json", " ".join(command_token_payload["next_actions"]))
 
         name_boost_search_out = StringIO()
         with redirect_stdout(name_boost_search_out):
@@ -410,6 +413,13 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertIn("```text\nusage: mechferret run", rendered_detail_markdown)
         self.assertIn("- `--source`: File or directory of seed documents.", rendered_detail_markdown)
         self.assertIn("- `mechferret run \"What should I investigate?\" --seed-corpus", rendered_detail_markdown)
+
+        detail_json_out = StringIO()
+        with redirect_stdout(detail_json_out):
+            main(["commands", "open", "--json"])
+        detail_payload = json.loads(detail_json_out.getvalue())
+        self.assertEqual(detail_payload["query"], "open")
+        self.assertIn("mechferret open report --select best", detail_payload["next_actions"])
 
         with tempfile.TemporaryDirectory() as tmp:
             json_path = Path(tmp) / "run-command.json"
