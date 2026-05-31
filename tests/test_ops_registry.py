@@ -883,7 +883,7 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertIn("Readiness lanes:", plain_text)
             self.assertIn("setup: BLOCKED", plain_text)
             self.assertIn("Project status next actions:", plain_text)
-            self.assertIn("Suggested next actions:", plain_text)
+            self.assertNotIn("Suggested next actions:", plain_text)
             self.assertIn("quickstart --run", plain_text)
 
             run_result = selftest(
@@ -1476,9 +1476,12 @@ class OpsRegistryTest(unittest.TestCase):
             status_out = StringIO()
             with redirect_stdout(status_out):
                 print_project_status(status)
-            self.assertIn("Run readiness: BLOCKED", status_out.getvalue())
-            self.assertIn("Share readiness: BLOCKED", status_out.getvalue())
-            self.assertIn("Setup readiness: BLOCKED", status_out.getvalue())
+            rendered_status = status_out.getvalue()
+            self.assertIn("Run readiness: BLOCKED", rendered_status)
+            self.assertIn("Share readiness: BLOCKED", rendered_status)
+            self.assertIn("Setup readiness: BLOCKED", rendered_status)
+            self.assertEqual(rendered_status.count("mechferret init"), 1)
+            self.assertNotIn("Suggested next actions:", rendered_status)
 
             next_out = StringIO()
             with redirect_stdout(next_out):

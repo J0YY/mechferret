@@ -396,9 +396,13 @@ def print_selftest(result: dict[str, Any]) -> None:
         print("Project status next actions:")
         for action in status["next_actions"][:6]:
             print(f"  - {action}")
-    if status.get("suggested_next_actions"):
+    suggested_actions = _actions_not_repeated(
+        status.get("suggested_next_actions", []),
+        result.get("next_actions", []) + status.get("next_actions", []),
+    )
+    if suggested_actions:
         print("Suggested next actions:")
-        for action in status["suggested_next_actions"][:6]:
+        for action in suggested_actions[:6]:
             print(f"  - {action}")
 
 
@@ -982,9 +986,13 @@ def print_project_status(result: dict[str, Any]) -> None:
         print("Next actions:")
         for action in result["next_actions"][:8]:
             print(f"  - {action}")
-    if result.get("suggested_next_actions"):
+    suggested_actions = _actions_not_repeated(
+        result.get("suggested_next_actions", []),
+        result.get("next_actions", []),
+    )
+    if suggested_actions:
         print("Suggested next actions:")
-        for action in result["suggested_next_actions"][:6]:
+        for action in suggested_actions[:6]:
             print(f"  - {action}")
 
 
@@ -4053,6 +4061,25 @@ def _dedupe_actions(actions: list[str]) -> list[str]:
         seen.add(action)
         result.append(action)
     return result
+
+
+def _actions_not_repeated(actions: list[str], prior_actions: list[str]) -> list[str]:
+    prior_keys = {_action_key(action) for action in prior_actions if action}
+    result: list[str] = []
+    seen = set(prior_keys)
+    for action in actions:
+        key = _action_key(action)
+        if not action or key in seen:
+            continue
+        seen.add(key)
+        result.append(action)
+    return result
+
+
+def _action_key(action: str) -> str:
+    match = re.search(r"`([^`]+)`", action)
+    command = match.group(1) if match else action
+    return re.sub(r"\s+", " ", command.strip())
 
 
 def _openvla_project_check() -> dict[str, Any]:
