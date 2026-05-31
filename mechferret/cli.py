@@ -2618,8 +2618,13 @@ def _budget_override(args) -> Budget | None:
 def handle_skills(args) -> None:
     if args.name:
         skill = load_skill(args.name)
+        payload = {
+            "ok": True,
+            "skill": _skill_payload(skill),
+            "next_actions": _skills_next_actions(skill),
+        }
         if args.json:
-            print(json.dumps({"ok": True, "skill": _skill_payload(skill)}, indent=2, sort_keys=True))
+            print(json.dumps(payload, indent=2, sort_keys=True))
             return
         print(f"Skill: {skill.name}")
         print(f"Description: {skill.description}")
@@ -2630,12 +2635,19 @@ def handle_skills(args) -> None:
         print(f"Stop when: confirmed>={skill.min_confirmed}, rigor>={skill.min_rigor}")
         for reference in skill.references:
             print(f"  ref: {reference}")
+        _print_next_actions(payload["next_actions"])
         return
     skills = list_skills()
+    next_actions = _skills_next_actions(skills[0] if skills else None, listed=skills)
     if args.json:
         print(
             json.dumps(
-                {"ok": True, "count": len(skills), "skills": [_skill_payload(skill) for skill in skills]},
+                {
+                    "ok": True,
+                    "count": len(skills),
+                    "skills": [_skill_payload(skill) for skill in skills],
+                    "next_actions": next_actions,
+                },
                 indent=2,
                 sort_keys=True,
             )
@@ -2643,10 +2655,12 @@ def handle_skills(args) -> None:
         return
     if not skills:
         print("No skills found.")
+        _print_next_actions(next_actions)
         return
     print(f"{len(skills)} interpretability skills:")
     for skill in skills:
         print(f"  {skill.name:24} [{skill.task}] {skill.description}")
+    _print_next_actions(next_actions)
 
 
 def _skill_payload(skill) -> dict[str, Any]:
@@ -2665,6 +2679,25 @@ def _skill_payload(skill) -> dict[str, Any]:
         "min_confirmed": skill.min_confirmed,
         "min_rigor": skill.min_rigor,
     }
+
+
+def _skills_next_actions(skill=None, *, listed: list[Any] | None = None) -> list[str]:
+    if listed is not None:
+        if not listed:
+            return ["Run `mechferret doctor --json` to verify the packaged skills directory."]
+        preferred = next((item for item in listed if item.name == "ioi-circuit"), listed[0])
+        return [
+            f"Run `mechferret skills {preferred.name} --json` to inspect one skill's budget and stop criteria.",
+            f"Run `mechferret discover --skill {preferred.name} --backend synthetic --json` to exercise a skill locally.",
+            "Run `mechferret registry --kind playbook --json` to compare skill-backed playbooks.",
+        ]
+    if skill is None:
+        return ["Run `mechferret skills --json` to list available skills."]
+    return [
+        f"Run `mechferret discover --skill {skill.name} --backend synthetic --json` to exercise this skill locally.",
+        f"Run `mechferret discover --skill {skill.name} --backend transformer_lens --json` when local model dependencies are installed.",
+        "Run `mechferret commands discover --json` to inspect discovery options.",
+    ]
 
 
 def handle_modal(args) -> None:

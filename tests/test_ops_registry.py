@@ -750,6 +750,9 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertTrue(listed["ok"])
         self.assertEqual(listed["count"], len(listed["skills"]))
         self.assertTrue(any(skill["name"] == "ioi-circuit" for skill in listed["skills"]))
+        listed_actions = " ".join(listed["next_actions"])
+        self.assertIn("mechferret skills ioi-circuit --json", listed_actions)
+        self.assertIn("mechferret discover --skill ioi-circuit --backend synthetic --json", listed_actions)
 
         detail_out = StringIO()
         with redirect_stdout(detail_out):
@@ -759,6 +762,17 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertEqual(detail["skill"]["name"], "ioi-circuit")
         self.assertIn("budget", detail["skill"])
         self.assertIn("min_rigor", detail["skill"])
+        detail_actions = " ".join(detail["next_actions"])
+        self.assertIn("mechferret discover --skill ioi-circuit --backend synthetic --json", detail_actions)
+        self.assertIn("mechferret commands discover --json", detail_actions)
+
+        text_out = StringIO()
+        with redirect_stdout(text_out):
+            main(["skills", "ioi-circuit"])
+        rendered = text_out.getvalue()
+        self.assertIn("Skill: ioi-circuit", rendered)
+        self.assertIn("Next actions:", rendered)
+        self.assertIn("mechferret discover --skill ioi-circuit --backend synthetic --json", rendered)
 
     def test_cli_api_json_redacts_keys_and_reports_updates(self):
         from mechferret.cli import main
