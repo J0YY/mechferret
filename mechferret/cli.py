@@ -2060,7 +2060,8 @@ def _zsh_completion_script(commands: list[dict[str, Any]], executable: str) -> s
     for command in commands:
         for name in _command_patterns(command):
             text = f"{name}:{command.get('help', '')}"
-            lines.append(f"        {_single_quote(text.replace(':', '\\:'))}")
+            escaped = text.replace(":", "\\:")
+            lines.append(f"        {_single_quote(escaped)}")
     lines.extend(
         [
             "    )",
