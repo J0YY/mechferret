@@ -295,8 +295,9 @@ def selftest(
         for step in steps
         if not step["ok"] and not step.get("optional") and step.get("detail")
     ]
+    suggested_actions = []
     if not run:
-        required_actions.append("Run `mechferret selftest --run` to execute the local demo and verify its artifacts.")
+        suggested_actions.append(f"Run `mechferret {command_name} --run` to execute the local demo and verify its artifacts.")
     result: dict[str, Any] = {
         "schema_version": 1,
         "ok": all(step["ok"] or step.get("optional", False) for step in steps),
@@ -335,6 +336,7 @@ def selftest(
         },
         "artifacts": artifacts,
         "next_actions": _dedupe_actions(required_actions + doc.get("strict_next_actions", [])),
+        "suggested_next_actions": _dedupe_actions(suggested_actions),
         "optional_next_actions": doc.get("optional_next_actions", []),
     }
     if demo_result is not None:
@@ -404,7 +406,7 @@ def print_selftest(result: dict[str, Any]) -> None:
         for action in status["next_actions"][:6]:
             print(f"  - {action}")
     suggested_actions = _actions_not_repeated(
-        status.get("suggested_next_actions", []),
+        result.get("suggested_next_actions", []) + status.get("suggested_next_actions", []),
         result.get("next_actions", []) + status.get("next_actions", []),
     )
     if suggested_actions:

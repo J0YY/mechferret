@@ -812,7 +812,8 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertIn("quickstart_guidance", step_names)
             self.assertIn("project_status", step_names)
             self.assertIn("local_demo", result["quickstart_sections"])
-            self.assertIn("selftest --run", " ".join(result["next_actions"]))
+            self.assertNotIn("selftest --run", " ".join(result["next_actions"]))
+            self.assertIn("selftest --run", " ".join(result["suggested_next_actions"]))
             self.assertEqual(result["project_status"]["run_selection"], "best")
             self.assertIn("artifact_summary", result["project_status"])
             self.assertIn("artifact_readiness", result["project_status"])
@@ -884,6 +885,8 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertTrue(support_payload["report"]["shareable"])
             self.assertEqual(support_payload["report"]["privacy"]["credential_values"], "omitted")
             self.assertEqual(Path(support_payload["artifacts"]["selftest_report"]), root / "support.json")
+            self.assertNotIn("support --run", " ".join(support_payload["next_actions"]))
+            self.assertIn("support --run", " ".join(support_payload["suggested_next_actions"]))
             self.assertIn("quickstart --run", " ".join(support_payload["project_status"]["suggested_next_actions"]))
             self.assertTrue((root / "support.json").exists())
 
@@ -907,7 +910,8 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertIn("Readiness lanes:", plain_text)
             self.assertIn("setup: BLOCKED", plain_text)
             self.assertIn("Project status next actions:", plain_text)
-            self.assertNotIn("Suggested next actions:", plain_text)
+            self.assertIn("Suggested next actions:", plain_text)
+            self.assertIn("selftest --run", plain_text)
             self.assertIn("quickstart --run", plain_text)
 
             run_result = selftest(
