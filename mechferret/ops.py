@@ -2974,9 +2974,19 @@ def print_verify_bundle_result(result: dict[str, Any]) -> None:
     print(f"Bundle verify: {'PASS' if result.get('passed') else 'WARN'}")
     if result.get("path"):
         print(f"Bundle: {result['path']}")
-    for check in result.get("checks", []):
-        marker = "ok" if check.get("passed") else "fix"
-        print(f"{marker:4} {check['name']}: {check.get('observed')} / {check.get('threshold')}")
+    checks = [check for check in result.get("checks", []) if isinstance(check, dict)]
+    failed = [check for check in checks if not check.get("passed")]
+    if checks:
+        print(f"Checks: {len(checks) - len(failed)}/{len(checks)} passed")
+    if failed:
+        print("Failed checks:")
+        for check in failed[:12]:
+            threshold = f" / {check.get('threshold')}" if check.get("threshold") is not None else ""
+            print(f"  - {check.get('name', '')}: {check.get('observed')}{threshold}")
+        if len(failed) > 12:
+            print(f"  - ...and {len(failed) - 12} more; rerun with --json for the complete check list.")
+    elif checks:
+        print("Detailed checks omitted; rerun with --json for the complete check list.")
     if result.get("next_actions"):
         print("Next actions:")
         for action in result["next_actions"][:8]:

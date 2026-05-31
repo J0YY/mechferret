@@ -3524,6 +3524,10 @@ class OpsRegistryTest(unittest.TestCase):
                     self.assertIn("Checks:", out.getvalue())
                     self.assertIn("Detailed checks omitted", out.getvalue())
                     self.assertNotIn("source_id_declared:", out.getvalue())
+                if command == "verify-bundle":
+                    self.assertIn("Checks:", out.getvalue())
+                    self.assertIn("Detailed checks omitted", out.getvalue())
+                    self.assertNotIn("bundle_file_sha256:", out.getvalue())
 
     def test_cli_inspect_tolerates_malformed_run_artifact(self):
         from mechferret.cli import main
