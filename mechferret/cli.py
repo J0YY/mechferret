@@ -159,7 +159,11 @@ COMMAND_EXAMPLES = {
     ],
     "support": ["mechferret support", "mechferret support --json"],
     "doctor": ["mechferret doctor --strict", "mechferret doctor --json"],
-    "registry": ["mechferret registry --kind tool --json"],
+    "registry": [
+        "mechferret registry --kind tool --json",
+        "mechferret registry --kind playbook --json",
+        "mechferret registry --kind evaluator --json",
+    ],
     "memory": ["mechferret memory --recent 5", "mechferret memory --json"],
     "tool-results": ["mechferret tool-results", "mechferret tool-results --clean --json"],
     "cost": ["mechferret cost --select best --json"],
@@ -852,17 +856,23 @@ def main(argv: list[str] | None = None) -> None:
             raise SystemExit(1)
     elif args.command in {"registry", "/registry"}:
         items = items_by_kind(args.kind) if args.kind else all_items()
+        next_actions = _registry_next_actions(args.kind or "all", [item.to_dict() for item in items])
         if args.json:
             payload = {
                 "ok": True,
                 "kind": args.kind or "all",
                 "count": len(items),
                 "items": [item.to_dict() for item in items],
+                "next_actions": next_actions,
             }
             print(json.dumps(payload, indent=2, sort_keys=True))
         else:
             for item in items:
                 print(f"{item.kind:9} {item.name:24} {item.status:10} {item.description}")
+            if next_actions:
+                print("\nNext actions:")
+                for action in next_actions:
+                    print(f"  - {action}")
     elif args.command in {"memory", "/memory"}:
         if args.clear:
             memory_clear(args.db)
@@ -2990,6 +3000,41 @@ def _api_payload(config, *, action: str, path: str | Path, provider: str = "") -
     if suggested_next_actions:
         payload["suggested_next_actions"] = suggested_next_actions
     return payload
+
+
+def _registry_next_actions(kind: str, items: list[dict[str, Any]]) -> list[str]:
+    if not items:
+        return ["Run `mechferret registry --json` to inspect all available capabilities."]
+    if kind == "tool":
+        return [
+            "Run `mechferret doctor --all-integrations --json` to check optional tool dependencies.",
+            "Run `mechferret commands --group config --json` to inspect setup commands.",
+        ]
+    if kind == "task":
+        return [
+            "Run `mechferret commands --group research --json` to inspect runnable research tasks.",
+            "Run `mechferret quickstart --run` to create a local dossier.",
+        ]
+    if kind == "playbook":
+        actions = ["Run `mechferret skills --json` to inspect playable skill budgets and stop criteria."]
+        skill_names = {
+            str(item.get("name", "")).replace("_", "-")
+            for item in items
+            if str(item.get("kind", "")) == "playbook"
+        }
+        if "ioi-circuit" in skill_names:
+            actions.append("Run `mechferret discover --skill ioi-circuit --backend synthetic --json` to exercise a playbook locally.")
+        actions.append("Run `mechferret commands discover --json` to inspect discovery options.")
+        return actions
+    if kind == "evaluator":
+        return [
+            "Run `mechferret next --json` to see evaluator-backed readiness actions.",
+            "Run `mechferret review-paper --select best --json` after generating a paper artifact.",
+        ]
+    return [
+        "Run `mechferret commands --json` to map capabilities to CLI commands.",
+        "Run `mechferret doctor --json` to verify local readiness.",
+    ]
 
 
 def _run_payload(run, *, command: str) -> dict[str, Any]:

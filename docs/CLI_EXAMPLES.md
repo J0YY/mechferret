@@ -113,6 +113,8 @@
 ## `registry`
 
 - `mechferret registry --kind tool --json`
+- `mechferret registry --kind playbook --json`
+- `mechferret registry --kind evaluator --json`
 
 ## `memory`
 

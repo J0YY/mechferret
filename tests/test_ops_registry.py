@@ -128,6 +128,7 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertIn("mechferret selftest --json", by_name["selftest"]["examples"])
         self.assertIn("mechferret support", by_name["support"]["examples"])
         self.assertIn("mechferret next --json", by_name["next"]["examples"])
+        self.assertIn("mechferret registry --kind playbook --json", by_name["registry"]["examples"])
 
         text_out = StringIO()
         with redirect_stdout(text_out):
@@ -722,6 +723,22 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertEqual(payload["count"], len(payload["items"]))
         self.assertTrue(payload["items"])
         self.assertTrue(all(item["kind"] == "tool" for item in payload["items"]))
+        self.assertIn("mechferret doctor --all-integrations --json", " ".join(payload["next_actions"]))
+
+        playbook_out = StringIO()
+        with redirect_stdout(playbook_out):
+            main(["registry", "--kind", "playbook", "--json"])
+        playbook_payload = json.loads(playbook_out.getvalue())
+        self.assertEqual(playbook_payload["kind"], "playbook")
+        self.assertIn("mechferret skills --json", " ".join(playbook_payload["next_actions"]))
+        self.assertIn("mechferret discover --skill ioi-circuit --backend synthetic --json", " ".join(playbook_payload["next_actions"]))
+
+        text_out = StringIO()
+        with redirect_stdout(text_out):
+            main(["registry", "--kind", "evaluator"])
+        rendered = text_out.getvalue()
+        self.assertIn("Next actions:", rendered)
+        self.assertIn("mechferret next --json", rendered)
 
     def test_cli_skills_json_lists_and_describes_playbooks(self):
         from mechferret.cli import main
