@@ -276,6 +276,7 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertEqual(workflow_all_payload["workflow"], "all")
         self.assertEqual(workflow_all_payload["count"], len(workflow_names))
         self.assertEqual({workflow["name"] for workflow in workflow_all_payload["workflows"]}, workflow_names)
+        self.assertIn("mechferret quickstart --run", workflow_all_payload["workflows"][0]["next_actions"])
 
         workflow_json_out = StringIO()
         with redirect_stdout(workflow_json_out):
@@ -286,6 +287,8 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertEqual(workflow_payload["workflow"], "publish_dossier")
         self.assertEqual(workflow_payload["workflows"][0]["name"], "publish_dossier")
         self.assertIn("mechferret verify-bundle --select best --strict", workflow_payload["workflows"][0]["commands"])
+        self.assertEqual(workflow_payload["next_actions"], workflow_payload["workflows"][0]["commands"])
+        self.assertEqual(workflow_payload["workflows"][0]["next_actions"], workflow_payload["workflows"][0]["commands"])
 
         workflow_alias_out = StringIO()
         with redirect_stdout(workflow_alias_out):

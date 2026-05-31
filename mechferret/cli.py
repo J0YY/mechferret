@@ -1465,6 +1465,7 @@ def _command_workflow_payload(name: str) -> dict[str, Any]:
         "workflow_only": True,
         "count": 1,
         "commands": [],
+        "next_actions": list(workflow["commands"]),
         "workflows": [workflow],
     }
 
@@ -2199,6 +2200,7 @@ def _command_workflows_payload() -> list[dict[str, Any]]:
             "title": str(workflow["title"]),
             "description": str(workflow["description"]),
             "commands": list(workflow["commands"]),
+            "next_actions": list(workflow["commands"]),
         }
         for workflow in COMMAND_WORKFLOWS
     ]
