@@ -212,6 +212,12 @@ class MechFerret:
         model = _text(model).strip() or None
         run_id = f"run_{uuid.uuid4().hex[:10]}"
         out_path = Path(out_dir)
+        try:
+            (out_path / "trace.jsonl").unlink()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            pass
         tracer = TraceRecorder(run_id, out_path)
         memory = ResearchMemory(self.memory_path)
         try:

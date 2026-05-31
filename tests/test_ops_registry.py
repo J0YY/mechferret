@@ -1059,6 +1059,24 @@ class OpsRegistryTest(unittest.TestCase):
     def test_run_quickstart_demo_creates_passing_local_dossier(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            stale_trace = root / "runs" / "demo" / "trace.jsonl"
+            stale_trace.parent.mkdir(parents=True)
+            stale_trace.write_text(
+                json.dumps(
+                    {
+                        "trace_id": "old",
+                        "run_id": "old_run",
+                        "span_id": "old_span",
+                        "phase": "event",
+                        "name": "stale",
+                        "time_unix_ms": 0,
+                        "attributes": {},
+                    },
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
             result = run_quickstart("all", out_dir=root / "runs" / "demo", db_path=root / "memory.sqlite")
             self.assertTrue(result["ok"])
             self.assertEqual(result["mode"], "demo")
@@ -1079,6 +1097,7 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertEqual(quickstart_payload["suggested_next_actions"], result["suggested_next_actions"])
             self.assertTrue((root / "runs" / "demo" / "QUICKSTART.md").exists())
             self.assertTrue(result["audit"]["passed"])
+            self.assertNotIn("old_run", (root / "runs" / "demo" / "trace.jsonl").read_text(encoding="utf-8"))
             self.assertIn("project_notes", {step["name"] for step in result["steps"]})
             text = (root / "runs" / "demo" / "QUICKSTART.md").read_text(encoding="utf-8")
             self.assertIn("MechFerret Quickstart Run", text)

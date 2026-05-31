@@ -3377,6 +3377,7 @@ def _run_demo_quickstart(*, out_dir: str | Path, db_path: str | Path) -> dict[st
     from .audit import audit_run_artifact
     from .controller import MechFerret
     from .paper import write_paper_from_artifact
+    from .provenance import refresh_run_manifest
 
     out = Path(out_dir)
     notes = init_project_notes(_quickstart_project_root(out))
@@ -3390,6 +3391,7 @@ def _run_demo_quickstart(*, out_dir: str | Path, db_path: str | Path) -> dict[st
     )
     run_json = out / "run.json"
     paper = write_paper_from_artifact(run_json, out_dir=out / "paper", provider="local")
+    refresh_run_manifest(run_json)
     audit = audit_run_artifact(run_json)
     steps = [
         {"name": "project_notes", "ok": Path(notes["path"]).exists(), "detail": notes["path"]},
