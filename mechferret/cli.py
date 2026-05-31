@@ -55,6 +55,9 @@ COMMAND_GROUPS = [
     ("Compute", {"modal", "cluster"}),
 ]
 COMMAND_GROUP_CHOICES = [title.lower() for title, _names in COMMAND_GROUPS]
+EMPTY_COMMAND_SEARCH_NEXT_ACTIONS = [
+    "Try a command name, option, workflow, or broader term; run `mechferret commands` to list everything."
+]
 
 COMMAND_WORKFLOWS = [
     {
@@ -1323,7 +1326,7 @@ def _command_index_payload(
     if search:
         filtered = _search_commands(commands, search)
         workflows = _search_command_workflows(search) if not group else []
-        return {
+        payload = {
             "ok": True,
             "name": "mechferret",
             "version": __version__,
@@ -1334,6 +1337,9 @@ def _command_index_payload(
             "workflows": workflows,
             "commands": filtered,
         }
+        if not filtered and not workflows:
+            payload["next_actions"] = EMPTY_COMMAND_SEARCH_NEXT_ACTIONS
+        return payload
     return {
         "ok": True,
         "name": "mechferret",
@@ -1998,6 +2004,8 @@ def _command_list_text(
     if search:
         if commands:
             lines.extend(_command_summary_text(command) for command in commands)
+        elif not workflows:
+            lines.extend(["", f"No matches. {EMPTY_COMMAND_SEARCH_NEXT_ACTIONS[0]}"])
     else:
         grouped = _command_groups_text(commands)
         if grouped:

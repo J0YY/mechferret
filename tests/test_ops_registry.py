@@ -192,6 +192,25 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertIn("publish_dossier:", rendered_workflow_search)
         self.assertIn("mechferret bundle --select best", rendered_workflow_search)
 
+        no_match_search_out = StringIO()
+        with redirect_stdout(no_match_search_out):
+            main(["commands", "--search", "nope"])
+        no_match_search_text = no_match_search_out.getvalue()
+        self.assertIn("MechFerret commands matching 'nope' (0 commands, 0 workflows):", no_match_search_text)
+        self.assertIn("No matches.", no_match_search_text)
+        self.assertIn("mechferret commands", no_match_search_text)
+
+        no_match_search_json_out = StringIO()
+        with redirect_stdout(no_match_search_json_out):
+            main(["commands", "--search", "nope", "--json"])
+        no_match_search_payload = json.loads(no_match_search_json_out.getvalue())
+        self.assertTrue(no_match_search_payload["ok"])
+        self.assertEqual(no_match_search_payload["count"], 0)
+        self.assertEqual(no_match_search_payload["workflow_count"], 0)
+        self.assertEqual(no_match_search_payload["commands"], [])
+        self.assertEqual(no_match_search_payload["workflows"], [])
+        self.assertIn("mechferret commands", " ".join(no_match_search_payload["next_actions"]))
+
         mixed_search_out = StringIO()
         with redirect_stdout(mixed_search_out):
             main(["commands", "--search", "first_run", "--markdown"])
