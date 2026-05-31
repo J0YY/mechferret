@@ -1791,8 +1791,8 @@ def _add_archived_status_metadata_checks(
         checks.append(
             {
                 "name": f"bundle_status_{key}_summary_matches_run_json",
-                "passed": row.get("summary") == expected_summary,
-                "observed": "equal" if row.get("summary") == expected_summary else "changed",
+                "passed": _summary_contains_expected_fields(row.get("summary"), expected_summary),
+                "observed": "equal" if _summary_contains_expected_fields(row.get("summary"), expected_summary) else "changed",
                 "threshold": "summary generated from archived run.json",
             }
         )
@@ -1834,6 +1834,15 @@ def _archived_run_summary_from_payload(run_payload: dict[str, Any]) -> dict[str,
         "gaps": run_payload.get("gaps", []),
         "artifacts": run_payload.get("artifacts", {}),
     }
+
+
+def _summary_contains_expected_fields(summary: Any, expected: dict[str, Any]) -> bool:
+    if not isinstance(summary, dict):
+        return False
+    for key, value in expected.items():
+        if summary.get(key) != value:
+            return False
+    return True
 
 
 def _add_archived_audit_metadata_checks(
@@ -3707,23 +3716,7 @@ def _run_list_entry(path: Path, *, include_audit: bool) -> dict[str, Any]:
         }
     artifacts = _mapping(payload.get("artifacts"))
     metrics = _mapping(payload.get("metrics"))
-    artifact_flags = {
-        "run": True,
-        "quickstart": _payload_artifact_exists(path, artifacts, "quickstart_markdown", "QUICKSTART.md"),
-        "ci": _payload_artifact_exists(path, artifacts, "ci_markdown", "CI_QUICKSTART.md"),
-        "report": _payload_artifact_exists(path, artifacts, "html", "report.html"),
-        "markdown": _payload_artifact_exists(path, artifacts, "markdown", "report.md"),
-        "graph": _payload_artifact_exists(path, artifacts, "graph", "graph.json"),
-        "evals": _payload_artifact_exists(path, artifacts, "evals", "evals.json"),
-        "experiments": _payload_artifact_exists(path, artifacts, "experiments", "experiments.json"),
-        "discoveries": _payload_artifact_exists(path, artifacts, "discoveries", "discoveries.json"),
-        "paper": _payload_artifact_exists(path, artifacts, "paper", "paper/main.tex"),
-        "pdf": _payload_artifact_exists(path, artifacts, "pdf", "paper/main.pdf"),
-        "review": _payload_artifact_exists(path, artifacts, "review", "paper/review.md"),
-        "bundle": _payload_artifact_exists(path, artifacts, "bundle", "mechferret-bundle.zip"),
-        "manifest": _payload_artifact_exists(path, artifacts, "manifest", "manifest.json"),
-        "trace": _payload_artifact_exists(path, artifacts, "trace", "trace.jsonl"),
-    }
+    artifact_flags = _run_artifact_flags(path, artifacts)
     artifact_summary = _artifact_summary({name: {"exists": exists} for name, exists in artifact_flags.items()})
     entry = {
         "ok": True,
@@ -3755,6 +3748,26 @@ def _run_list_entry(path: Path, *, include_audit: bool) -> dict[str, Any]:
         except Exception as exc:  # noqa: BLE001 - listing should keep scanning other runs
             entry["audit"] = {"passed": False, "failed_checks": ["audit_error"], "error": str(exc)}
     return entry
+
+
+def _run_artifact_flags(run_json: Path, artifacts: dict[str, Any]) -> dict[str, bool]:
+    return {
+        "run": True,
+        "quickstart": _payload_artifact_exists(run_json, artifacts, "quickstart_markdown", "QUICKSTART.md"),
+        "ci": _payload_artifact_exists(run_json, artifacts, "ci_markdown", "CI_QUICKSTART.md"),
+        "report": _payload_artifact_exists(run_json, artifacts, "html", "report.html"),
+        "markdown": _payload_artifact_exists(run_json, artifacts, "markdown", "report.md"),
+        "graph": _payload_artifact_exists(run_json, artifacts, "graph", "graph.json"),
+        "evals": _payload_artifact_exists(run_json, artifacts, "evals", "evals.json"),
+        "experiments": _payload_artifact_exists(run_json, artifacts, "experiments", "experiments.json"),
+        "discoveries": _payload_artifact_exists(run_json, artifacts, "discoveries", "discoveries.json"),
+        "paper": _payload_artifact_exists(run_json, artifacts, "paper", "paper/main.tex"),
+        "pdf": _payload_artifact_exists(run_json, artifacts, "pdf", "paper/main.pdf"),
+        "review": _payload_artifact_exists(run_json, artifacts, "review", "paper/review.md"),
+        "bundle": _payload_artifact_exists(run_json, artifacts, "bundle", "mechferret-bundle.zip"),
+        "manifest": _payload_artifact_exists(run_json, artifacts, "manifest", "manifest.json"),
+        "trace": _payload_artifact_exists(run_json, artifacts, "trace", "trace.jsonl"),
+    }
 
 
 def _run_json_candidates(root: Path) -> list[Path]:
@@ -4126,8 +4139,31 @@ def memory_clear(db_path: str | Path) -> None:
 
 
 def summarize_run_artifact(path: str | Path) -> dict[str, Any]:
-    payload = _json_object_from_file(_path(path))
+    run_json = _path(path)
+    payload = _json_object_from_file(run_json)
     metrics = _mapping(payload.get("metrics"))
+    artifacts = _mapping(payload.get("artifacts", {}))
+    artifact_flags = _run_artifact_flags(run_json, artifacts) if payload else {"run": bool(run_json.exists())}
+    artifact_summary = _artifact_summary({name: {"exists": exists} for name, exists in artifact_flags.items()})
+    artifact_readiness = _artifact_readiness(artifact_summary)
+    audit: dict[str, Any] = {}
+    next_actions: list[str] = []
+    if payload:
+        from .audit import audit_run_artifact
+
+        try:
+            audit_result = audit_run_artifact(run_json)
+            audit = {
+                "passed": audit_result.get("passed", False),
+                "failed_checks": audit_result.get("failed_checks", []),
+                "advisories": audit_result.get("advisories", []),
+                "readiness_score": audit_result.get("readiness_score", _number(metrics.get("readiness_score", 0))),
+            }
+            next_actions.extend(audit_result.get("next_actions", []))
+        except Exception as exc:  # noqa: BLE001 - summaries should still render malformed runs
+            audit = {"passed": False, "failed_checks": ["audit_error"], "error": str(exc)}
+    if payload and not _mapping(artifact_readiness.get("sharing")).get("ok"):
+        next_actions.append("Run `mechferret open all` to inspect missing share artifacts.")
     return {
         "run_id": _text(payload.get("run_id", "")),
         "question": _text(payload.get("question", "")),
@@ -4135,5 +4171,10 @@ def summarize_run_artifact(path: str | Path) -> dict[str, Any]:
         "claims": len(_items(payload.get("claims", []))),
         "evidence": len(_items(payload.get("evidence", []))),
         "gaps": [_text(item) for item in _items(payload.get("gaps", [])) if _text(item)],
-        "artifacts": _mapping(payload.get("artifacts", {})),
+        "artifacts": artifacts,
+        "artifact_presence": artifact_flags,
+        "artifact_summary": artifact_summary,
+        "artifact_readiness": artifact_readiness,
+        "audit": audit,
+        "next_actions": _dedupe_actions(next_actions),
     }

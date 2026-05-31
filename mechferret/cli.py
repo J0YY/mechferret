@@ -929,12 +929,7 @@ def main(argv: list[str] | None = None) -> None:
             print(json.dumps(summary, indent=2, sort_keys=True))
         else:
             summary = summarize_run_artifact(_resolve_run_json_arg(args.run_json, args.runs_root, args.select))
-            print(f"Run: {summary['run_id']}")
-            print(f"Question: {summary['question']}")
-            print(f"Readiness: {summary['readiness_score']:.2f}")
-            print(f"Claims: {summary['claims']}")
-            print(f"Evidence chunks: {summary['evidence']}")
-            print(f"Gaps: {len(summary['gaps'])}")
+            _print_run_summary(summary, include_run_id=True)
             if summary["artifacts"].get("html"):
                 print(f"Report: {summary['artifacts']['html']}")
     elif args.command == "inspect":
@@ -951,11 +946,7 @@ def main(argv: list[str] | None = None) -> None:
             print(json.dumps(summary, indent=2, sort_keys=True))
         else:
             summary = summarize_run_artifact(_resolve_run_json_arg(args.run_json, args.runs_root, args.select))
-            print(f"Question: {summary['question']}")
-            print(f"Readiness: {summary['readiness_score']:.2f}")
-            print(f"Claims: {summary['claims']}")
-            print(f"Evidence chunks: {summary['evidence']}")
-            print(f"Gaps: {len(summary['gaps'])}")
+            _print_run_summary(summary, include_run_id=False)
     elif args.command in {"audit", "/audit"}:
         if args.json and (args.run_json or args.select != "latest"):
             resolved_run, error = _resolve_run_json_for_json(args.run_json, args.runs_root, args.select)
@@ -2889,6 +2880,36 @@ def print_tool_results(result: dict) -> None:
     if result.get("next_actions"):
         print("Next actions:")
         for action in result["next_actions"]:
+            print(f"  - {action}")
+
+
+def _print_run_summary(summary: dict[str, Any], *, include_run_id: bool) -> None:
+    if include_run_id:
+        print(f"Run: {summary['run_id']}")
+    print(f"Question: {summary['question']}")
+    print(f"Readiness: {summary['readiness_score']:.2f}")
+    audit = summary.get("audit") or {}
+    if audit:
+        print(f"Audit: {'PASS' if audit.get('passed') else 'WARN'}")
+        if audit.get("failed_checks"):
+            print(f"Failed checks: {', '.join(audit['failed_checks'][:6])}")
+    lanes = summary.get("artifact_readiness") or {}
+    if lanes:
+        run_ready = lanes.get("run") or {}
+        share_ready = lanes.get("sharing") or {}
+        setup_ready = lanes.get("setup") or {}
+        print(
+            "Artifacts: "
+            f"run={'READY' if run_ready.get('ok') else 'BLOCKED'}; "
+            f"share={'READY' if share_ready.get('ok') else 'BLOCKED'}; "
+            f"setup={'READY' if setup_ready.get('ok') else 'BLOCKED'}"
+        )
+    print(f"Claims: {summary['claims']}")
+    print(f"Evidence chunks: {summary['evidence']}")
+    print(f"Gaps: {len(summary['gaps'])}")
+    if summary.get("next_actions"):
+        print("Next actions:")
+        for action in summary["next_actions"][:6]:
             print(f"  - {action}")
 
 

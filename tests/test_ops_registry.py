@@ -3400,6 +3400,11 @@ class OpsRegistryTest(unittest.TestCase):
                     self.assertEqual(Path(payload["path"]), root / "runs" / "demo" / "run.json")
                     self.assertEqual(payload["selection"], "latest")
                     self.assertIn("question", payload)
+                    self.assertIn("audit", payload)
+                    self.assertIn("artifact_readiness", payload)
+                    self.assertIn("run", payload["artifact_readiness"])
+                    self.assertFalse(payload["artifact_readiness"]["sharing"]["ok"])
+                    self.assertIn("next_actions", payload)
 
                 with self.subTest(command=command, mode="missing"):
                     missing_out = StringIO()
@@ -3512,6 +3517,9 @@ class OpsRegistryTest(unittest.TestCase):
                         args.extend(["--select", "latest"])
                     main(args)
                 self.assertIn(expected, out.getvalue())
+                if command in {"resume", "inspect"}:
+                    self.assertIn("Audit: PASS", out.getvalue())
+                    self.assertIn("Artifacts: run=", out.getvalue())
 
     def test_cli_inspect_tolerates_malformed_run_artifact(self):
         from mechferret.cli import main
@@ -3526,6 +3534,7 @@ class OpsRegistryTest(unittest.TestCase):
             rendered = out.getvalue()
             self.assertIn("Question:", rendered)
             self.assertIn("Readiness: 0.00", rendered)
+            self.assertIn("Artifacts: run=READY", rendered)
             self.assertIn("Claims: 0", rendered)
 
     def test_status_helpers_accept_direct_run_json_path(self):

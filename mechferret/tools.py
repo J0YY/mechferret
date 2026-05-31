@@ -170,7 +170,7 @@ def _compact_json_value(value: Any) -> Any:
             "key_count": len(value),
             "keys": keys,
         }
-        for key in ("ok", "passed", "state", "path", "run_json", "failed_checks", "repairable"):
+        for key in ("ok", "exists", "passed", "state", "path", "run_json", "failed_checks", "repairable"):
             if key in value and isinstance(value[key], (str, int, float, bool, list, type(None))):
                 summary[key] = value[key]
         return summary
