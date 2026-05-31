@@ -1952,11 +1952,9 @@ def _command_list_text(
     if workflows:
         lines.extend(["", "Workflows:"])
         for workflow in workflows:
-            commands_text = " -> ".join(workflow.get("commands", [])[:4])
-            if len(workflow.get("commands", [])) > 4:
-                commands_text += " -> ..."
             lines.append(f"  {workflow['name']}: {workflow['description']}")
-            lines.append(f"    {commands_text}")
+            for index, command in enumerate(workflow.get("commands", []), start=1):
+                lines.append(f"    {index}. {command}")
     return "\n".join(lines)
 
 
