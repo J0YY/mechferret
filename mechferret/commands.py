@@ -24,6 +24,7 @@ SECTIONS: list[tuple[str, list[Command]]] = [
         Command("/compact", "summarise older turns to free context"),
     ]),
     ("Research", [
+        Command("/demo", "replay this project's recorded research trace"),
         Command("/discover ...", "run discovery directly (--skill --task --model)"),
         Command("/skills [name]", "list interpretability playbooks, or show one"),
         Command("/arch", "show the evidence flowchart: what each experiment proves"),
@@ -40,6 +41,7 @@ SECTIONS: list[tuple[str, list[Command]]] = [
         Command("/model <name>", "set the conversation model"),
         Command("/cost", "show session token + USD usage"),
         Command("/memory", "list confirmed mechanisms in memory"),
+        Command("/trace", "show the run trace (mirrors to Raindrop Workshop)"),
         Command("/resume [id]", "resume a saved session"),
         Command("/export [path]", "export this session to Markdown"),
         Command("/init", "scaffold a MECHFERRET.md for this project"),
@@ -57,5 +59,5 @@ SECTIONS: list[tuple[str, list[Command]]] = [
 REPL_HANDLED = {
     "exit", "quit", "q", "help", "clear", "open", "login", "connect", "model",
     "goal", "plan", "cost", "compact", "resume", "memory", "export", "init",
-    "review", "mcp", "why", "arch", "paper", "review-paper",
+    "review", "mcp", "why", "arch", "paper", "review-paper", "demo", "trace",
 }

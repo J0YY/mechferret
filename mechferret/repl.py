@@ -9,6 +9,7 @@ prompt, if no model is connected, it walks you through adding an API key.
 
 from __future__ import annotations
 
+import json
 import os
 import shlex
 import sys
@@ -236,6 +237,11 @@ def run_repl() -> None:
     _ferret_walk()
     print(_welcome(session))
     print()
+    from . import demo as _demo_mod
+
+    if _demo_mod.has_demo():
+        print(_c("  a recorded research trace is available here — type /demo to replay it", "38;5;141"))
+        print()
 
     while True:
         _print_status_and_bar(agent, session)
@@ -246,6 +252,9 @@ def run_repl() -> None:
             print()
             break
         if not line:
+            # Empty enter mid-conversation = "keep going" (accept the proposed next step).
+            if agent.configured and agent.messages:
+                _chat(agent, session, "Proceed with the next step you proposed. Keep building.")
             continue
 
         try:
@@ -287,6 +296,16 @@ def run_repl() -> None:
             else:
                 print(_c("  usage: /goal <your research objective>", "33"))
             continue
+        if bare == "demo":
+            from . import demo as demo_mod
+
+            try:
+                demo_mod.play(demo_mod.load_demo(), render=True, record=True, reset=True)
+            except FileNotFoundError:
+                print(_c("  no demo here — this project has no .mechferret/demo.json", "33"))
+            except KeyboardInterrupt:
+                print(_c("\n  (demo stopped)", "2"))
+            continue
         if bare == "why":
             _why()
             continue
@@ -317,6 +336,9 @@ def run_repl() -> None:
             continue
         if bare == "memory" and len(tokens) == 1:
             _show_memory()
+            continue
+        if bare == "trace":
+            _show_trace()
             continue
         if bare == "mcp":
             _mcp(tokens[1:])
@@ -414,6 +436,7 @@ def _chat(agent, session, text: str) -> str | None:
         print()
         print(_render_reply(reply))
     print(_c(f"  ({agent.cost.format_total()})", "2"))
+    print(_c("  ↵ press enter to continue · or type to redirect", "38;5;141"))
     print()
     first_line = next((ln for ln in (reply or "").strip().splitlines() if ln.strip()), "")
     session.step = (first_line[:60] + "…") if len(first_line) > 60 else (first_line or "ready")
@@ -722,6 +745,27 @@ def _mcp(args: list[str]) -> None:
             print(_c(f"    {spec['name']}", "1;36") + _c(f"  {spec['description'][:70]}", "2"))
         return
     print(_c("  usage: /mcp [status | tools | add <name> <command> [args…]]", "33"))
+
+
+def _show_trace(limit: int = 30) -> None:
+    path = Path(".mechferret/trace.jsonl")
+    if not path.exists():
+        print(_c("  no trace yet — run /demo or chat first (spans land in .mechferret/trace.jsonl)", "33"))
+        return
+    lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()[-limit:]
+    raindrop = os.getenv("RAINDROP_LOCAL_DEBUGGER") or os.getenv("MECHFERRET_RAINDROP")
+    print(_c(f"  trace · {len(lines)} recent spans" + ("  · mirroring to Raindrop ✓" if raindrop else "  · set RAINDROP_LOCAL_DEBUGGER=1 to stream to Raindrop Workshop"), "38;5;141"))
+    for ln in lines:
+        try:
+            rec = json.loads(ln)
+        except json.JSONDecodeError:
+            continue
+        name = rec.get("name", "")
+        attrs = rec.get("attributes", {})
+        ms = rec.get("elapsed_ms", 0)
+        detail = attrs.get("tool") or attrs.get("probe") or attrs.get("text") or attrs.get("statement") or ""
+        dur = f" {ms:.0f}ms" if ms else ""
+        print("    " + _c(f"{name:18}", "1;36") + _c(f"{str(detail)[:60]}{dur}", "2"))
 
 
 def _show_memory() -> None:

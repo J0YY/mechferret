@@ -24,6 +24,7 @@ from typing import Any, Callable
 from . import permissions, sessions
 from .config import configured_api_key, configured_model, load_config
 from .costs import CostTracker
+from .tracing import TraceRecorder
 from .tools import all_specs, run_tool as _run_tool, tool_meta
 
 BASE_SYSTEM_PROMPT = """You are MechFerret, an agentic coding assistant specialised for mechanistic-interpretability research (like Claude Code / Codex, but for interp).
@@ -49,7 +50,12 @@ OUTPUT RULES (important):
 - Be concise. A few short paragraphs, not an essay. Lead with the answer.
 - Cite paper URLs and file paths you actually read, inline.
 - Be precise about rigor: controls, multiple seeds, reproducibility, and
-  triangulation across independent probes before claiming a mechanism."""
+  triangulation across independent probes before claiming a mechanism.
+- NEVER end a turn flat. Always finish with the single most useful NEXT STEP and
+  a one-line call-to-action the user can accept by pressing enter, e.g.
+  "Next: I'll collect LIBERO activations and train the first probe — press enter
+  to proceed, or tell me what to change." Keep momentum: propose and offer to do
+  the next concrete thing, don't just summarise and stop."""
 
 MAX_TOOL_STEPS = 12
 MAX_TOKENS = int(os.getenv("MECHFERRET_MAX_TOKENS", "4096"))
@@ -147,6 +153,7 @@ class Agent:
         self.denials: list[str] = []
         self.session_id = sessions.new_session_id()
         self.abort = threading.Event()
+        self.tracer = TraceRecorder(self.session_id, ".mechferret")  # -> .mechferret/trace.jsonl (+ Raindrop mirror)
 
     @property
     def configured(self) -> bool:
@@ -160,6 +167,7 @@ class Agent:
         if not self.configured:
             raise RuntimeError("No provider configured.")
         self.abort.clear()
+        self.tracer.event("user_prompt", text=user_text[:200])
         self._maybe_compact()
         try:
             reply = self._send_anthropic(user_text) if self.provider == "anthropic" else self._send_openai(user_text)
@@ -267,8 +275,10 @@ class Agent:
         if name == "present_options":
             options = args.get("options", []) or []
             self.on_tool(name, args)
+            self.tracer.event("tool", tool=name, options=len(options))
             if self.on_options:
                 choice = self.on_options(options)
+                self.tracer.event("user_selected", choice=str(choice)[:120])
                 return json.dumps({"user_selected": choice})
             return _run_tool(name, args)  # headless fallback
 
@@ -280,9 +290,14 @@ class Agent:
             approved = bool(self.confirm and self.confirm(name, args, decision.reason)) if decision.behavior == "ask" else False
             if not approved:
                 self.denials.append(name)
+                self.tracer.event("tool_denied", tool=name, reason=decision.reason)
                 return json.dumps({"denied": True, "reason": decision.reason or "not approved", "tool": name})
         self.on_tool(name, args)
-        return _run_tool(name, args)
+        self.tracer.event("tool", tool=name, permission=meta["permission"],
+                          args={k: str(v)[:100] for k, v in args.items()})
+        result = _run_tool(name, args)
+        self.tracer.event("tool_done", tool=name, output_chars=len(result))
+        return result
 
     # --- Anthropic ------------------------------------------------------------------
 

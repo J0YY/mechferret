@@ -1,0 +1,333 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1600" viewBox="0 0 2400 1600" role="img" aria-labelledby="title desc">
+  <title id="title">MechFerret hackathon architecture</title>
+  <desc id="desc">A large architecture diagram showing MechFerret as an autonomous mechanistic interpretability research system with literature grounding, discovery control loop, experiment swarm, scalable backends, memory, observability, and auditable artifacts.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#07110f"/>
+      <stop offset="45%" stop-color="#101820"/>
+      <stop offset="100%" stop-color="#12131b"/>
+    </linearGradient>
+    <linearGradient id="coreGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1ee3b6" stop-opacity="0.95"/>
+      <stop offset="45%" stop-color="#6dd6ff" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#c7f464" stop-opacity="0.9"/>
+    </linearGradient>
+    <linearGradient id="purpleGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7fd8ff" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#b18cff" stop-opacity="0.85"/>
+    </linearGradient>
+    <linearGradient id="warmGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffe082"/>
+      <stop offset="100%" stop-color="#ff8f70"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#000000" flood-opacity="0.42"/>
+    </filter>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <marker id="arrowCyan" markerWidth="18" markerHeight="18" refX="14" refY="9" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 18 9 L 0 18 z" fill="#58d7ff"/>
+    </marker>
+    <marker id="arrowLime" markerWidth="18" markerHeight="18" refX="14" refY="9" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 18 9 L 0 18 z" fill="#c7f464"/>
+    </marker>
+    <marker id="arrowWarm" markerWidth="18" markerHeight="18" refX="14" refY="9" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 18 9 L 0 18 z" fill="#ffb86b"/>
+    </marker>
+    <style>
+      * { box-sizing: border-box; }
+      .bg { fill: url(#bg); }
+      .grid { stroke: rgba(255,255,255,0.055); stroke-width: 1; }
+      .frame { fill: rgba(255,255,255,0.035); stroke: rgba(255,255,255,0.22); stroke-width: 2; }
+      .card { fill: rgba(12,18,23,0.92); stroke: rgba(255,255,255,0.18); stroke-width: 2; filter: url(#shadow); }
+      .panel { fill: rgba(255,255,255,0.055); stroke: rgba(255,255,255,0.18); stroke-width: 2; }
+      .core { fill: rgba(8,14,16,0.98); stroke: url(#coreGrad); stroke-width: 4; filter: url(#shadow); }
+      .chip { fill: rgba(255,255,255,0.095); stroke: rgba(255,255,255,0.22); stroke-width: 1.5; }
+      .chipCyan { fill: rgba(88,215,255,0.12); stroke: rgba(88,215,255,0.55); stroke-width: 2; }
+      .chipLime { fill: rgba(199,244,100,0.12); stroke: rgba(199,244,100,0.58); stroke-width: 2; }
+      .chipWarm { fill: rgba(255,184,107,0.13); stroke: rgba(255,184,107,0.58); stroke-width: 2; }
+      .chipViolet { fill: rgba(177,140,255,0.13); stroke: rgba(177,140,255,0.55); stroke-width: 2; }
+      .title { font: 800 76px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #f6fbff; letter-spacing: 0; }
+      .subtitle { font: 500 31px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: rgba(246,251,255,0.77); letter-spacing: 0; }
+      .section { font: 800 34px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #f7fbff; letter-spacing: 0; }
+      .label { font: 750 27px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #f7fbff; letter-spacing: 0; }
+      .body { font: 500 22px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: rgba(246,251,255,0.78); letter-spacing: 0; }
+      .small { font: 500 18px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: rgba(246,251,255,0.70); letter-spacing: 0; }
+      .tiny { font: 650 15px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: rgba(246,251,255,0.64); letter-spacing: 0.4px; text-transform: uppercase; }
+      .accentCyan { fill: #58d7ff; }
+      .accentLime { fill: #c7f464; }
+      .accentWarm { fill: #ffb86b; }
+      .accentViolet { fill: #b18cff; }
+      .lineCyan { fill: none; stroke: #58d7ff; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrowCyan); filter: url(#glow); }
+      .lineLime { fill: none; stroke: #c7f464; stroke-width: 4.5; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrowLime); filter: url(#glow); }
+      .lineWarm { fill: none; stroke: #ffb86b; stroke-width: 4.5; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrowWarm); filter: url(#glow); }
+      .dash { stroke-dasharray: 12 13; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="2400" height="1600"/>
+  <g opacity="0.7">
+    <path class="grid" d="M120 0V1600M240 0V1600M360 0V1600M480 0V1600M600 0V1600M720 0V1600M840 0V1600M960 0V1600M1080 0V1600M1200 0V1600M1320 0V1600M1440 0V1600M1560 0V1600M1680 0V1600M1800 0V1600M1920 0V1600M2040 0V1600M2160 0V1600M2280 0V1600"/>
+    <path class="grid" d="M0 120H2400M0 240H2400M0 360H2400M0 480H2400M0 600H2400M0 720H2400M0 840H2400M0 960H2400M0 1080H2400M0 1200H2400M0 1320H2400M0 1440H2400"/>
+  </g>
+
+  <text x="90" y="106" class="title">MechFerret</text>
+  <text x="90" y="157" class="subtitle">Autonomous interpretability research: grounds, hypothesizes, experiments, critiques, and ships auditable discoveries.</text>
+
+  <g transform="translate(1600,70)">
+    <rect class="chipCyan" x="0" y="0" width="225" height="52" rx="26"/>
+    <text x="112" y="34" class="small" text-anchor="middle">Technical depth</text>
+    <rect class="chipLime" x="245" y="0" width="188" height="52" rx="26"/>
+    <text x="339" y="34" class="small" text-anchor="middle">Originality</text>
+    <rect class="chipWarm" x="453" y="0" width="184" height="52" rx="26"/>
+    <text x="545" y="34" class="small" text-anchor="middle">Demo clarity</text>
+  </g>
+
+  <!-- Input and agent surface -->
+  <g transform="translate(90,220)">
+    <rect class="card" x="0" y="0" width="500" height="290" rx="22"/>
+    <text x="34" y="56" class="section">Interface + Agent Shell</text>
+    <text x="34" y="98" class="body">CLI, REPL, or prompt routed through a tool loop.</text>
+    <g transform="translate(34,125)">
+      <rect class="chipCyan" x="0" y="0" width="176" height="42" rx="21"/>
+      <text x="88" y="28" class="small" text-anchor="middle">mechferret</text>
+      <rect class="chipViolet" x="194" y="0" width="226" height="42" rx="21"/>
+      <text x="307" y="28" class="small" text-anchor="middle">Agent.send()</text>
+      <rect class="chipWarm" x="0" y="58" width="202" height="42" rx="21"/>
+      <text x="101" y="86" class="small" text-anchor="middle">tool registry</text>
+      <rect class="chipLime" x="220" y="58" width="198" height="42" rx="21"/>
+      <text x="319" y="86" class="small" text-anchor="middle">MCP servers</text>
+      <rect class="chip" x="0" y="116" width="190" height="42" rx="21"/>
+      <text x="95" y="144" class="small" text-anchor="middle">plan/auto mode</text>
+      <rect class="chip" x="208" y="116" width="212" height="42" rx="21"/>
+      <text x="314" y="144" class="small" text-anchor="middle">OpenAI/Anthropic</text>
+    </g>
+  </g>
+
+  <!-- Core loop -->
+  <g transform="translate(710,215)">
+    <rect class="core" x="0" y="0" width="980" height="540" rx="30"/>
+    <text x="42" y="62" class="section">DiscoveryController: autonomous causal discovery loop</text>
+    <text x="42" y="103" class="body">Stops on rigor, convergence, or budget - not on human attention.</text>
+
+    <g transform="translate(54,145)">
+      <rect class="chipCyan" x="0" y="0" width="210" height="88" rx="18"/>
+      <text x="105" y="35" class="label" text-anchor="middle">1. Ground</text>
+      <text x="105" y="66" class="small" text-anchor="middle">prior art + memory</text>
+
+      <rect class="chipViolet" x="260" y="0" width="210" height="88" rx="18"/>
+      <text x="365" y="35" class="label" text-anchor="middle">2. Hypothesize</text>
+      <text x="365" y="66" class="small" text-anchor="middle">falsifiable claims</text>
+
+      <rect class="chipWarm" x="520" y="0" width="210" height="88" rx="18"/>
+      <text x="625" y="35" class="label" text-anchor="middle">3. Screen</text>
+      <text x="625" y="66" class="small" text-anchor="middle">~96 candidate heads</text>
+
+      <rect class="chipLime" x="260" y="145" width="210" height="88" rx="18"/>
+      <text x="365" y="180" class="label" text-anchor="middle">5. Critique</text>
+      <text x="365" y="211" class="small" text-anchor="middle">controls + rigor</text>
+
+      <rect class="chipCyan" x="520" y="145" width="210" height="88" rx="18"/>
+      <text x="625" y="180" class="label" text-anchor="middle">4. Triangulate</text>
+      <text x="625" y="211" class="small" text-anchor="middle">independent probes</text>
+
+      <rect class="chipViolet" x="0" y="145" width="210" height="88" rx="18"/>
+      <text x="105" y="180" class="label" text-anchor="middle">6. Synthesize</text>
+      <text x="105" y="211" class="small" text-anchor="middle">discoveries + dossier</text>
+
+      <path class="lineCyan" d="M210 44H255"/>
+      <path class="lineWarm" d="M470 44H515"/>
+      <path class="lineLime" d="M625 88V135"/>
+      <path class="lineCyan" d="M520 189H475"/>
+      <path class="lineWarm" d="M260 189H215"/>
+      <path class="lineLime dash" d="M105 145V102C105 82 122 72 145 72H170"/>
+    </g>
+
+    <g transform="translate(805,145)">
+      <rect class="panel" x="0" y="0" width="135" height="330" rx="18"/>
+      <text x="68" y="42" class="tiny" text-anchor="middle">Guardrails</text>
+      <text x="68" y="84" class="small" text-anchor="middle">Budget</text>
+      <text x="68" y="118" class="small" text-anchor="middle">Permissions</text>
+      <text x="68" y="152" class="small" text-anchor="middle">Costs</text>
+      <text x="68" y="186" class="small" text-anchor="middle">Tracing</text>
+      <text x="68" y="220" class="small" text-anchor="middle">Replay</text>
+      <text x="68" y="254" class="small" text-anchor="middle">Memory</text>
+    </g>
+
+    <g transform="translate(54,420)">
+      <text x="0" y="0" class="tiny">Core novelty</text>
+      <text x="0" y="38" class="body">Validates mechanisms by intervention across ablation, patching, attention, DLA, and controls.</text>
+      <text x="0" y="74" class="body">Confirmed discoveries require significance, reproducibility, and multi-probe agreement.</text>
+    </g>
+  </g>
+
+  <path class="lineCyan" d="M590 365C645 365 650 345 705 345"/>
+
+  <!-- Literature loop -->
+  <g transform="translate(90,565)">
+    <rect class="card" x="0" y="0" width="500" height="540" rx="22"/>
+    <text x="34" y="58" class="section">Literature + Knowledge Loop</text>
+    <text x="34" y="101" class="body">Grounds discoveries before novelty claims.</text>
+
+    <g transform="translate(34,135)">
+      <rect class="chipCyan" x="0" y="0" width="192" height="70" rx="17"/>
+      <text x="96" y="43" class="label" text-anchor="middle">Plan</text>
+      <rect class="chipCyan" x="240" y="0" width="192" height="70" rx="17"/>
+      <text x="336" y="43" class="label" text-anchor="middle">Retrieve</text>
+      <rect class="chipViolet" x="0" y="108" width="192" height="70" rx="17"/>
+      <text x="96" y="151" class="label" text-anchor="middle">Extract</text>
+      <rect class="chipLime" x="240" y="108" width="192" height="70" rx="17"/>
+      <text x="336" y="151" class="label" text-anchor="middle">Critique</text>
+      <rect class="chipWarm" x="120" y="216" width="192" height="70" rx="17"/>
+      <text x="216" y="259" class="label" text-anchor="middle">Synthesize</text>
+      <path class="lineCyan" d="M192 35H235"/>
+      <path class="lineLime" d="M336 70V103"/>
+      <path class="lineWarm" d="M240 143H197"/>
+      <path class="lineCyan" d="M96 178C96 208 116 224 142 238"/>
+    </g>
+
+    <g transform="translate(34,455)">
+      <text x="0" y="0" class="tiny">Sources</text>
+      <text x="0" y="36" class="small">BM25 corpus, memory.sqlite, URLs, optional provider research</text>
+    </g>
+  </g>
+  <path class="lineLime dash" d="M590 830C642 830 645 650 710 650"/>
+
+  <!-- Experiment swarm -->
+  <g transform="translate(1770,215)">
+    <rect class="card" x="0" y="0" width="540" height="640" rx="22"/>
+    <text x="34" y="60" class="section">Parallel Experiment Swarm</text>
+    <text x="34" y="102" class="body">Deterministic fan-out over experiment specs.</text>
+
+    <g transform="translate(34,142)">
+      <rect class="chipWarm" x="0" y="0" width="472" height="78" rx="18"/>
+      <text x="236" y="48" class="label" text-anchor="middle">Coordinator.map(engine.run_spec)</text>
+
+      <rect class="chipCyan" x="0" y="122" width="472" height="94" rx="18"/>
+      <text x="236" y="158" class="label" text-anchor="middle">InterpEngine</text>
+      <text x="236" y="190" class="small" text-anchor="middle">aggregates seeds, effect size, controls, significance</text>
+
+      <rect class="chipViolet" x="0" y="262" width="472" height="96" rx="18"/>
+      <text x="236" y="298" class="label" text-anchor="middle">Backend-agnostic probes</text>
+      <text x="236" y="330" class="small" text-anchor="middle">ablation, patching, attention, DLA, logit lens</text>
+
+      <rect class="chipLime" x="0" y="404" width="220" height="86" rx="18"/>
+      <text x="110" y="439" class="label" text-anchor="middle">Synthetic</text>
+      <text x="110" y="470" class="small" text-anchor="middle">offline replay</text>
+
+      <rect class="chipCyan" x="252" y="404" width="220" height="86" rx="18"/>
+      <text x="362" y="439" class="label" text-anchor="middle">TransformerLens</text>
+      <text x="362" y="470" class="small" text-anchor="middle">real model</text>
+
+      <path class="lineWarm" d="M236 78V117"/>
+      <path class="lineCyan" d="M236 216V257"/>
+      <path class="lineLime" d="M236 358V393"/>
+    </g>
+
+  </g>
+  <path class="lineWarm" d="M1690 480C1730 480 1730 480 1765 480"/>
+
+  <!-- Scale plane -->
+  <g transform="translate(1320,930)">
+    <rect class="card" x="0" y="0" width="990" height="360" rx="22"/>
+    <text x="34" y="60" class="section">Scale Plane: same loop, bigger compute</text>
+    <text x="34" y="101" class="body">Offline determinism for demo clarity, GPU execution for real measurements.</text>
+
+    <g transform="translate(34,145)">
+      <rect class="chipLime" x="0" y="0" width="260" height="126" rx="20"/>
+      <text x="130" y="43" class="label" text-anchor="middle">Local synthetic</text>
+      <text x="130" y="77" class="small" text-anchor="middle">no keys, no GPU</text>
+      <text x="130" y="106" class="small" text-anchor="middle">replayable in seconds</text>
+
+      <rect class="chipCyan" x="310" y="0" width="260" height="126" rx="20"/>
+      <text x="440" y="43" class="label" text-anchor="middle">Modal GPU</text>
+      <text x="440" y="77" class="small" text-anchor="middle">A10G container</text>
+      <text x="440" y="106" class="small" text-anchor="middle">whole loop remote</text>
+
+      <rect class="chipViolet" x="620" y="0" width="260" height="126" rx="20"/>
+      <text x="750" y="43" class="label" text-anchor="middle">SLURM cluster</text>
+      <text x="750" y="77" class="small" text-anchor="middle">ssh + srun</text>
+      <text x="750" y="106" class="small" text-anchor="middle">same artifact contract</text>
+
+      <path class="lineCyan" d="M260 63H305"/>
+      <path class="lineCyan" d="M570 63H615"/>
+    </g>
+
+    <g transform="translate(34,305)">
+      <text x="0" y="0" class="small">Scale claim: parallel screens, stable critic, identical artifact contract.</text>
+    </g>
+  </g>
+  <path class="lineCyan dash" d="M2040 855V925"/>
+
+  <!-- Memory and observability -->
+  <g transform="translate(90,1165)">
+    <rect class="card" x="0" y="0" width="1150" height="330" rx="22"/>
+    <text x="34" y="62" class="section">Memory, Observability, and Auditable Output</text>
+    <text x="34" y="104" class="body">Every run becomes a replayable research dossier with machine-readable proof trails.</text>
+
+    <g transform="translate(34,145)">
+      <rect class="chipLime" x="0" y="0" width="235" height="95" rx="18"/>
+      <text x="118" y="38" class="label" text-anchor="middle">Memory</text>
+      <text x="118" y="69" class="small" text-anchor="middle">confirmed mechanisms</text>
+
+      <rect class="chipCyan" x="270" y="0" width="235" height="95" rx="18"/>
+      <text x="388" y="38" class="label" text-anchor="middle">Trace</text>
+      <text x="388" y="69" class="small" text-anchor="middle">Raindrop timeline</text>
+
+      <rect class="chipWarm" x="540" y="0" width="235" height="95" rx="18"/>
+      <text x="658" y="38" class="label" text-anchor="middle">Graph</text>
+      <text x="658" y="69" class="small" text-anchor="middle">source to discovery</text>
+
+      <rect class="chipViolet" x="810" y="0" width="235" height="95" rx="18"/>
+      <text x="928" y="38" class="label" text-anchor="middle">Self-evals</text>
+      <text x="928" y="69" class="small" text-anchor="middle">controls + rigor</text>
+    </g>
+
+    <g transform="translate(34,275)">
+      <text x="0" y="-14" class="small">Artifacts: report.html, report.md, run.json, experiments.json, discoveries.json</text>
+      <text x="0" y="18" class="small">Plus graph.json, evals.json, trace.jsonl, and persisted mechanisms in memory.sqlite</text>
+    </g>
+  </g>
+  <path class="lineLime" d="M1150 755C1150 875 760 945 760 1160"/>
+
+  <!-- Judging surface -->
+  <g transform="translate(1320,1340)">
+    <rect class="card" x="0" y="0" width="990" height="155" rx="22"/>
+    <text x="34" y="58" class="section">Judge-Readable Execution</text>
+    <text x="34" y="101" class="body">Intervenes on model internals, enforces controls, and emits a live dossier.</text>
+  </g>
+  <path class="lineWarm dash" d="M1240 1325C1305 1395 1260 1415 1315 1415"/>
+
+  <!-- Rubric rails -->
+  <g transform="translate(1600,132)">
+    <rect class="panel" x="0" y="0" width="710" height="58" rx="18"/>
+    <text x="355" y="38" class="body" text-anchor="middle"><tspan class="accentCyan">Track 3:</tspan> applied autonomous research for AI interpretability</text>
+  </g>
+
+  <!-- Connection labels -->
+  <g transform="translate(612,303)">
+    <rect class="chipCyan" x="0" y="0" width="110" height="38" rx="19"/>
+    <text x="55" y="25" class="tiny" text-anchor="middle">tools</text>
+  </g>
+  <g transform="translate(614,760)">
+    <rect class="chipLime" x="0" y="0" width="146" height="38" rx="19"/>
+    <text x="73" y="25" class="tiny" text-anchor="middle">grounding</text>
+  </g>
+  <g transform="translate(1690,435)">
+    <rect class="chipWarm" x="0" y="0" width="148" height="38" rx="19"/>
+    <text x="74" y="25" class="tiny" text-anchor="middle">fan-out</text>
+  </g>
+  <g transform="translate(1960,880)">
+    <rect class="chipCyan" x="0" y="0" width="150" height="38" rx="19"/>
+    <text x="75" y="25" class="tiny" text-anchor="middle">scale path</text>
+  </g>
+  <g transform="translate(710,1032)">
+    <rect class="chipLime" x="0" y="0" width="162" height="38" rx="19"/>
+    <text x="81" y="25" class="tiny" text-anchor="middle">artifact trail</text>
+  </g>
+</svg>

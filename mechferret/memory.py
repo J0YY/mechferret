@@ -93,37 +93,57 @@ class ResearchMemory:
         for r in results:
             if getattr(r, "status", "ran") != "ran":
                 continue
-            key = stable_id("exp", f"{model}|{task}|{r.probe}|{json.dumps(r.target, sort_keys=True)}")
-            prior = self.conn.execute(
-                "select effect_size, significant from experiments where id=?", (key,)
-            ).fetchone()
-            is_drift = 0
-            if prior is not None:
-                if self._sign(prior["effect_size"]) != self._sign(r.effect_size) or bool(prior["significant"]) != bool(r.significant):
-                    is_drift = 1
-                    drifted += 1
-            verdict = "good" if (r.significant and r.reproduced) else "weak"
-            now = utc_now()
-            if prior is None:
-                self.conn.execute(
-                    "insert into experiments (id, model, task, probe, target_json, hypothesis, effect_size, control, "
-                    "significant, reproduced, verdict, observed_count, drift_count, code_version, first_seen, last_seen) "
-                    "values (?,?,?,?,?,?,?,?,?,?,?,1,0,?,?,?)",
-                    (key, model, task, r.probe, json.dumps(r.target, sort_keys=True),
-                     spec_to_hyp.get(r.spec_id, "screen"), r.effect_size, r.baseline,
-                     int(r.significant), int(r.reproduced), verdict, code_version, now, now),
-                )
-            else:
-                self.conn.execute(
-                    "update experiments set effect_size=?, control=?, significant=?, reproduced=?, verdict=?, "
-                    "hypothesis=?, observed_count=observed_count+1, drift_count=drift_count+?, code_version=?, last_seen=? "
-                    "where id=?",
-                    (r.effect_size, r.baseline, int(r.significant), int(r.reproduced), verdict,
-                     spec_to_hyp.get(r.spec_id, "screen"), is_drift, code_version, now, key),
-                )
+            is_drift = self.record_experiment(
+                model, task, r.probe, r.target, spec_to_hyp.get(r.spec_id, "screen"),
+                r.effect_size, r.baseline, r.significant, r.reproduced, code_version, commit=False,
+            )
             recorded += 1
+            drifted += is_drift
         self.conn.commit()
         return {"recorded": recorded, "drifted": drifted}
+
+    def record_experiment(self, model, task, probe, target, hypothesis, effect_size, control,
+                          significant, reproduced, code_version="", commit=True) -> int:
+        """Upsert one experiment by spec hash; return 1 if its conclusion drifted."""
+
+        key = stable_id("exp", f"{model}|{task}|{probe}|{json.dumps(target, sort_keys=True)}")
+        prior = self.conn.execute(
+            "select effect_size, significant from experiments where id=?", (key,)
+        ).fetchone()
+        is_drift = 0
+        if prior is not None and (
+            self._sign(prior["effect_size"]) != self._sign(effect_size)
+            or bool(prior["significant"]) != bool(significant)
+        ):
+            is_drift = 1
+        verdict = "good" if (significant and reproduced) else "weak"
+        now = utc_now()
+        if prior is None:
+            self.conn.execute(
+                "insert into experiments (id, model, task, probe, target_json, hypothesis, effect_size, control, "
+                "significant, reproduced, verdict, observed_count, drift_count, code_version, first_seen, last_seen) "
+                "values (?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?)",
+                (key, model, task, probe, json.dumps(target, sort_keys=True), hypothesis,
+                 effect_size, control, int(significant), int(reproduced), verdict, is_drift, code_version, now, now),
+            )
+        else:
+            self.conn.execute(
+                "update experiments set effect_size=?, control=?, significant=?, reproduced=?, verdict=?, "
+                "hypothesis=?, observed_count=observed_count+1, drift_count=drift_count+?, code_version=?, last_seen=? "
+                "where id=?",
+                (effect_size, control, int(significant), int(reproduced), verdict, hypothesis,
+                 is_drift, code_version, now, key),
+            )
+        if commit:
+            self.conn.commit()
+        return is_drift
+
+    def clear_experiments_and_mechanisms(self) -> None:
+        """Wipe the experiment ledger + mechanisms (used to replay a demo cleanly)."""
+
+        self.conn.execute("delete from experiments")
+        self.conn.execute("delete from mechanisms")
+        self.conn.commit()
 
     def experiments_by_hypothesis(self, limit: int = 200) -> dict:
         rows = self.conn.execute(

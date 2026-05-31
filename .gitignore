@@ -6,3 +6,6 @@ __pycache__/
 .DS_Store
 .env
 
+
+# external demo project (not part of this repo)
+circuit-discovery/

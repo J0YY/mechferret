@@ -1,0 +1,190 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1200" viewBox="0 0 1800 1200" role="img" aria-labelledby="title desc">
+  <title id="title">MechFerret clean architecture</title>
+  <desc id="desc">A simplified black and purple architecture diagram for MechFerret showing the agent shell, research loops, experiment engine, scale backends, and auditable outputs.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 14 7 L 0 14 z" fill="#a855f7"/>
+    </marker>
+    <style>
+      .bg { fill: #050208; }
+      .grid { stroke: #2a1738; stroke-width: 1; opacity: 0.45; }
+      .title { font: 800 58px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #fbf7ff; letter-spacing: 0; }
+      .subtitle { font: 500 25px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #d8c9e8; letter-spacing: 0; }
+      .section { font: 800 31px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #fbf7ff; letter-spacing: 0; }
+      .label { font: 750 23px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #fbf7ff; letter-spacing: 0; }
+      .body { font: 500 18px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #d8c9e8; letter-spacing: 0; }
+      .small { font: 600 15px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #bba5cf; letter-spacing: 0; }
+      .eyebrow { font: 800 13px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #c084fc; letter-spacing: 1.2px; text-transform: uppercase; }
+      .card { fill: #0b0610; stroke: #5b2b82; stroke-width: 2; rx: 22; }
+      .card2 { fill: #11081a; stroke: #7e22ce; stroke-width: 2; rx: 18; }
+      .core { fill: #100617; stroke: #a855f7; stroke-width: 3; rx: 24; }
+      .chip { fill: #1a0d25; stroke: #7e22ce; stroke-width: 1.6; rx: 16; }
+      .line { fill: none; stroke: #a855f7; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
+      .lineSoft { fill: none; stroke: #6d28d9; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); opacity: 0.8; }
+      .divider { stroke: #3b1d52; stroke-width: 2; }
+      .num { font: 800 18px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #050208; }
+      .dot { fill: #a855f7; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1800" height="1200"/>
+  <g>
+    <path class="grid" d="M100 0V1200M200 0V1200M300 0V1200M400 0V1200M500 0V1200M600 0V1200M700 0V1200M800 0V1200M900 0V1200M1000 0V1200M1100 0V1200M1200 0V1200M1300 0V1200M1400 0V1200M1500 0V1200M1600 0V1200M1700 0V1200"/>
+    <path class="grid" d="M0 100H1800M0 200H1800M0 300H1800M0 400H1800M0 500H1800M0 600H1800M0 700H1800M0 800H1800M0 900H1800M0 1000H1800M0 1100H1800"/>
+  </g>
+
+  <text x="70" y="78" class="title">MechFerret Architecture</text>
+  <text x="70" y="122" class="subtitle">A research agent for mechanistic interpretability: grounded, experimental, scalable, and auditable.</text>
+
+  <g transform="translate(1260,50)">
+    <rect class="chip" x="0" y="0" width="138" height="42"/>
+    <text x="69" y="27" class="small" text-anchor="middle">Technical depth</text>
+    <rect class="chip" x="154" y="0" width="112" height="42"/>
+    <text x="210" y="27" class="small" text-anchor="middle">Originality</text>
+    <rect class="chip" x="282" y="0" width="126" height="42"/>
+    <text x="345" y="27" class="small" text-anchor="middle">Demo clarity</text>
+  </g>
+
+  <g transform="translate(70,185)">
+    <rect class="card" width="330" height="270"/>
+    <text x="28" y="48" class="section">Agent Shell</text>
+    <text x="28" y="84" class="body">CLI and REPL wrap a provider-native tool loop.</text>
+    <g transform="translate(28,118)">
+      <rect class="chip" x="0" y="0" width="132" height="42"/>
+      <text x="66" y="27" class="small" text-anchor="middle">prompt</text>
+      <rect class="chip" x="150" y="0" width="124" height="42"/>
+      <text x="212" y="27" class="small" text-anchor="middle">/commands</text>
+      <rect class="chip" x="0" y="58" width="132" height="42"/>
+      <text x="66" y="85" class="small" text-anchor="middle">OpenAI</text>
+      <rect class="chip" x="150" y="58" width="124" height="42"/>
+      <text x="212" y="85" class="small" text-anchor="middle">Anthropic</text>
+      <rect class="chip" x="0" y="116" width="132" height="42"/>
+      <text x="66" y="143" class="small" text-anchor="middle">permissions</text>
+      <rect class="chip" x="150" y="116" width="124" height="42"/>
+      <text x="212" y="143" class="small" text-anchor="middle">sessions</text>
+    </g>
+  </g>
+
+  <g transform="translate(70,520)">
+    <rect class="card" width="330" height="300"/>
+    <text x="28" y="48" class="section">Tool Registry</text>
+    <text x="28" y="84" class="body">Capabilities exposed to the agent with explicit permissions.</text>
+    <text x="28" y="130" class="small">bash, read, write, edit, glob, grep</text>
+    <text x="28" y="162" class="small">web search, fetch, arXiv, Neuronpedia</text>
+    <text x="28" y="194" class="small">run_discovery, skills, environment</text>
+    <text x="28" y="226" class="small">dynamic MCP tools</text>
+  </g>
+
+  <g transform="translate(490,175)">
+    <rect class="core" width="800" height="440"/>
+    <text x="34" y="52" class="section">Autonomous Discovery Loop</text>
+    <text x="34" y="88" class="body">Budget-bounded causal discovery over model internals.</text>
+    <g transform="translate(34,126)">
+      <rect class="card2" x="0" y="0" width="220" height="84"/>
+      <circle class="dot" cx="34" cy="42" r="17"/>
+      <text x="34" y="48" class="num" text-anchor="middle">1</text>
+      <text x="68" y="36" class="label">Ground</text>
+      <text x="68" y="63" class="small">prior art + memory</text>
+
+      <rect class="card2" x="274" y="0" width="220" height="84"/>
+      <circle class="dot" cx="308" cy="42" r="17"/>
+      <text x="308" y="48" class="num" text-anchor="middle">2</text>
+      <text x="342" y="36" class="label">Hypothesize</text>
+      <text x="342" y="63" class="small">falsifiable claims</text>
+
+      <rect class="card2" x="548" y="0" width="186" height="84"/>
+      <circle class="dot" cx="582" cy="42" r="17"/>
+      <text x="582" y="48" class="num" text-anchor="middle">3</text>
+      <text x="616" y="36" class="label">Screen</text>
+      <text x="616" y="63" class="small">candidate heads</text>
+
+      <rect class="card2" x="548" y="140" width="186" height="84"/>
+      <circle class="dot" cx="582" cy="182" r="17"/>
+      <text x="582" y="188" class="num" text-anchor="middle">4</text>
+      <text x="616" y="176" class="label">Triangulate</text>
+      <text x="616" y="203" class="small">independent probes</text>
+
+      <rect class="card2" x="274" y="140" width="220" height="84"/>
+      <circle class="dot" cx="308" cy="182" r="17"/>
+      <text x="308" y="188" class="num" text-anchor="middle">5</text>
+      <text x="342" y="176" class="label">Critique</text>
+      <text x="342" y="203" class="small">controls + rigor</text>
+
+      <rect class="card2" x="0" y="140" width="220" height="84"/>
+      <circle class="dot" cx="34" cy="182" r="17"/>
+      <text x="34" y="188" class="num" text-anchor="middle">6</text>
+      <text x="68" y="176" class="label">Synthesize</text>
+      <text x="68" y="203" class="small">discoveries</text>
+
+      <path class="lineSoft" d="M220 42H268"/>
+      <path class="lineSoft" d="M494 42H542"/>
+      <path class="lineSoft" d="M641 84V134"/>
+      <path class="lineSoft" d="M548 182H500"/>
+      <path class="lineSoft" d="M274 182H226"/>
+    </g>
+    <line class="divider" x1="34" y1="390" x2="766" y2="390"/>
+    <text x="34" y="414" class="eyebrow">Stop criteria</text>
+    <text x="190" y="414" class="body">confirmed mechanisms, rigor score, convergence, or budget guard</text>
+  </g>
+
+  <g transform="translate(1395,185)">
+    <rect class="card" width="335" height="330"/>
+    <text x="28" y="48" class="section">Experiment Engine</text>
+    <text x="28" y="84" class="body">Parallel, deterministic batches of intervention specs.</text>
+    <text x="28" y="130" class="small">Coordinator.map(engine.run_spec)</text>
+    <text x="28" y="162" class="small">effect size vs matched control</text>
+    <text x="28" y="194" class="small">cross-seed reproducibility</text>
+    <text x="28" y="226" class="small">significance thresholds</text>
+    <text x="28" y="258" class="small">ablation, patching, attention, DLA, logit lens</text>
+  </g>
+
+  <g transform="translate(1395,585)">
+    <rect class="card" width="335" height="235"/>
+    <text x="28" y="48" class="section">Backends</text>
+    <text x="28" y="84" class="body">Same probe surface, different compute substrate.</text>
+    <rect class="chip" x="28" y="116" width="132" height="42"/>
+    <text x="94" y="143" class="small" text-anchor="middle">Synthetic</text>
+    <rect class="chip" x="176" y="116" width="132" height="42"/>
+    <text x="242" y="143" class="small" text-anchor="middle">TransformerLens</text>
+    <rect class="chip" x="28" y="172" width="132" height="42"/>
+    <text x="94" y="199" class="small" text-anchor="middle">Modal GPU</text>
+    <rect class="chip" x="176" y="172" width="132" height="42"/>
+    <text x="242" y="199" class="small" text-anchor="middle">SLURM</text>
+  </g>
+
+  <g transform="translate(490,720)">
+    <rect class="card" width="800" height="300"/>
+    <text x="34" y="52" class="section">Auditable Research Dossier</text>
+    <text x="34" y="88" class="body">The output is judge-readable and machine-readable.</text>
+    <g transform="translate(34,128)">
+      <rect class="chip" x="0" y="0" width="150" height="52"/>
+      <text x="75" y="33" class="small" text-anchor="middle">report.html</text>
+      <rect class="chip" x="170" y="0" width="150" height="52"/>
+      <text x="245" y="33" class="small" text-anchor="middle">run.json</text>
+      <rect class="chip" x="340" y="0" width="170" height="52"/>
+      <text x="425" y="33" class="small" text-anchor="middle">experiments.json</text>
+      <rect class="chip" x="530" y="0" width="170" height="52"/>
+      <text x="615" y="33" class="small" text-anchor="middle">discoveries.json</text>
+      <rect class="chip" x="0" y="76" width="150" height="52"/>
+      <text x="75" y="109" class="small" text-anchor="middle">graph.json</text>
+      <rect class="chip" x="170" y="76" width="150" height="52"/>
+      <text x="245" y="109" class="small" text-anchor="middle">evals.json</text>
+      <rect class="chip" x="340" y="76" width="150" height="52"/>
+      <text x="415" y="109" class="small" text-anchor="middle">trace.jsonl</text>
+      <rect class="chip" x="510" y="76" width="190" height="52"/>
+      <text x="605" y="109" class="small" text-anchor="middle">memory.sqlite</text>
+    </g>
+  </g>
+
+  <path class="line" d="M400 318H484"/>
+  <path class="line" d="M400 670C455 670 455 535 490 535"/>
+  <path class="line" d="M1290 395H1388"/>
+  <path class="line" d="M1563 515V578"/>
+  <path class="line" d="M890 615V714"/>
+
+  <g transform="translate(70,930)">
+    <rect class="card" width="330" height="90"/>
+    <text x="28" y="38" class="eyebrow">Rubric fit</text>
+    <text x="28" y="66" class="body">Original because it runs causal experiments, not just summaries.</text>
+  </g>
+</svg>
