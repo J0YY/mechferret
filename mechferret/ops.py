@@ -653,7 +653,7 @@ def print_quickstart_run(result: dict[str, Any]) -> None:
             print(f"  - {action}")
 
 
-def _artifact_summary(artifacts: dict[str, Any]) -> dict[str, Any]:
+def _artifact_summary(artifacts: dict[str, Any], *, include_setup: bool = True) -> dict[str, Any]:
     rows = {name: row for name, row in artifacts.items() if isinstance(row, dict)}
     found = [name for name, row in rows.items() if row.get("exists")]
     missing = [name for name, row in rows.items() if not row.get("exists")]
@@ -669,19 +669,22 @@ def _artifact_summary(artifacts: dict[str, Any]) -> dict[str, Any]:
             "missing_artifacts": absent,
         }
 
+    groups = {
+        "run": group(_RUN_ARTIFACTS),
+        "dossier": group(_DOSSIER_ARTIFACTS),
+        "discovery": group(_DISCOVERY_ARTIFACTS),
+        "sharing": group(_SHARING_ARTIFACTS),
+    }
+    if include_setup:
+        groups["setup"] = group(_SETUP_ARTIFACTS)
+
     return {
         "total": len(rows),
         "found": len(found),
         "missing": len(missing),
         "found_artifacts": found,
         "missing_artifacts": missing,
-        "groups": {
-            "run": group(_RUN_ARTIFACTS),
-            "setup": group(_SETUP_ARTIFACTS),
-            "dossier": group(_DOSSIER_ARTIFACTS),
-            "discovery": group(_DISCOVERY_ARTIFACTS),
-            "sharing": group(_SHARING_ARTIFACTS),
-        },
+        "groups": groups,
     }
 
 
@@ -698,11 +701,13 @@ def _artifact_readiness(summary: dict[str, Any]) -> dict[str, Any]:
             "missing_artifacts": missing,
         }
 
-    return {
+    readiness = {
         "run": group_ready("run"),
         "sharing": group_ready("sharing"),
-        "setup": group_ready("setup"),
     }
+    if "setup" in groups:
+        readiness["setup"] = group_ready("setup")
+    return readiness
 
 
 def _compact_status_next_actions(actions: list[str], *, selection: str, allow_sharing: bool = False) -> list[str]:
@@ -3808,7 +3813,7 @@ def _run_list_entry(path: Path, *, include_audit: bool) -> dict[str, Any]:
     artifacts = _mapping(payload.get("artifacts"))
     metrics = _mapping(payload.get("metrics"))
     artifact_flags = _run_artifact_flags(path, artifacts)
-    artifact_summary = _artifact_summary({name: {"exists": exists} for name, exists in artifact_flags.items()})
+    artifact_summary = _artifact_summary({name: {"exists": exists} for name, exists in artifact_flags.items()}, include_setup=False)
     entry = {
         "ok": True,
         "path": str(path),
@@ -4280,7 +4285,7 @@ def summarize_run_artifact(path: str | Path) -> dict[str, Any]:
     metrics = _mapping(payload.get("metrics"))
     artifacts = _mapping(payload.get("artifacts", {}))
     artifact_flags = _run_artifact_flags(run_json, artifacts) if payload else {"run": bool(run_json.exists())}
-    artifact_summary = _artifact_summary({name: {"exists": exists} for name, exists in artifact_flags.items()})
+    artifact_summary = _artifact_summary({name: {"exists": exists} for name, exists in artifact_flags.items()}, include_setup=False)
     artifact_readiness = _artifact_readiness(artifact_summary)
     audit: dict[str, Any] = {}
     next_actions: list[str] = []

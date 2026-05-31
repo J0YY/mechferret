@@ -1657,7 +1657,8 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertIn("artifact_readiness", result["runs"][0])
             self.assertTrue(result["runs"][0]["artifact_readiness"]["run"]["ok"])
             self.assertFalse(result["runs"][0]["artifact_readiness"]["sharing"]["ok"])
-            self.assertFalse(result["runs"][0]["artifact_readiness"]["setup"]["ok"])
+            self.assertNotIn("setup", result["runs"][0]["artifact_readiness"])
+            self.assertNotIn("setup", result["runs"][0]["artifact_summary"]["groups"])
 
             limited = list_run_artifacts(runs_root=root / "runs", limit=1, include_audit=False)
             self.assertEqual(limited["shown"], 1)
@@ -3511,6 +3512,7 @@ class OpsRegistryTest(unittest.TestCase):
                     self.assertIn("artifact_readiness", payload)
                     self.assertIn("run", payload["artifact_readiness"])
                     self.assertFalse(payload["artifact_readiness"]["sharing"]["ok"])
+                    self.assertNotIn("setup", payload["artifact_readiness"])
                     self.assertIn("next_actions", payload)
 
                 with self.subTest(command=command, mode="missing"):
