@@ -608,6 +608,16 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 1)
         unrelated_payload = json.loads(unrelated_out.getvalue())
         self.assertEqual(unrelated_payload["suggestions"], [])
+        self.assertIn("commands --search nope", " ".join(unrelated_payload["next_actions"]))
+
+        option_query_out = StringIO()
+        with self.assertRaises(SystemExit) as ctx:
+            with redirect_stdout(option_query_out):
+                main(["commands", "provider", "--json"])
+        self.assertEqual(ctx.exception.code, 1)
+        option_query_payload = json.loads(option_query_out.getvalue())
+        self.assertEqual(option_query_payload["suggestions"], [])
+        self.assertIn("commands --search provider", " ".join(option_query_payload["next_actions"]))
 
         typo_err = StringIO()
         with self.assertRaises(SystemExit) as ctx:
@@ -616,6 +626,7 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 2)
         self.assertIn("Unknown command: verfy", typo_err.getvalue())
         self.assertIn("Did you mean: verify", typo_err.getvalue())
+        self.assertIn("commands --search verfy", typo_err.getvalue())
         self.assertNotIn("invalid choice", typo_err.getvalue())
 
         typo_json_out = StringIO()
@@ -628,6 +639,8 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertFalse(typo_payload["ok"])
         self.assertEqual(typo_payload["query"], "verfy")
         self.assertIn("verify", typo_payload["suggestions"])
+        self.assertIn("commands verify", " ".join(typo_payload["next_actions"]))
+        self.assertIn("commands --search verfy", " ".join(typo_payload["next_actions"]))
         self.assertEqual(typo_json_err.getvalue(), "")
 
     def test_cli_completion_generates_shell_scripts_and_json_payloads(self):

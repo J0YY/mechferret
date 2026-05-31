@@ -1305,6 +1305,7 @@ def _command_index_payload(
         selected = _find_command(commands, query)
         if selected is None:
             suggestions = _suggest_commands(commands, query)
+            next_actions = _unknown_command_next_actions(query, suggestions)
             return {
                 "ok": False,
                 "name": "mechferret",
@@ -1315,7 +1316,7 @@ def _command_index_payload(
                 "commands": [],
                 "available": [command["name"] for command in commands],
                 "suggestions": suggestions,
-                "next_actions": ["Run `mechferret commands` to list available commands."],
+                "next_actions": next_actions,
             }
         return {
             "ok": True,
@@ -1375,13 +1376,15 @@ def _exit_on_unknown_command(parser: argparse.ArgumentParser, argv: list[str]) -
         print(f"Unknown command: {command}", file=sys.stderr)
         if payload["suggestions"]:
             print(f"Did you mean: {', '.join(payload['suggestions'])}?", file=sys.stderr)
-        print("Run `mechferret commands` to list available commands.", file=sys.stderr)
+        for action in payload.get("next_actions", ["Run `mechferret commands` to list available commands."]):
+            print(action, file=sys.stderr)
     raise SystemExit(2)
 
 
 def _unknown_command_payload(parser: argparse.ArgumentParser, command: str) -> dict[str, Any]:
     index = _command_index_payload(parser)
     commands = index["commands"]
+    suggestions = _suggest_commands(commands, command)
     return {
         "ok": False,
         "name": "mechferret",
@@ -1389,9 +1392,17 @@ def _unknown_command_payload(parser: argparse.ArgumentParser, command: str) -> d
         "query": command,
         "error": "unknown command",
         "available": [item["name"] for item in commands],
-        "suggestions": _suggest_commands(commands, command),
-        "next_actions": ["Run `mechferret commands` to list available commands."],
+        "suggestions": suggestions,
+        "next_actions": _unknown_command_next_actions(command, suggestions),
     }
+
+
+def _unknown_command_next_actions(query: str, suggestions: list[str]) -> list[str]:
+    actions = [f"Run `mechferret commands --search {shlex.quote(str(query))}` to search commands, options, and workflows."]
+    if suggestions:
+        actions.insert(0, f"Run `mechferret commands {suggestions[0]}` to inspect the closest command match.")
+    actions.append("Run `mechferret commands` to list available commands.")
+    return actions
 
 
 def _command_examples_payload(
