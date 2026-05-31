@@ -1507,38 +1507,68 @@ def _search_terms(search: str) -> list[str]:
 def _search_match_score(fields: dict[str, str], terms: list[str]) -> int:
     if not terms:
         return 1
+    phrase = " ".join(terms)
+    score = 0
+    for key, phrase_score, term_score in (
+        ("primary", 60, 20),
+        ("examples", 8, 4),
+    ):
+        raw = fields.get(f"{key}_raw", "")
+        normalized = fields.get(f"{key}_normalized", "")
+        if phrase in raw or phrase in normalized:
+            score = max(score, phrase_score + len(terms))
+        elif all(term in raw or term in normalized for term in terms):
+            score = max(score, term_score + len(terms))
+    if score:
+        return score
     raw = fields["raw"]
     normalized = fields["normalized"]
-    phrase = " ".join(terms)
     if phrase in raw or phrase in normalized:
-        return 50 + len(terms)
+        return 6 + len(terms)
     if all(term in raw or term in normalized for term in terms):
-        return 10 + len(terms)
+        return 2 + len(terms)
     return 0
 
 
 def _command_search_fields(command: dict[str, Any]) -> dict[str, str]:
-    text = _command_search_text(command)
-    return {"raw": text, "normalized": _normalize_search_text(text)}
+    primary = _command_search_text(command, include_examples=False)
+    examples = " ".join(str(example) for example in command.get("examples", [])).lower()
+    text = " ".join(part for part in (primary, examples) if part)
+    return {
+        "raw": text,
+        "normalized": _normalize_search_text(text),
+        "primary_raw": primary,
+        "primary_normalized": _normalize_search_text(primary),
+        "examples_raw": examples,
+        "examples_normalized": _normalize_search_text(examples),
+    }
 
 
 def _workflow_search_fields(workflow: dict[str, Any]) -> dict[str, str]:
     text = _workflow_search_text(workflow)
-    return {"raw": text, "normalized": _normalize_search_text(text)}
+    return {
+        "raw": text,
+        "normalized": _normalize_search_text(text),
+        "primary_raw": text,
+        "primary_normalized": _normalize_search_text(text),
+        "examples_raw": "",
+        "examples_normalized": "",
+    }
 
 
 def _normalize_search_text(value: Any) -> str:
     return " ".join(str(value).lower().replace("-", " ").replace("_", " ").split())
 
 
-def _command_search_text(command: dict[str, Any]) -> str:
+def _command_search_text(command: dict[str, Any], *, include_examples: bool = True) -> str:
     words: list[str] = [
         str(command.get("name", "")),
         *[str(alias) for alias in command.get("aliases", [])],
         str(command.get("help", "")),
         str(command.get("usage", "")),
-        *[str(example) for example in command.get("examples", [])],
     ]
+    if include_examples:
+        words.extend(str(example) for example in command.get("examples", []))
     for argument in [*command.get("positionals", []), *command.get("options", [])]:
         words.append(str(argument.get("dest", "")))
         words.append(str(argument.get("help", "")))

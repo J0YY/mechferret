@@ -327,7 +327,9 @@ class OpsRegistryTest(unittest.TestCase):
             main(["commands", "--search", "max gpu", "--json"])
         option_search_payload = json.loads(option_search_out.getvalue())
         self.assertTrue(option_search_payload["ok"])
-        self.assertIn("discover", {command["name"] for command in option_search_payload["commands"]})
+        self.assertGreaterEqual(option_search_payload["count"], 2)
+        self.assertEqual(option_search_payload["commands"][0]["name"], "discover")
+        self.assertIn("commands", {command["name"] for command in option_search_payload["commands"]})
 
         examples_out = StringIO()
         with redirect_stdout(examples_out):
