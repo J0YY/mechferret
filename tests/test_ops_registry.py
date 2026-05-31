@@ -1592,6 +1592,8 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertEqual(len(payload["actions"]), 2)
             self.assertEqual(len(payload["action_plan"]), 2)
             self.assertEqual(payload["actions"], [item["action"] for item in payload["action_plan"]])
+            self.assertIn("action_groups", payload)
+            self.assertEqual(payload["action_groups"]["required"], [item for item in payload["action_plan"] if item["category"] == "required"])
             self.assertTrue(all(item["reason"] for item in payload["action_plan"]))
             summary_by_name = {item["name"]: item for item in payload["readiness_summary"]}
             self.assertTrue(summary_by_name["run"]["ready"])
@@ -1622,6 +1624,7 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertIn("Run readiness: READY", rendered)
             self.assertIn("Setup readiness: BLOCKED", rendered)
             self.assertIn("Next actions:", rendered)
+            self.assertIn("Required:", rendered)
             self.assertIn("reason:", rendered)
 
     def test_list_run_artifacts_orders_recent_runs_and_reports_status(self):

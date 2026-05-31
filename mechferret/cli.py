@@ -1763,6 +1763,7 @@ def _next_payload(status: dict[str, Any], *, limit: int = 5) -> dict[str, Any]:
         status=status,
         limit=limit,
     )
+    action_groups = _next_action_groups(action_plan)
     return {
         "ok": True,
         "command": "next",
@@ -1777,6 +1778,7 @@ def _next_payload(status: dict[str, Any], *, limit: int = 5) -> dict[str, Any]:
         },
         "actions": [item["action"] for item in action_plan],
         "action_plan": action_plan,
+        "action_groups": action_groups,
         "required_actions": required,
         "suggested_actions": suggested,
         "advisory_actions": advisory,
@@ -1830,6 +1832,14 @@ def _next_action_plan(
     return result
 
 
+def _next_action_groups(action_plan: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    groups = {"required": [], "suggested": [], "advisory": []}
+    for item in action_plan:
+        category = str(item.get("category", "suggested"))
+        groups.setdefault(category, []).append(item)
+    return groups
+
+
 def _next_action_reason(action: str, *, category: str, status: dict[str, Any]) -> str:
     normalized = action.lower()
     if "mechferret init" in normalized:
@@ -1879,11 +1889,22 @@ def _print_next_payload(result: dict[str, Any]) -> None:
     selected = result.get("selected_run") or {}
     if selected.get("exists"):
         print(f"Selected run: {selected.get('path', '')}")
-    if result.get("action_plan"):
+    action_plan = result.get("action_plan") or []
+    if action_plan:
         print("Next actions:")
-        for item in result["action_plan"]:
-            print(f"  - {item['action']}")
-            print(f"    reason: {item['reason']}")
+        groups = result.get("action_groups") or _next_action_groups(action_plan)
+        for category, label in (
+            ("required", "Required"),
+            ("suggested", "Suggested"),
+            ("advisory", "Research quality"),
+        ):
+            items = groups.get(category) or []
+            if not items:
+                continue
+            print(f"  {label}:")
+            for item in items:
+                print(f"    - {item['action']}")
+                print(f"      reason: {item['reason']}")
     else:
         print("Next actions: none")
 
