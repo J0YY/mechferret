@@ -33,7 +33,7 @@ _DOSSIER_ARTIFACTS = ("run", "report", "markdown", "graph", "evals")
 _DISCOVERY_ARTIFACTS = ("experiments", "discoveries")
 _SHARING_ARTIFACTS = ("paper", "manifest", "bundle", "pdf", "review")
 _SETUP_ARTIFACTS = ("quickstart", "ci", "openvla")
-_RUN_ARTIFACTS = _DOSSIER_ARTIFACTS + ("trace",) + _DISCOVERY_ARTIFACTS + _SHARING_ARTIFACTS
+_RUN_ARTIFACTS = _DOSSIER_ARTIFACTS + ("trace",)
 
 
 def _text(value: Any) -> str:
