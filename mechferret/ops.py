@@ -4002,6 +4002,8 @@ def _artifact_result(
             next_actions.append("Rerun the dossier with the current MechFerret version to create manifest.json.")
         elif reason == "explicit path":
             next_actions.append("Check the path, or run `mechferret open all` to list known artifacts.")
+    else:
+        next_actions.extend(_existing_artifact_next_actions(target, selection=selection, selected_run=selected_run, scope=scope))
     result = {
         "target": target,
         "path": str(path) if path else "",
@@ -4016,6 +4018,74 @@ def _artifact_result(
     if selected_run:
         result["selected_run"] = selected_run
     return result
+
+
+def _existing_artifact_next_actions(
+    target: str,
+    *,
+    selection: str | None,
+    selected_run: str,
+    scope: str,
+) -> list[str]:
+    select_flag = f" --select {selection}" if selection else ""
+    if target == "run":
+        return [
+            f"Run `mechferret inspect{select_flag} --json` to inspect the selected run ledger.",
+            f"Run `mechferret audit{select_flag} --strict` to verify research quality gates.",
+            f"Run `mechferret verify{select_flag} --strict` to verify run artifacts.",
+        ]
+    if target == "report":
+        return [
+            f"Run `mechferret open report{select_flag} --browser` to open the report in a browser.",
+            f"Run `mechferret audit{select_flag} --strict` before sharing the report.",
+            f"Run `mechferret paper{select_flag}` to turn the report into a run-bound draft.",
+        ]
+    if target == "paper":
+        return [
+            f"Run `mechferret review-paper{select_flag}` with a configured provider to critique the draft.",
+            f"Run `mechferret paper{select_flag} --compile` to create a compiled PDF.",
+            f"Run `mechferret bundle{select_flag}` to package the dossier for sharing.",
+        ]
+    if target == "pdf":
+        return [
+            f"Run `mechferret review-paper{select_flag}` with a configured provider to critique the draft.",
+            f"Run `mechferret bundle{select_flag}` to package the dossier and PDF for sharing.",
+        ]
+    if target == "review":
+        return [
+            f"Run `mechferret bundle{select_flag}` to package the reviewed paper with the dossier.",
+            f"Run `mechferret verify-bundle{select_flag} --strict` after bundling.",
+        ]
+    if target == "bundle":
+        return [f"Run `mechferret verify-bundle{select_flag} --strict` to verify the share bundle."]
+    if target == "manifest":
+        return [
+            f"Run `mechferret verify{select_flag} --strict` to verify manifest integrity.",
+            f"Run `mechferret bundle{select_flag}` to package a manifest-backed dossier.",
+        ]
+    if target in {"markdown", "graph", "evals", "trace", "experiments", "discoveries"}:
+        return [
+            f"Run `mechferret inspect{select_flag} --json` to inspect the selected run summary.",
+            f"Run `mechferret open report{select_flag}` to inspect the human-readable report.",
+        ]
+    if target == "quickstart":
+        return [
+            "Run `mechferret status --json` to inspect project readiness.",
+            "Run `mechferret next --json` to get the next recommended workflow actions.",
+        ]
+    if target == "ci":
+        return [
+            "Run `mechferret doctor --strict` to check local release gates.",
+            "Run `python3 -m unittest discover -s tests -q` before publishing changes.",
+        ]
+    if target == "openvla":
+        return [
+            "Run `mechferret sae openvla status` to inspect OpenVLA scaffold readiness.",
+            "Run `mechferret sae openvla commands` to list OpenVLA workflow commands.",
+        ]
+    if scope == "path":
+        return ["Run `mechferret open all` to list known artifacts."]
+    return []
 
 
 def _artifact_index(*, runs_root: str | Path, project_root: str | Path, selection: str = "latest") -> dict[str, Any]:
