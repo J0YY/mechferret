@@ -33,6 +33,9 @@
 ## `api`
 
 - `mechferret api --show --json`
+- `mechferret api --provider local --json`
+- `mechferret api --provider openai --api-key "$OPENAI_API_KEY" --model "$OPENAI_MODEL" --json`
+- `mechferret api --clear openai --json`
 
 ## `goal`
 

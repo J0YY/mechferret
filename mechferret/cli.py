@@ -130,7 +130,12 @@ COMMAND_EXAMPLES = {
     ],
     "demo": ["mechferret demo --out runs/demo", "mechferret demo --json"],
     "login": ['mechferret login openai --api-key "$OPENAI_API_KEY" --json'],
-    "api": ["mechferret api --show --json"],
+    "api": [
+        "mechferret api --show --json",
+        "mechferret api --provider local --json",
+        "mechferret api --provider openai --api-key \"$OPENAI_API_KEY\" --model \"$OPENAI_MODEL\" --json",
+        "mechferret api --clear openai --json",
+    ],
     "goal": ['mechferret goal "Make this investigation publishable" --seed-corpus --max-iterations 1 --max-rounds 1 --json'],
     "discover": ["mechferret discover --skill ioi-circuit --backend synthetic --json"],
     "skills": ["mechferret skills --json", "mechferret skills ioi-circuit"],

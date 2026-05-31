@@ -122,6 +122,8 @@ class OpsRegistryTest(unittest.TestCase):
             'mechferret goal "Make this investigation publishable" --seed-corpus --max-iterations 1 --max-rounds 1 --json',
             by_name["goal"]["examples"],
         )
+        self.assertIn('mechferret api --provider openai --api-key "$OPENAI_API_KEY" --model "$OPENAI_MODEL" --json', by_name["api"]["examples"])
+        self.assertIn("mechferret api --clear openai --json", by_name["api"]["examples"])
         self.assertIn("mechferret paper --select best --json", by_name["paper"]["examples"])
         self.assertIn("mechferret selftest --json", by_name["selftest"]["examples"])
         self.assertIn("mechferret support", by_name["support"]["examples"])
