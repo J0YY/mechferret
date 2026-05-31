@@ -98,6 +98,13 @@ class OpsRegistryTest(unittest.TestCase):
 
         by_name = {command["name"]: command for command in payload["commands"]}
         self.assertFalse([name for name, command in by_name.items() if not command["examples"]])
+        missing_argument_help = [
+            (command["name"], argument.get("flags") or argument.get("dest"))
+            for command in payload["commands"]
+            for argument in [*command["options"], *command["positionals"]]
+            if not str(argument.get("help", "")).strip()
+        ]
+        self.assertEqual(missing_argument_help, [])
         self.assertIn("/commands", by_name["commands"]["aliases"])
         self.assertIn("help", by_name["commands"]["aliases"])
         self.assertIn("/completion", by_name["completion"]["aliases"])

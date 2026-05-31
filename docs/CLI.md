@@ -232,7 +232,7 @@ usage: mechferret quickstart [-h] [--mode {all,demo,openvla,ci}] [--run]
 Options:
 
 - `-h`, `--help`: show this help message and exit
-- `--mode`: choices: `all`, `demo`, `openvla`, `ci`
+- `--mode`: choices: `all`, `demo`, `openvla`, `ci`; Quickstart path to print or run.
 - `--run`: Execute a quickstart path. Defaults to the local demo; use --mode openvla or --mode ci for those paths.
 - `--out`: Output directory for --run --mode demo.
 - `--db`: Memory database for --run --mode demo.
@@ -357,7 +357,7 @@ usage: mechferret run [-h] [--source SOURCE] [--url URL] [--out OUT] [--db DB]
 
 Positionals:
 
-- `question`
+- `question`: Research question to investigate.
 
 Options:
 
@@ -366,9 +366,9 @@ Options:
 - `--url`: URL to fetch as a source.
 - `--out`: Output directory.
 - `--db`: SQLite memory path.
-- `--max-rounds`
+- `--max-rounds`: Maximum retrieval/synthesis rounds.
 - `--openai`: Use OpenAI Responses API web search when available.
-- `--provider`: choices: `auto`, `local`, `openai`, `anthropic`
+- `--provider`: choices: `auto`, `local`, `openai`, `anthropic`; Provider for model-assisted synthesis.
 - `--model`: Override the configured provider model.
 - `--no-memory`: Do not recall prior-run memory.
 - `--seed-corpus`: Use the packaged demo corpus when no sources, memory, or provider research are available.
@@ -394,11 +394,11 @@ usage: mechferret demo [-h] [--out OUT] [--db DB] [--max-rounds MAX_ROUNDS]
 Options:
 
 - `-h`, `--help`: show this help message and exit
-- `--out`
-- `--db`
-- `--max-rounds`
-- `--openai`
-- `--provider`: choices: `auto`, `local`, `openai`, `anthropic`
+- `--out`: Output directory for demo artifacts.
+- `--db`: SQLite memory path.
+- `--max-rounds`: Maximum retrieval/synthesis rounds.
+- `--openai`: Use OpenAI web search when available.
+- `--provider`: choices: `auto`, `local`, `openai`, `anthropic`; Provider for demo synthesis.
 - `--model`: Override the configured provider model.
 - `--with-memory`: Recall prior-run memory during the demo.
 - `--json`: Print machine-readable JSON.
@@ -428,7 +428,7 @@ usage: mechferret goal [-h] [--venue VENUE] [--target TARGET]
 
 Positionals:
 
-- `question`
+- `question`: Research question or project goal.
 
 Options:
 
@@ -439,11 +439,11 @@ Options:
 - `--url`: URL to fetch as a source.
 - `--out`: Output directory.
 - `--db`: SQLite memory path.
-- `--max-iterations`
-- `--max-rounds`
-- `--provider`: choices: `auto`, `local`, `openai`, `anthropic`
+- `--max-iterations`: Maximum improve/evaluate loop iterations.
+- `--max-rounds`: Maximum retrieval/synthesis rounds per iteration.
+- `--provider`: choices: `auto`, `local`, `openai`, `anthropic`; Provider for model-assisted synthesis.
 - `--model`: Override the configured provider model.
-- `--no-memory`
+- `--no-memory`: Do not recall prior-run memory.
 - `--seed-corpus`: Use the packaged demo corpus when no sources, memory, or provider research are available.
 - `--json`: Print machine-readable JSON.
 
@@ -484,17 +484,17 @@ Options:
 - `--skill`: Named skill/playbook (see `mechferret /skills`) or a path to a skill JSON.
 - `--task`: choices: `ioi`, `induction`, `greater_than`, `factual_recall`; Interpretability task.
 - `--model`: Model to investigate (e.g. gpt2, pythia-160m).
-- `--backend`: choices: `auto`, `synthetic`, `transformer_lens`
+- `--backend`: choices: `auto`, `synthetic`, `transformer_lens`; Experiment backend for interpretability probes.
 - `--source`: Prior-art documents to ground hypotheses.
-- `--url`
-- `--out`
-- `--db`
+- `--url`: URL to fetch as prior art.
+- `--out`: Output directory for discovery artifacts.
+- `--db`: SQLite memory path.
 - `--max-rounds`: Override the budget's max experiment rounds.
 - `--max-experiments`: Override the budget's max experiments.
 - `--max-gpu-seconds`: Override the budget's GPU-second ceiling.
-- `--provider`: choices: `auto`, `local`, `openai`, `anthropic`
+- `--provider`: choices: `auto`, `local`, `openai`, `anthropic`; Provider for prior-art search and critique.
 - `--llm-model`: Override the configured provider model for prior-art search.
-- `--no-memory`
+- `--no-memory`: Do not recall prior-run memory.
 - `--allow-mismatch`: Run even if the prompt appears mismatched to the chosen skill/task.
 - `--seed-corpus`: Use the packaged demo corpus as prior art when no explicit sources, memory, or provider research are available.
 - `--json`: Print machine-readable JSON.
@@ -527,8 +527,8 @@ usage: mechferret sae [-h] [--project-root PROJECT_ROOT] [--manifest MANIFEST]
 
 Positionals:
 
-- `project`: choices: `openvla`
-- `action`: choices: `status`, `init`, `plan`, `commands`, `validate-manifest`, `create-manifest`, `smoke`, `eval`, `features`, `dossier`
+- `project`: choices: `openvla`; SAE project to operate on.
+- `action`: choices: `status`, `init`, `plan`, `commands`, `validate-manifest`, `create-manifest`, `smoke`, `eval`, `features`, `dossier`; Project workflow action.
 
 Options:
 
@@ -798,7 +798,7 @@ Options:
 - `--out`: Output directory for main.tex (defaults to the run artifact's paper/ directory).
 - `--compile`: Compile main.pdf with tectonic if installed.
 - `--compile-timeout`: Seconds to wait for tectonic before reporting a timeout.
-- `--provider`: choices: `auto`, `local`, `openai`, `anthropic`
+- `--provider`: choices: `auto`, `local`, `openai`, `anthropic`; Provider for paper drafting.
 - `--model`: Override the configured provider model.
 - `--json`: Print machine-readable JSON.
 
@@ -833,7 +833,7 @@ Options:
 - `--runs-root`: Root to search when paper_tex is omitted.
 - `--select`: choices: `latest`, `best`, `ready`; Run-selection policy when paper_tex is omitted.
 - `--out`: Directory for review.md (defaults beside the paper).
-- `--provider`: choices: `auto`, `openai`, `anthropic`
+- `--provider`: choices: `auto`, `openai`, `anthropic`; Provider for paper review.
 - `--model`: Override the configured provider model.
 - `--json`: Print machine-readable JSON.
 
@@ -925,7 +925,7 @@ usage: mechferret login [-h] [--api-key API_KEY] [--model MODEL]
 
 Positionals:
 
-- `provider`: choices: `anthropic`, `openai`
+- `provider`: choices: `anthropic`, `openai`; Provider to configure.
 
 Options:
 
@@ -1029,7 +1029,7 @@ usage: mechferret registry [-h] [--kind {tool,task,playbook,evaluator}]
 Options:
 
 - `-h`, `--help`: show this help message and exit
-- `--kind`: choices: `tool`, `task`, `playbook`, `evaluator`
+- `--kind`: choices: `tool`, `task`, `playbook`, `evaluator`; Limit registry output to one item kind.
 - `--json`: Print machine-readable JSON.
 
 Examples:
@@ -1051,7 +1051,7 @@ usage: mechferret memory [-h] [--db DB] [--recent RECENT] [--clear] [--json]
 Options:
 
 - `-h`, `--help`: show this help message and exit
-- `--db`
+- `--db`: SQLite memory path.
 - `--recent`: Show recent remembered runs.
 - `--clear`: Delete the memory database.
 - `--json`: Print machine-readable JSON.
@@ -1110,16 +1110,16 @@ usage: mechferret modal [-h] [--skill SKILL]
 
 Positionals:
 
-- `action`: choices: `status`, `setup`, `run`, `deploy`
-- `question`
+- `action`: choices: `status`, `setup`, `run`, `deploy`; Modal workflow action.
+- `question`: Question for remote run actions.
 
 Options:
 
 - `-h`, `--help`: show this help message and exit
 - `--skill`: Skill to run remotely (e.g. ioi-circuit).
-- `--task`: choices: `ioi`, `induction`, `greater_than`, `factual_recall`
-- `--model`
-- `--out`
+- `--task`: choices: `ioi`, `induction`, `greater_than`, `factual_recall`; Interpretability task for remote experiments.
+- `--model`: Model to investigate remotely.
+- `--out`: Output directory for Modal artifacts.
 - `--json`: Print machine-readable JSON.
 
 Examples:
@@ -1143,16 +1143,16 @@ usage: mechferret cluster [-h] [--skill SKILL]
 
 Positionals:
 
-- `action`: choices: `status`, `setup`, `run`
-- `question`
+- `action`: choices: `status`, `setup`, `run`; Cluster workflow action.
+- `question`: Question for remote run actions.
 
 Options:
 
 - `-h`, `--help`: show this help message and exit
 - `--skill`: Skill to run remotely (e.g. ioi-circuit).
-- `--task`: choices: `ioi`, `induction`, `greater_than`, `factual_recall`
-- `--model`
-- `--out`
+- `--task`: choices: `ioi`, `induction`, `greater_than`, `factual_recall`; Interpretability task for cluster experiments.
+- `--model`: Model to investigate on the cluster.
+- `--out`: Output directory for cluster artifacts.
 - `--dry-run`: Print the ssh+srun command without executing.
 - `--json`: Print machine-readable JSON.
 
