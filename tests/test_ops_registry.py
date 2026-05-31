@@ -3612,6 +3612,14 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertIn("mechferret memory", summary_actions)
             self.assertIn("--recent 5 --json", summary_actions)
 
+            text_out = StringIO()
+            with redirect_stdout(text_out):
+                main(["memory", "--db", str(root / "memory.sqlite")])
+            rendered = text_out.getvalue()
+            self.assertIn("Memory: runs=1", rendered)
+            self.assertIn("Next actions:", rendered)
+            self.assertIn("--recent 5 --json", rendered)
+
             clear_out = StringIO()
             with redirect_stdout(clear_out):
                 main(["memory", "--db", str(root / "memory.sqlite"), "--clear", "--json"])
@@ -3621,6 +3629,14 @@ class OpsRegistryTest(unittest.TestCase):
             clear_actions = " ".join(cleared["next_actions"])
             self.assertIn("mechferret quickstart --run", clear_actions)
             self.assertIn("mechferret run", clear_actions)
+
+            clear_text_out = StringIO()
+            with redirect_stdout(clear_text_out):
+                main(["memory", "--db", str(root / "memory.sqlite"), "--clear"])
+            clear_rendered = clear_text_out.getvalue()
+            self.assertIn("Cleared memory", clear_rendered)
+            self.assertIn("Next actions:", clear_rendered)
+            self.assertIn("mechferret quickstart --run", clear_rendered)
 
     def test_cost_estimator_tolerates_malformed_artifact_fields(self):
         with tempfile.TemporaryDirectory() as tmp:

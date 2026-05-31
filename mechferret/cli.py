@@ -876,17 +876,20 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command in {"memory", "/memory"}:
         if args.clear:
             memory_clear(args.db)
+            payload = _memory_payload(args.db, {"runs": 0, "claims": 0, "sources": 0}, [], cleared=True)
             if args.json:
-                print(json.dumps(_memory_payload(args.db, {"runs": 0, "claims": 0, "sources": 0}, [], cleared=True), indent=2, sort_keys=True))
+                print(json.dumps(payload, indent=2, sort_keys=True))
             else:
                 print(f"Cleared memory at {args.db}")
+                _print_next_actions(payload["next_actions"])
             return
         summary = memory_summary(args.db)
         recent = memory_recent(args.db, args.recent) if args.recent else []
+        payload = _memory_payload(args.db, summary, recent)
         if args.json:
             print(
                 json.dumps(
-                    _memory_payload(args.db, summary, recent),
+                    payload,
                     indent=2,
                     sort_keys=True,
                 )
@@ -896,6 +899,7 @@ def main(argv: list[str] | None = None) -> None:
             for row in recent:
                 score = row["metrics"].get("readiness_score", 0)
                 print(f"{row['created_at']} {row['id']} readiness={score:.2f} {row['question'][:90]}")
+            _print_next_actions(payload["next_actions"])
     elif args.command in {"tool-results", "/tool-results"}:
         if args.clean:
             result = json.loads(
@@ -3179,9 +3183,15 @@ def print_tool_results(result: dict) -> None:
         kept = result.get("kept", [])
         print(f"Kept: {len(kept)}")
     if result.get("next_actions"):
-        print("Next actions:")
-        for action in result["next_actions"]:
-            print(f"  - {action}")
+        _print_next_actions(result["next_actions"])
+
+
+def _print_next_actions(actions: list[str]) -> None:
+    if not actions:
+        return
+    print("Next actions:")
+    for action in actions:
+        print(f"  - {action}")
 
 
 def _print_run_summary(summary: dict[str, Any], *, include_run_id: bool) -> None:
