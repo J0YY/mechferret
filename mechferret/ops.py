@@ -838,6 +838,7 @@ def project_status(
             "missing_artifacts": setup_group["missing_artifacts"],
         },
     }
+    readiness_summary = _status_readiness_summary(readiness)
     next_actions = _compact_status_next_actions(
         _dedupe_actions(
             [
@@ -880,6 +881,7 @@ def project_status(
         "run_ready": run_ready,
         "share_ready": sharing_ready,
         "readiness": readiness,
+        "readiness_summary": readiness_summary,
         "selected_run": selected_run,
         "latest_run": selected_run,
         "audit": audit,
@@ -921,6 +923,8 @@ def print_project_status(result: dict[str, Any]) -> None:
         print(f"Readiness: {float(summary.get('readiness_score', 0)):.2f}")
         print(f"Run readiness: {'READY' if result.get('run_ready') else 'BLOCKED'}")
         print(f"Share readiness: {'READY' if result.get('share_ready') else 'BLOCKED'}")
+        setup_ready = _mapping(result.get("readiness", {}).get("setup")).get("ok")
+        print(f"Setup readiness: {'READY' if setup_ready else 'BLOCKED'}")
         audit = result.get("audit") or {}
         print(f"Audit: {'PASS' if audit.get('passed') else 'WARN'}")
         if audit.get("failed_checks"):
@@ -940,6 +944,10 @@ def print_project_status(result: dict[str, Any]) -> None:
                 print(f"  - {item['name']}: {item.get('observed', '')}")
     else:
         print(f"{run_label}: missing")
+        setup_ready = _mapping(result.get("readiness", {}).get("setup")).get("ok")
+        print("Run readiness: BLOCKED")
+        print("Share readiness: BLOCKED")
+        print(f"Setup readiness: {'READY' if setup_ready else 'BLOCKED'}")
     available = ", ".join(result["available_artifacts"]) or "none"
     missing = ", ".join(result["missing_artifacts"]) or "none"
     artifact_summary = result.get("artifact_summary") or _artifact_summary(result.get("artifacts", {}))
@@ -969,6 +977,73 @@ def print_project_status(result: dict[str, Any]) -> None:
         print("Suggested next actions:")
         for action in result["suggested_next_actions"][:6]:
             print(f"  - {action}")
+
+
+def _status_readiness_summary(readiness: dict[str, Any]) -> list[dict[str, Any]]:
+    setup = _mapping(readiness.get("setup"))
+    selected = _mapping(readiness.get("selected_run"))
+    sharing = _mapping(readiness.get("sharing"))
+    project = _mapping(readiness.get("project"))
+    setup_missing = _string_list(setup.get("missing")) or _string_list(setup.get("missing_artifacts"))
+    selected_missing = _string_list(selected.get("missing_artifacts"))
+    sharing_missing = _string_list(sharing.get("missing_artifacts"))
+    return [
+        {
+            "name": "setup",
+            "ready": bool(setup.get("ok")),
+            "status": "ready" if setup.get("ok") else "blocked",
+            "reason": "Project notes and setup indexes are present." if setup.get("ok") else f"Missing setup items: {', '.join(setup_missing) or 'unknown'}.",
+        },
+        {
+            "name": "run",
+            "ready": bool(selected.get("ok")),
+            "status": "ready" if selected.get("ok") else "blocked",
+            "reason": "Selected run passed audit and artifact verification."
+            if selected.get("ok")
+            else f"Selected run is not ready; missing artifacts: {', '.join(selected_missing) or 'run artifact'}.",
+        },
+        {
+            "name": "sharing",
+            "ready": bool(sharing.get("ok")),
+            "status": "ready" if sharing.get("ok") else "blocked",
+            "reason": "Share bundle is present and verifies cleanly."
+            if sharing.get("ok")
+            else _sharing_readiness_reason(sharing, sharing_missing),
+        },
+        {
+            "name": "project",
+            "ready": bool(project.get("ok")),
+            "status": str(project.get("state") or ("ready" if project.get("ok") else "blocked")),
+            "reason": "Project is fully ready."
+            if project.get("ok")
+            else _project_readiness_reason(project, setup_missing),
+        },
+    ]
+
+
+def _string_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    if isinstance(value, tuple):
+        return [str(item) for item in value if str(item).strip()]
+    return []
+
+
+def _sharing_readiness_reason(sharing: dict[str, Any], missing: list[str]) -> str:
+    if missing:
+        return f"Sharing is missing artifacts: {', '.join(missing)}."
+    if not sharing.get("bundle_verified"):
+        return "Sharing bundle is missing or does not verify cleanly."
+    return "Sharing requirements are incomplete."
+
+
+def _project_readiness_reason(project: dict[str, Any], setup_missing: list[str]) -> str:
+    if not project.get("doctor_strict_passed"):
+        return "Doctor strict checks are not passing."
+    if setup_missing:
+        return f"Workspace setup is incomplete: {', '.join(setup_missing)}."
+    state = str(project.get("state") or "blocked")
+    return f"Project state is {state}."
 
 
 def _status_suggested_next_actions(

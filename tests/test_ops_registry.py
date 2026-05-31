@@ -1220,6 +1220,13 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertFalse(status["readiness"]["sharing"]["ok"])
             self.assertFalse(status["share_ready"])
             self.assertIn("review", status["readiness"]["sharing"]["missing_artifacts"])
+            summary_by_name = {item["name"]: item for item in status["readiness_summary"]}
+            self.assertFalse(summary_by_name["setup"]["ready"])
+            self.assertTrue(summary_by_name["run"]["ready"])
+            self.assertFalse(summary_by_name["sharing"]["ready"])
+            self.assertIn("openvla", summary_by_name["setup"]["reason"])
+            self.assertEqual(summary_by_name["sharing"]["status"], "blocked")
+            self.assertIn("review", summary_by_name["sharing"]["reason"])
             self.assertEqual(status["artifact_summary"]["groups"]["dossier"]["missing"], 0)
             self.assertIn("experiments", status["artifact_summary"]["groups"]["discovery"]["missing_artifacts"])
             self.assertIn("review", status["artifact_summary"]["groups"]["sharing"]["missing_artifacts"])
@@ -1240,6 +1247,7 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertIn("dossier 5/5", status_out.getvalue())
             self.assertIn("Run readiness: READY", status_out.getvalue())
             self.assertIn("Share readiness: BLOCKED", status_out.getvalue())
+            self.assertIn("Setup readiness: BLOCKED", status_out.getvalue())
             self.assertIn("mechferret open report --select latest --browser", status_out.getvalue())
 
     def test_project_status_keeps_publish_guidance_when_only_setup_is_missing(self):
@@ -1440,11 +1448,23 @@ class OpsRegistryTest(unittest.TestCase):
             )
             self.assertEqual(status["state"], "needs_setup")
             self.assertFalse(status["latest_run"]["exists"])
+            summary_by_name = {item["name"]: item for item in status["readiness_summary"]}
+            self.assertFalse(summary_by_name["setup"]["ready"])
+            self.assertFalse(summary_by_name["run"]["ready"])
+            self.assertFalse(summary_by_name["sharing"]["ready"])
+            self.assertIn("project_notes", summary_by_name["setup"]["reason"])
             self.assertIn("mechferret init", " ".join(status["next_actions"]))
             self.assertIn("quickstart", " ".join(status["next_actions"]))
             suggestions = " ".join(status["suggested_next_actions"])
             self.assertIn("mechferret init", suggestions)
             self.assertIn("mechferret quickstart --run", suggestions)
+
+            status_out = StringIO()
+            with redirect_stdout(status_out):
+                print_project_status(status)
+            self.assertIn("Run readiness: BLOCKED", status_out.getvalue())
+            self.assertIn("Share readiness: BLOCKED", status_out.getvalue())
+            self.assertIn("Setup readiness: BLOCKED", status_out.getvalue())
 
             next_out = StringIO()
             with redirect_stdout(next_out):
