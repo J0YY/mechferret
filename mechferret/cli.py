@@ -877,7 +877,7 @@ def main(argv: list[str] | None = None) -> None:
         if args.clear:
             memory_clear(args.db)
             if args.json:
-                print(json.dumps({"ok": True, "db": str(args.db), "cleared": True}, indent=2, sort_keys=True))
+                print(json.dumps(_memory_payload(args.db, {"runs": 0, "claims": 0, "sources": 0}, [], cleared=True), indent=2, sort_keys=True))
             else:
                 print(f"Cleared memory at {args.db}")
             return
@@ -886,7 +886,7 @@ def main(argv: list[str] | None = None) -> None:
         if args.json:
             print(
                 json.dumps(
-                    {"ok": True, "db": str(args.db), "summary": summary, "recent": recent},
+                    _memory_payload(args.db, summary, recent),
                     indent=2,
                     sort_keys=True,
                 )
@@ -3035,6 +3035,57 @@ def _registry_next_actions(kind: str, items: list[dict[str, Any]]) -> list[str]:
         "Run `mechferret commands --json` to map capabilities to CLI commands.",
         "Run `mechferret doctor --json` to verify local readiness.",
     ]
+
+
+def _memory_payload(
+    db_path: str | Path,
+    summary: dict[str, int],
+    recent: list[dict[str, Any]],
+    *,
+    cleared: bool = False,
+) -> dict[str, Any]:
+    payload = {
+        "ok": True,
+        "db": str(db_path),
+        "summary": summary,
+        "recent": recent,
+        "next_actions": _memory_next_actions(db_path, summary, recent, cleared=cleared),
+    }
+    if cleared:
+        payload["cleared"] = True
+    return payload
+
+
+def _memory_next_actions(
+    db_path: str | Path,
+    summary: dict[str, int],
+    recent: list[dict[str, Any]],
+    *,
+    cleared: bool = False,
+) -> list[str]:
+    db_flags = _memory_db_flags(db_path)
+    if cleared or int(summary.get("runs", 0)) == 0:
+        return [
+            f"Run `mechferret quickstart --run --db {shlex.quote(str(db_path))}` to repopulate memory with a local dossier.",
+            f"Run `mechferret run \"What should I investigate?\" --source path/to/source --db {shlex.quote(str(db_path))}` to add project-specific memory.",
+        ]
+    actions = []
+    if not recent:
+        actions.append(f"Run `mechferret memory{db_flags} --recent 5 --json` to inspect recent remembered runs.")
+    actions.extend(
+        [
+            f"Run `mechferret run \"What should I investigate?\"{db_flags} --source path/to/source` to reuse this memory.",
+            f"Run `mechferret memory{db_flags} --clear --json` to reset this memory database.",
+        ]
+    )
+    return actions
+
+
+def _memory_db_flags(db_path: str | Path) -> str:
+    path = str(db_path)
+    if path == ".mechferret/memory.sqlite":
+        return ""
+    return f" --db {shlex.quote(path)}"
 
 
 def _run_payload(run, *, command: str) -> dict[str, Any]:

@@ -3598,6 +3598,19 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertEqual(payload["db"], str(root / "memory.sqlite"))
             self.assertEqual(payload["summary"]["runs"], 1)
             self.assertEqual(len(payload["recent"]), 1)
+            recent_actions = " ".join(payload["next_actions"])
+            self.assertIn("mechferret run", recent_actions)
+            self.assertIn(f"--db {root / 'memory.sqlite'}", recent_actions)
+            self.assertIn("mechferret memory", recent_actions)
+            self.assertNotIn("--recent 5", recent_actions)
+
+            summary_out = StringIO()
+            with redirect_stdout(summary_out):
+                main(["memory", "--db", str(root / "memory.sqlite"), "--json"])
+            summary_payload = json.loads(summary_out.getvalue())
+            summary_actions = " ".join(summary_payload["next_actions"])
+            self.assertIn("mechferret memory", summary_actions)
+            self.assertIn("--recent 5 --json", summary_actions)
 
             clear_out = StringIO()
             with redirect_stdout(clear_out):
@@ -3605,6 +3618,9 @@ class OpsRegistryTest(unittest.TestCase):
             cleared = json.loads(clear_out.getvalue())
             self.assertTrue(cleared["ok"])
             self.assertTrue(cleared["cleared"])
+            clear_actions = " ".join(cleared["next_actions"])
+            self.assertIn("mechferret quickstart --run", clear_actions)
+            self.assertIn("mechferret run", clear_actions)
 
     def test_cost_estimator_tolerates_malformed_artifact_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
