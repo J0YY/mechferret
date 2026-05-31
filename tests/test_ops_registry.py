@@ -1618,10 +1618,14 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertNotIn("audit", limited["runs"][0])
 
             out = StringIO()
+            result["runs"][0]["question"] = "Line one\n\nLine two with enough context"
             with redirect_stdout(out):
                 print_run_list(result)
-            self.assertIn("[selected: best]", out.getvalue())
-            self.assertIn("lanes: run=BLOCKED share=BLOCKED setup=BLOCKED", out.getvalue())
+            rendered = out.getvalue()
+            self.assertIn("[selected: best]", rendered)
+            self.assertIn("lanes: run=BLOCKED share=BLOCKED setup=BLOCKED", rendered)
+            self.assertIn("Line one Line two with enough context", rendered)
+            self.assertNotIn("\n\nLine two", rendered)
 
     def test_list_run_artifacts_reports_ready_selection_failure(self):
         with tempfile.TemporaryDirectory() as tmp:

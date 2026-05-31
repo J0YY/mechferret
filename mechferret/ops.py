@@ -44,6 +44,13 @@ def _text(value: Any) -> str:
     return ""
 
 
+def _line_preview(value: Any, *, limit: int = 140) -> str:
+    text = re.sub(r"\s+", " ", _text(value)).strip()
+    if limit <= 3 or len(text) <= limit:
+        return text
+    return text[: limit - 3].rstrip() + "..."
+
+
 def _mapping(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
@@ -932,7 +939,7 @@ def print_project_status(result: dict[str, Any]) -> None:
     if latest["exists"]:
         summary = latest["summary"] or {}
         print(f"{run_label}: {latest['path']}")
-        print(f"Question: {summary.get('question', '')}")
+        print(f"Question: {_line_preview(summary.get('question', ''))}")
         print(f"Readiness: {float(summary.get('readiness_score', 0)):.2f}")
         print(f"Run readiness: {'READY' if result.get('run_ready') else 'BLOCKED'}")
         print(f"Share readiness: {'READY' if result.get('share_ready') else 'BLOCKED'}")
@@ -1200,7 +1207,7 @@ def print_run_list(result: dict[str, Any]) -> None:
                 f"setup={'READY' if _mapping(lanes.get('setup')).get('ok') else 'BLOCKED'}"
             )
         print(f"   {row['run_id']}  {row['path']}")
-        print(f"   {row['question']}")
+        print(f"   {_line_preview(row.get('question'))}")
         if audit.get("failed_checks"):
             print(f"   failed: {', '.join(audit['failed_checks'])}")
         if audit.get("advisories"):
