@@ -2,9 +2,10 @@
 
 The REPL pipes your prompts to a model (Claude or GPT). The model holds the
 conversation and decides when to reach for MechFerret's *architecture/agent*
-parts — the discovery loop, the skills, the environment — which are exposed to
-it as tools. So "hello" just gets a reply; "find the IOI circuit in gpt2" makes
-the model call ``run_discovery`` and narrate the result.
+parts — the research pipeline, the discovery loop, the skills, the environment
+— which are exposed to it as tools. So "hello" just gets a reply; "ground this
+idea in sources" makes the model call ``run_research``, while "find the IOI
+circuit in gpt2" makes it call ``run_discovery`` and narrate the result.
 
 Provider calls go over stdlib ``urllib`` (no SDK needs installing into the pipx
 venv). Anthropic and OpenAI tool-use are both supported.
@@ -32,7 +33,13 @@ BASE_SYSTEM_PROMPT = """You are MechFerret, an agentic coding assistant speciali
 You have real tools: run shell commands (bash), read/write/edit files, glob and
 grep the codebase, search the web, fetch URLs, search arXiv, query Neuronpedia
 for SAE features, verify the novelty of an idea, present interactive options, run
-the interpretability discovery loop, and list skills. Use them — don't guess.
+the general prompt-to-dossier research pipeline, run the interpretability
+discovery loop, and list skills. Use them — don't guess.
+Use run_research for general literature/source-grounded research questions and
+planning. Use run_discovery only for supported mechanistic-interpretability
+experiment tasks such as IOI/induction/greater-than/factual recall circuits.
+Treat audit advisories in tool results as user-facing caveats, not hidden
+metadata.
 When the user wants to investigate a model's internals, plan a paper, or run
 experiments, gather evidence with the search tools, then write and run real code
 (TransformerLens / SAELens / nnsight) with bash, reading results back.
@@ -136,6 +143,157 @@ def is_configured() -> bool:
     return bool(active_provider()[0])
 
 
+def _agent_tool_failure(
+    name: str,
+    error: str,
+    *,
+    failed_check: str,
+    extra: dict[str, Any] | None = None,
+    next_action: str,
+) -> dict[str, Any]:
+    payload = {
+        "ok": False,
+        "tool": name,
+        "error": error,
+        "failed_checks": [failed_check],
+        "next_actions": [next_action],
+    }
+    if extra:
+        payload.update(extra)
+    return payload
+
+
+def _known_tool_name(name: str) -> bool:
+    if not isinstance(name, str):
+        return False
+    if name.startswith("mcp__"):
+        return True
+    return any(spec.get("name") == name for spec in all_specs())
+
+
+def _tool_loop_exhausted_text() -> str:
+    return (
+        f"Tool loop stopped after reaching {MAX_TOOL_STEPS} steps before a final answer. "
+        "Review the recent tool results and retry with a narrower request."
+    )
+
+
+def _provider_response_failure(provider: str, error: str) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "provider": provider,
+        "error": error,
+        "failed_checks": ["provider_response_envelope"],
+        "next_actions": ["Retry the request; if it repeats, inspect provider status and the local trace."],
+    }
+
+
+def _provider_response_failure_text(provider: str, error: str) -> str:
+    label = "OpenAI" if provider == "openai" else "Anthropic" if provider == "anthropic" else provider
+    return (
+        f"{label} returned an invalid response envelope: {error}. "
+        "Retry the request; if it repeats, inspect provider status and the local trace."
+    )
+
+
+def _reject_duplicate_tool_call_ids(
+    calls: list[tuple[str, str, Any]],
+) -> tuple[list[tuple[str, str, Any]], list[tuple[str, str]]]:
+    seen: set[str] = set()
+    unique: list[tuple[str, str, Any]] = []
+    rejected: list[tuple[str, str]] = []
+    for cid, name, args in calls:
+        if cid in seen:
+            rejected.append(
+                (
+                    cid,
+                    json.dumps(
+                        _agent_tool_failure(
+                            name,
+                            f"duplicate tool call id {cid}",
+                            failed_check="tool_call_envelope",
+                            next_action="Return each tool call with a unique id.",
+                        )
+                    ),
+                )
+            )
+            continue
+        seen.add(cid)
+        unique.append((cid, name, args))
+    return unique, rejected
+
+
+def _extract_provider_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content.strip()
+    if not isinstance(content, list):
+        return ""
+    parts: list[str] = []
+    for block in content:
+        if isinstance(block, str):
+            parts.append(block)
+            continue
+        if not isinstance(block, dict):
+            continue
+        text = block.get("text")
+        if isinstance(text, str):
+            parts.append(text)
+            continue
+        nested_content = block.get("content")
+        if isinstance(nested_content, str) and block.get("type") in {"text", "output_text"}:
+            parts.append(nested_content)
+    return "\n".join(part.strip() for part in parts if part.strip())
+
+
+def _extract_anthropic_content(data: Any) -> tuple[Any | None, str | None]:
+    if not isinstance(data, dict):
+        return None, "response is not a JSON object"
+    if "content" not in data:
+        return None, "response.content is missing"
+    content = data.get("content")
+    if not isinstance(content, (list, str)):
+        return None, "response.content must be a list or string"
+    return content, None
+
+
+def _extract_openai_message(data: Any) -> tuple[dict[str, Any] | None, str | None]:
+    if not isinstance(data, dict):
+        return None, "response is not a JSON object"
+    choices = data.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return None, "response.choices must be a non-empty list"
+    choice = choices[0]
+    if not isinstance(choice, dict):
+        return None, "response.choices[0] must be an object"
+    message = choice.get("message")
+    if not isinstance(message, dict):
+        return None, "response.choices[0].message must be an object"
+    return message, None
+
+
+def _extract_openai_tool_calls(message: dict[str, Any]) -> tuple[list[Any] | None, str | None]:
+    tool_calls = message.get("tool_calls")
+    if tool_calls is None:
+        return [], None
+    if not isinstance(tool_calls, list):
+        return None, "message.tool_calls must be a list"
+    return tool_calls, None
+
+
+def _coerce_float(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _coerce_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 # --- the agent -----------------------------------------------------------------------
 
 class Agent:
@@ -183,8 +341,15 @@ class Agent:
                 self.session_id, self.provider, self.model, self.messages,
                 {"usd": self.cost.usd, "input": self.cost.input_tokens, "output": self.cost.output_tokens},
             )
-        except Exception:  # noqa: BLE001 - transcript persistence is best-effort
-            pass
+        except Exception as exc:  # noqa: BLE001 - transcript persistence is best-effort
+            try:
+                self.tracer.event(
+                    "session_persist_failed",
+                    error=f"{type(exc).__name__}: {str(exc)[:200]}",
+                    messages=len(self.messages),
+                )
+            except Exception:  # noqa: BLE001 - tracing is also best-effort
+                pass
 
     # --- context compaction --------------------------------------------------------
 
@@ -196,7 +361,15 @@ class Agent:
 
     def _maybe_compact(self) -> None:
         if self._approx_chars() > COMPACT_CHAR_THRESHOLD:
-            self.compact()
+            try:
+                self.compact()
+            except Exception as exc:  # noqa: BLE001 - automatic compaction must not block a user turn
+                self.tracer.event(
+                    "compact_failed",
+                    error=f"{type(exc).__name__}: {str(exc)[:200]}",
+                    messages=len(self.messages),
+                    approx_chars=self._approx_chars(),
+                )
 
     def compact(self) -> str:
         """Summarise older turns into one boundary message, keeping the last few."""
@@ -223,27 +396,40 @@ class Agent:
                  "messages": [{"role": "user", "content": convo}]},
                 {"x-api-key": self._key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
             )
-            return "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text").strip()
+            content, error = _extract_anthropic_content(data)
+            if error:
+                raise RuntimeError(f"provider response envelope: {error}")
+            return _extract_provider_text(content)
         data = _http_post(
             "https://api.openai.com/v1/chat/completions",
             {"model": self.model, "messages": [{"role": "system", "content": COMPACT_SYSTEM}, {"role": "user", "content": convo}], "max_completion_tokens": 1024},
             {"authorization": f"Bearer {self._key}", "content-type": "application/json"},
         )
-        return (data["choices"][0]["message"].get("content") or "").strip()
+        message, error = _extract_openai_message(data)
+        if error:
+            raise RuntimeError(f"provider response envelope: {error}")
+        return _extract_provider_text(message.get("content"))
 
     def load_session(self, session_id: str) -> None:
         data = sessions.load_session(session_id)
-        self.session_id = data["id"]
-        self.provider = data.get("provider", self.provider)
-        self.model = data.get("model", self.model)
-        self.messages = data.get("messages", [])
+        loaded_id = data.get("id")
+        self.session_id = loaded_id if sessions.is_valid_session_id(loaded_id) else session_id
+        provider = data.get("provider")
+        model = data.get("model")
+        if provider in {"anthropic", "openai"}:
+            self.provider = provider
+        if isinstance(model, str) and model and provider in {"anthropic", "openai"}:
+            self.model = model
+        messages = data.get("messages", [])
+        self.messages = [message for message in messages if isinstance(message, dict)] if isinstance(messages, list) else []
         self._key = configured_api_key(self.provider) or self._key
         c = data.get("cost", {})
-        self.cost.usd = float(c.get("usd", 0.0))
-        self.cost.input_tokens = int(c.get("input", 0))
-        self.cost.output_tokens = int(c.get("output", 0))
+        c = c if isinstance(c, dict) else {}
+        self.cost.usd = _coerce_float(c.get("usd"), 0.0)
+        self.cost.input_tokens = _coerce_int(c.get("input"), 0)
+        self.cost.output_tokens = _coerce_int(c.get("output"), 0)
 
-    def _run_tool_calls(self, calls: list[tuple[str, str, dict]]) -> dict[str, str]:
+    def _run_tool_calls(self, calls: list[tuple[str, str, Any]]) -> dict[str, str]:
         """Run a turn's tool calls: read-only ones in parallel, the rest serially.
 
         calls: list of (call_id, tool_name, args). Returns {call_id: result}.
@@ -264,13 +450,41 @@ class Agent:
                 results[cid] = self._dispatch(name, args)
         for cid, name, args in serial:
             if self.abort.is_set():
-                results[cid] = json.dumps({"aborted": True})
+                results[cid] = json.dumps(
+                    _agent_tool_failure(
+                        name,
+                        "tool call aborted",
+                        failed_check="tool_aborted",
+                        extra={"aborted": True},
+                        next_action="Retry after clearing the abort signal.",
+                    )
+                )
                 continue
             results[cid] = self._dispatch(name, args)
         return results
 
     def _dispatch(self, name: str, args: dict) -> str:
         """Permission-gate a tool call, then run it."""
+
+        if not isinstance(args, dict):
+            return json.dumps(
+                _agent_tool_failure(
+                    name,
+                    "invalid tool arguments",
+                    failed_check="tool_arguments",
+                    next_action="Pass tool arguments as a JSON object.",
+                )
+            )
+
+        if not _known_tool_name(name):
+            return json.dumps(
+                _agent_tool_failure(
+                    name,
+                    f"unknown tool {name}",
+                    failed_check="tool_registered",
+                    next_action="Choose a tool from the registered tool list.",
+                )
+            )
 
         if name == "present_options":
             options = args.get("options", []) or []
@@ -291,13 +505,36 @@ class Agent:
             if not approved:
                 self.denials.append(name)
                 self.tracer.event("tool_denied", tool=name, reason=decision.reason)
-                return json.dumps({"denied": True, "reason": decision.reason or "not approved", "tool": name})
+                return json.dumps(
+                    _agent_tool_failure(
+                        name,
+                        decision.reason or "not approved",
+                        failed_check="tool_permission",
+                        extra={"denied": True, "reason": decision.reason or "not approved"},
+                        next_action="Ask for approval or use a read-only tool.",
+                    )
+                )
         self.on_tool(name, args)
         self.tracer.event("tool", tool=name, permission=meta["permission"],
                           args={k: str(v)[:100] for k, v in args.items()})
         result = _run_tool(name, args)
         self.tracer.event("tool_done", tool=name, output_chars=len(result))
         return result
+
+    def _record_provider_response_failure(self, provider: str, error: str, data: Any, *, append: bool = True) -> str:
+        payload = _provider_response_failure(provider, error)
+        self.tracer.event(
+            "provider_response_invalid",
+            provider=provider,
+            error=error,
+            failed_checks=payload["failed_checks"],
+            response_type=type(data).__name__,
+        )
+        message = _provider_response_failure_text(provider, error)
+        if append:
+            self.messages.append({"role": "assistant", "content": message})
+        self.on_text(message)
+        return message
 
     # --- Anthropic ------------------------------------------------------------------
 
@@ -325,27 +562,51 @@ class Agent:
                     "content-type": "application/json",
                 },
             )
+            if not isinstance(data, dict):
+                return self._record_provider_response_failure("anthropic", "response is not a JSON object", data)
             if isinstance(data.get("usage"), dict):
                 self.cost.add(self.model, data["usage"])
-            content = data.get("content", [])
+            content, error = _extract_anthropic_content(data)
+            if error:
+                return self._record_provider_response_failure("anthropic", error, data)
             self.messages.append({"role": "assistant", "content": content})
-            for block in content:
-                if block.get("type") == "text" and block.get("text", "").strip():
-                    final_text.append(block["text"])
-                    self.on_text(block["text"])
-            calls = [
-                (b["id"], b["name"], b.get("input", {}))
-                for b in content
-                if b.get("type") == "tool_use" and b.get("id") and b.get("name")
-            ]
-            if data.get("stop_reason") == "tool_use" and calls:
+            text = _extract_provider_text(content)
+            if text:
+                final_text.append(text)
+                self.on_text(text)
+            calls = []
+            malformed_results: list[tuple[str, str]] = []
+            blocks = content if isinstance(content, list) else []
+            for block in blocks:
+                parsed = _parse_anthropic_tool_use(block)
+                if parsed is None:
+                    continue
+                if parsed["ok"]:
+                    calls.append((parsed["id"], parsed["name"], parsed["args"]))
+                else:
+                    malformed_results.append((parsed["id"], json.dumps(parsed["payload"])))
+            calls, duplicate_results = _reject_duplicate_tool_call_ids(calls)
+            malformed_results.extend(duplicate_results)
+            if data.get("stop_reason") == "tool_use" and not (calls or malformed_results):
+                return self._record_provider_response_failure(
+                    "anthropic",
+                    "response.stop_reason is tool_use but no usable tool_use blocks were present",
+                    data,
+                    append=False,
+                )
+            if data.get("stop_reason") == "tool_use" and (calls or malformed_results):
                 results = self._run_tool_calls(calls)
+                result_items = [(cid, results[cid]) for cid, _, _ in calls] + malformed_results
                 self.messages.append({
                     "role": "user",
-                    "content": [{"type": "tool_result", "tool_use_id": cid, "content": results[cid]} for cid, _, _ in calls],
+                    "content": [{"type": "tool_result", "tool_use_id": cid, "content": content} for cid, content in result_items],
                 })
                 continue
             break
+        else:
+            message = _tool_loop_exhausted_text()
+            final_text.append(message)
+            self.on_text(message)
         return "\n".join(t for t in final_text if t).strip()
 
     # --- OpenAI ---------------------------------------------------------------------
@@ -367,27 +628,106 @@ class Agent:
                 payload,
                 {"authorization": f"Bearer {self._key}", "content-type": "application/json"},
             )
+            if not isinstance(data, dict):
+                return self._record_provider_response_failure("openai", "response is not a JSON object", data)
             if isinstance(data.get("usage"), dict):
                 self.cost.add(self.model, data["usage"])
-            message = data["choices"][0]["message"]
+            message, error = _extract_openai_message(data)
+            if error:
+                return self._record_provider_response_failure("openai", error, data)
+            tool_calls, error = _extract_openai_tool_calls(message)
+            if error:
+                return self._record_provider_response_failure("openai", error, data)
             self.messages.append(message)
-            tool_calls = message.get("tool_calls") or []
-            if message.get("content"):
-                final_text.append(message["content"])
-                self.on_text(message["content"])
+            text = _extract_provider_text(message.get("content"))
+            if text:
+                final_text.append(text)
+                self.on_text(text)
             if not tool_calls:
                 break
             calls = []
+            malformed_results: list[tuple[str, str]] = []
             for call in tool_calls:
-                try:
-                    args = json.loads(call["function"].get("arguments") or "{}")
-                except json.JSONDecodeError:
-                    args = {}
-                calls.append((call["id"], call["function"]["name"], args))
+                parsed = _parse_openai_tool_call(call)
+                if parsed["ok"]:
+                    calls.append((parsed["id"], parsed["name"], parsed["args"]))
+                else:
+                    malformed_results.append((parsed["id"], json.dumps(parsed["payload"])))
+            calls, duplicate_results = _reject_duplicate_tool_call_ids(calls)
+            malformed_results.extend(duplicate_results)
             results = self._run_tool_calls(calls)
             for cid, _, _ in calls:
                 self.messages.append({"role": "tool", "tool_call_id": cid, "content": results[cid]})
+            for cid, content in malformed_results:
+                self.messages.append({"role": "tool", "tool_call_id": cid, "content": content})
+        else:
+            message = _tool_loop_exhausted_text()
+            final_text.append(message)
+            self.on_text(message)
         return "\n".join(t for t in final_text if t).strip()
+
+
+def _parse_openai_tool_call(call: Any) -> dict[str, Any]:
+    if not isinstance(call, dict):
+        return _malformed_openai_tool_call("", "", "tool call is not an object")
+    cid = call.get("id")
+    if not isinstance(cid, str) or not cid:
+        return _malformed_openai_tool_call("", "", "tool call id is missing")
+    function = call.get("function")
+    if not isinstance(function, dict):
+        return _malformed_openai_tool_call(cid, "", "tool call function is missing")
+    name = function.get("name")
+    if not isinstance(name, str) or not name:
+        return _malformed_openai_tool_call(cid, "", "tool call function name is missing")
+    try:
+        args = json.loads(function.get("arguments") or "{}")
+    except json.JSONDecodeError:
+        args = []
+    return {"ok": True, "id": cid, "name": name, "args": args}
+
+
+def _parse_anthropic_tool_use(block: Any) -> dict[str, Any] | None:
+    if not isinstance(block, dict):
+        return None
+    if block.get("type") != "tool_use":
+        return None
+    cid = block.get("id")
+    if not isinstance(cid, str) or not cid:
+        return _malformed_anthropic_tool_use("", "", "tool use id is missing")
+    name = block.get("name")
+    if not isinstance(name, str) or not name:
+        return _malformed_anthropic_tool_use(cid, "", "tool use name is missing")
+    return {"ok": True, "id": cid, "name": name, "args": block.get("input", {})}
+
+
+def _malformed_anthropic_tool_use(cid: str, name: str, error: str) -> dict[str, Any]:
+    tool_name = name or "anthropic_tool_use"
+    return {
+        "ok": False,
+        "id": cid or "malformed_tool_use",
+        "name": tool_name,
+        "payload": _agent_tool_failure(
+            tool_name,
+            error,
+            failed_check="tool_call_envelope",
+            next_action="Return a tool_use block with id, name, and object input.",
+        ),
+    }
+
+
+def _malformed_openai_tool_call(cid: str, name: str, error: str) -> dict[str, Any]:
+    tool_name = name or "openai_tool_call"
+    return {
+        "ok": False,
+        "id": cid or "malformed_tool_call",
+        "name": tool_name,
+        "payload": _agent_tool_failure(
+            tool_name,
+            error,
+            failed_check="tool_call_envelope",
+            next_action="Return a tool call with id, function.name, and JSON object arguments.",
+        ),
+    }
 
 
 def _render_messages(messages: list) -> str:
@@ -403,12 +743,13 @@ def _render_messages(messages: list) -> str:
             text = content
         elif isinstance(content, list):
             parts = []
+            text_content = _extract_provider_text(content)
+            if text_content:
+                parts.append(text_content)
             for block in content:
                 if not isinstance(block, dict):
                     continue
-                if block.get("type") == "text":
-                    parts.append(block.get("text", ""))
-                elif block.get("type") == "tool_use":
+                if block.get("type") == "tool_use":
                     parts.append(f"[tool_use {block.get('name')} {json.dumps(block.get('input', {}))[:300]}]")
                 elif block.get("type") == "tool_result":
                     parts.append(f"[tool_result {str(block.get('content', ''))[:600]}]")
@@ -420,12 +761,17 @@ def _render_messages(messages: list) -> str:
     return "\n".join(lines)
 
 
-def _http_post(url: str, payload: dict, headers: dict) -> dict:
+def _http_post(url: str, payload: dict, headers: dict) -> Any:
     body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(request, timeout=120) as response:
-            return json.loads(response.read().decode("utf-8"))
+            text = response.read().decode("utf-8", errors="replace")
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError as exc:
+                snippet = text.strip().replace("\n", " ")[:200] or "<empty>"
+                raise RuntimeError(f"provider returned invalid JSON: {snippet}") from exc
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="ignore")
         try:

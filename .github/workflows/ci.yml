@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  offline-core:
+    name: Offline core (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package
+        run: python -m pip install -e .
+
+      - name: Doctor
+        run: |
+          python -m mechferret doctor
+          python -m mechferret doctor --strict
+          python -m mechferret doctor --json > doctor.json
+          python -m mechferret commands --workflow --json > workflows.json
+          python -m mechferret next --json > next.json
+          python -m mechferret quickstart --mode ci --json > quickstart.json
+          python -m mechferret selftest --json > selftest.json
+          python -m mechferret support --report "$RUNNER_TEMP/support-selftest.json" --json > support.json
+          python -m json.tool doctor.json > /dev/null
+          python -m json.tool workflows.json > /dev/null
+          python -m json.tool next.json > /dev/null
+          python -m json.tool quickstart.json > /dev/null
+          python -m json.tool selftest.json > /dev/null
+          python -m json.tool support.json > /dev/null
+          python -m json.tool "$RUNNER_TEMP/support-selftest.json" > /dev/null
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests -q
+
+      - name: Bytecode compile
+        run: python -m compileall -q projects/openvla_sae/src mechferret tests
+
+      - name: Release hygiene
+        run: |
+          git diff --check
+          term=$(printf '\144\145\164\145\162\155\151\156\151\163\164\151\143')
+          if git grep -n -i "$term" -- . ':!build' ':!mechferret.egg-info'; then exit 1; fi
+          placeholder_pattern="TODO: ""write|TODO: ""motivate|TODO: ""describe|TODO: ""report|TODO: ""cite|TODO: ""list|TODO: ""summarize"
+          scaffold_pattern="structure-only local ""scaffold|local mode writes ""only"
+          if git grep -n -E "$placeholder_pattern|$scaffold_pattern" -- mechferret tests README.md docs projects/openvla_sae; then exit 1; fi
+
+      - name: Audit JSON smoke
+        run: |
+          mkdir -p "$RUNNER_TEMP/no-runs"
+          python -m mechferret audit --runs-root "$RUNNER_TEMP/no-runs" --json > audit.json
+          python -m json.tool audit.json > /dev/null
+
+      - name: Executable CI quickstart
+        run: python -m mechferret quickstart --mode ci --run --out "$RUNNER_TEMP/demo" --db "$RUNNER_TEMP/memory.sqlite"
+
+      - name: OpenVLA SAE template smoke
+        run: |
+          python -m mechferret sae openvla init --project-root "$RUNNER_TEMP/openvla_sae"
+          python -m mechferret sae openvla status --project-root "$RUNNER_TEMP/openvla_sae"
+
+      - name: Installed wheel smoke
+        run: |
+          rm -rf build *.egg-info
+          python -m pip wheel . -w "$RUNNER_TEMP/wheels" --no-deps
+          python - "$RUNNER_TEMP/wheels" <<'PY'
+          import sys
+          import zipfile
+          from pathlib import Path
+
+          wheel = next(Path(sys.argv[1]).glob("mechferret-*.whl"))
+          required = {
+              "mechferret/py.typed",
+              "mechferret/seed_corpus/hackathon_brief.md",
+              "mechferret/skills/ioi-circuit.json",
+              "mechferret/templates/openvla_sae/README.md",
+              "mechferret/templates/openvla_sae/configs/phase1.yaml",
+              "mechferret/templates/openvla_sae/paper/outline.md",
+              "mechferret/templates/openvla_sae/scripts/phase1_commands.sh",
+              "mechferret/templates/openvla_sae/src/simple_topk_sae.py",
+          }
+          with zipfile.ZipFile(wheel) as archive:
+              names = set(archive.namelist())
+              missing = sorted(required - names)
+              metadata_name = next(name for name in names if name.endswith(".dist-info/METADATA"))
+              metadata = archive.read(metadata_name).decode("utf-8")
+              license_files = [name for name in names if name.endswith(".dist-info/licenses/LICENSE")]
+          if missing:
+              raise SystemExit(f"wheel is missing runtime assets: {missing}")
+          required_metadata = [
+              "License-Expression: MIT",
+              "License-File: LICENSE",
+              "Classifier: Typing :: Typed",
+              "Project-URL: Repository, https://github.com/J0YY/mechferret",
+          ]
+          missing_metadata = [line for line in required_metadata if line not in metadata]
+          if missing_metadata:
+              raise SystemExit(f"wheel metadata is missing: {missing_metadata}")
+          if not license_files:
+              raise SystemExit("wheel is missing dist-info license file")
+          PY
+          python -m venv "$RUNNER_TEMP/wheel-venv"
+          "$RUNNER_TEMP/wheel-venv/bin/python" -m pip install --no-index --find-links "$RUNNER_TEMP/wheels" mechferret
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/wheel-venv/bin/python" -m mechferret doctor --strict
+          "$RUNNER_TEMP/wheel-venv/bin/mechferret" version --json | "$RUNNER_TEMP/wheel-venv/bin/python" -m json.tool > /dev/null
+          "$RUNNER_TEMP/wheel-venv/bin/mf" commands --json | "$RUNNER_TEMP/wheel-venv/bin/python" -m json.tool > /dev/null
+          "$RUNNER_TEMP/wheel-venv/bin/mf" commands --workflow --json | "$RUNNER_TEMP/wheel-venv/bin/python" -m json.tool > /dev/null
+          "$RUNNER_TEMP/wheel-venv/bin/python" -m mechferret quickstart --mode openvla --run --project-root "$RUNNER_TEMP/wheel-openvla"
+          test -f "$RUNNER_TEMP/wheel-openvla/src/train_sae_from_cache.py"

@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1100" viewBox="0 0 1800 1100" role="img" aria-labelledby="title desc">
+  <title id="title">Why interpretability needs an autoresearch agent</title>
+  <desc id="desc">A black and purple infographic explaining why mechanistic interpretability benefits from autonomous research agents and why a Claude Code skill alone is insufficient.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 14 7 L 0 14 z" fill="#a855f7"/>
+    </marker>
+    <style>
+      .bg { fill: #050208; }
+      .grid { stroke: #2a1738; stroke-width: 1; opacity: 0.42; }
+      .title { font: 800 56px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #fbf7ff; letter-spacing: 0; }
+      .subtitle { font: 500 25px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #d8c9e8; letter-spacing: 0; }
+      .section { font: 800 30px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #fbf7ff; letter-spacing: 0; }
+      .label { font: 760 22px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #fbf7ff; letter-spacing: 0; }
+      .body { font: 500 18px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #d8c9e8; letter-spacing: 0; }
+      .small { font: 600 15px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #bba5cf; letter-spacing: 0; }
+      .eyebrow { font: 800 13px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #c084fc; letter-spacing: 1.2px; text-transform: uppercase; }
+      .card { fill: #0b0610; stroke: #5b2b82; stroke-width: 2; rx: 22; }
+      .card2 { fill: #11081a; stroke: #7e22ce; stroke-width: 2; rx: 18; }
+      .chip { fill: #1a0d25; stroke: #7e22ce; stroke-width: 1.5; rx: 16; }
+      .line { fill: none; stroke: #a855f7; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
+      .divider { stroke: #3b1d52; stroke-width: 2; }
+      .dot { fill: #a855f7; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1800" height="1100"/>
+  <g>
+    <path class="grid" d="M100 0V1100M200 0V1100M300 0V1100M400 0V1100M500 0V1100M600 0V1100M700 0V1100M800 0V1100M900 0V1100M1000 0V1100M1100 0V1100M1200 0V1100M1300 0V1100M1400 0V1100M1500 0V1100M1600 0V1100M1700 0V1100"/>
+    <path class="grid" d="M0 100H1800M0 200H1800M0 300H1800M0 400H1800M0 500H1800M0 600H1800M0 700H1800M0 800H1800M0 900H1800M0 1000H1800"/>
+  </g>
+
+  <text x="70" y="78" class="title">Why Interpretability Needs Autoresearch</text>
+  <text x="70" y="122" class="subtitle">Interpretability is a causal search problem over model internals, not a normal retrieval-and-writing workflow.</text>
+
+  <g transform="translate(70,185)">
+    <rect class="card" width="520" height="330"/>
+    <text x="30" y="54" class="section">What Makes Interp Different</text>
+    <text x="30" y="98" class="body">The evidence lives inside the model:</text>
+    <text x="30" y="126" class="body">heads, features, activations, circuits.</text>
+    <text x="30" y="164" class="body">A correlation is not enough. The claim</text>
+    <text x="30" y="192" class="body">must survive intervention.</text>
+    <line class="divider" x1="30" y1="215" x2="490" y2="215"/>
+    <text x="30" y="252" class="eyebrow">Failure mode</text>
+    <text x="30" y="286" class="body">A pretty activation map can become an</text>
+    <text x="30" y="314" class="body">overclaim without intervention.</text>
+  </g>
+
+  <g transform="translate(640,185)">
+    <rect class="card2" width="520" height="330"/>
+    <text x="30" y="54" class="section">What Autonomy Adds</text>
+    <g transform="translate(30,96)">
+      <circle class="dot" cx="8" cy="8" r="6"/>
+      <text x="28" y="14" class="body">Searches many candidate circuits.</text>
+      <circle class="dot" cx="8" cy="58" r="6"/>
+      <text x="28" y="64" class="body">Promotes only causal effects.</text>
+      <circle class="dot" cx="8" cy="108" r="6"/>
+      <text x="28" y="114" class="body">Requires probe triangulation.</text>
+      <circle class="dot" cx="8" cy="158" r="6"/>
+      <text x="28" y="164" class="body">Turns critic gaps into experiments.</text>
+      <circle class="dot" cx="8" cy="208" r="6"/>
+      <text x="28" y="214" class="body">Writes an auditable claim graph.</text>
+    </g>
+  </g>
+
+  <g transform="translate(1210,185)">
+    <rect class="card" width="520" height="330"/>
+    <text x="30" y="54" class="section">Why It Matters</text>
+    <text x="30" y="98" class="body">Interpretability audits the AI systems</text>
+    <text x="30" y="126" class="body">that will do research elsewhere.</text>
+    <text x="30" y="164" class="body">Better circuit discovery improves safety,</text>
+    <text x="30" y="192" class="body">debugging, trust, and agent reliability.</text>
+    <line class="divider" x1="30" y1="215" x2="490" y2="215"/>
+    <text x="30" y="252" class="eyebrow">Compounding effect</text>
+    <text x="30" y="286" class="body">Research agents get stronger when their</text>
+    <text x="30" y="314" class="body">own internals become inspectable.</text>
+  </g>
+
+  <path class="line" d="M590 350H634"/>
+  <path class="line" d="M1160 350H1204"/>
+
+  <g transform="translate(150,605)">
+    <rect class="card" width="700" height="350"/>
+    <text x="34" y="58" class="section">Why a Claude Code Skill Is Not Enough</text>
+    <text x="34" y="105" class="body">A skill can describe a protocol, but it does not</text>
+    <text x="34" y="133" class="body">create the scientific control loop.</text>
+    <g transform="translate(34,150)">
+      <rect class="chip" x="0" y="0" width="285" height="48"/>
+      <text x="142" y="31" class="small" text-anchor="middle">No experiment ledger</text>
+      <rect class="chip" x="315" y="0" width="285" height="48"/>
+      <text x="458" y="31" class="small" text-anchor="middle">No probe contract</text>
+      <rect class="chip" x="0" y="70" width="285" height="48"/>
+      <text x="142" y="101" class="small" text-anchor="middle">No hypothesis lifecycle</text>
+      <rect class="chip" x="315" y="70" width="285" height="48"/>
+      <text x="458" y="101" class="small" text-anchor="middle">No rigor critic</text>
+      <rect class="chip" x="0" y="140" width="285" height="48"/>
+      <text x="142" y="171" class="small" text-anchor="middle">No GPU batch path</text>
+      <rect class="chip" x="315" y="140" width="285" height="48"/>
+      <text x="458" y="171" class="small" text-anchor="middle">No artifact contract</text>
+    </g>
+  </g>
+
+  <g transform="translate(950,605)">
+    <rect class="card2" width="700" height="350"/>
+    <text x="34" y="58" class="section">What MechFerret Implements Instead</text>
+    <text x="34" y="105" class="body">A reusable architecture that turns instructions</text>
+    <text x="34" y="133" class="body">into measurable research actions.</text>
+    <g transform="translate(34,150)">
+      <text x="0" y="0" class="eyebrow">System components</text>
+      <text x="0" y="43" class="body">DiscoveryController, HypothesisGenerator, InterpEngine</text>
+      <text x="0" y="86" class="body">ExperimentCritic, Coordinator, BudgetGuard, memory</text>
+      <text x="0" y="129" class="body">Local fallback, TransformerLens, Modal GPU, SLURM</text>
+      <line class="divider" x1="0" y1="128" x2="620" y2="128"/>
+      <text x="0" y="166" class="body">A skill can describe IOI. MechFerret can screen heads,</text>
+      <text x="0" y="194" class="body">run probes, enforce controls, and prove the claim.</text>
+    </g>
+  </g>
+
+  <path class="line" d="M850 780H944"/>
+</svg>

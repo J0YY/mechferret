@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 from .models import Claim, ResearchRun, Source, utc_now
 from .retrieval import BM25Index
@@ -79,6 +81,53 @@ class ResearchMemory:
     def _sign(x: float) -> int:
         return (x > 0) - (x < 0)
 
+    @staticmethod
+    def _limit(value: Any, default: int = 12) -> int:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return default
+        return max(0, parsed)
+
+    @staticmethod
+    def _finite_float(value: Any, default: float = 0.0) -> float:
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return default
+        return parsed if math.isfinite(parsed) else default
+
+    @staticmethod
+    def _safe_json(value: Any) -> str:
+        try:
+            return json.dumps(ResearchMemory._json_ready(value), sort_keys=True, allow_nan=False)
+        except (TypeError, ValueError):
+            return json.dumps(str(value))
+
+    @staticmethod
+    def _json_ready(value: Any) -> Any:
+        if value is None or isinstance(value, (str, bool)):
+            return value
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return value if math.isfinite(value) else None
+        if isinstance(value, dict):
+            return {str(key): ResearchMemory._json_ready(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [ResearchMemory._json_ready(item) for item in value]
+        return str(value)
+
+    @staticmethod
+    def _rows(value: Any) -> list[Any]:
+        return value if isinstance(value, list) else []
+
+    @staticmethod
+    def _field(row: Any, name: str, default: Any = None) -> Any:
+        if isinstance(row, dict):
+            return row.get(name, default)
+        return getattr(row, name, default)
+
     def record_experiments(self, model: str, task: str, hypotheses: list, results: list, code_version: str = "") -> dict:
         """Upsert experiments keyed by spec hash; count conclusion flips as drift.
 
@@ -88,14 +137,34 @@ class ResearchMemory:
         or code change). Returns {"recorded": n, "drifted": k}.
         """
 
-        spec_to_hyp = {eid: h.statement for h in hypotheses for eid in getattr(h, "experiment_ids", [])}
+        spec_to_hyp: dict[str, str] = {}
+        for h in self._rows(hypotheses):
+            statement = self._field(h, "statement", "")
+            if not isinstance(statement, str):
+                continue
+            for eid in self._rows(self._field(h, "experiment_ids", [])):
+                if isinstance(eid, str) and eid:
+                    spec_to_hyp[eid] = statement
         recorded = drifted = 0
-        for r in results:
-            if getattr(r, "status", "ran") != "ran":
+        for r in self._rows(results):
+            if self._field(r, "status", "ran") != "ran":
+                continue
+            spec_id = self._field(r, "spec_id", "")
+            probe = self._field(r, "probe", "")
+            if not spec_id or not probe:
                 continue
             is_drift = self.record_experiment(
-                model, task, r.probe, r.target, spec_to_hyp.get(r.spec_id, "screen"),
-                r.effect_size, r.baseline, r.significant, r.reproduced, code_version, commit=False,
+                model,
+                task,
+                probe,
+                self._field(r, "target", {}),
+                spec_to_hyp.get(spec_id, "screen"),
+                self._field(r, "effect_size", 0.0),
+                self._field(r, "baseline", 0.0),
+                self._field(r, "significant", False),
+                self._field(r, "reproduced", False),
+                code_version,
+                commit=False,
             )
             recorded += 1
             drifted += is_drift
@@ -106,13 +175,15 @@ class ResearchMemory:
                           significant, reproduced, code_version="", commit=True) -> int:
         """Upsert one experiment by spec hash; return 1 if its conclusion drifted."""
 
-        key = stable_id("exp", f"{model}|{task}|{probe}|{json.dumps(target, sort_keys=True)}")
+        effect = self._finite_float(effect_size)
+        baseline = self._finite_float(control)
+        key = stable_id("exp", f"{model}|{task}|{probe}|{self._safe_json(target)}")
         prior = self.conn.execute(
             "select effect_size, significant from experiments where id=?", (key,)
         ).fetchone()
         is_drift = 0
         if prior is not None and (
-            self._sign(prior["effect_size"]) != self._sign(effect_size)
+            self._sign(self._finite_float(prior["effect_size"])) != self._sign(effect)
             or bool(prior["significant"]) != bool(significant)
         ):
             is_drift = 1
@@ -123,23 +194,23 @@ class ResearchMemory:
                 "insert into experiments (id, model, task, probe, target_json, hypothesis, effect_size, control, "
                 "significant, reproduced, verdict, observed_count, drift_count, code_version, first_seen, last_seen) "
                 "values (?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?)",
-                (key, model, task, probe, json.dumps(target, sort_keys=True), hypothesis,
-                 effect_size, control, int(significant), int(reproduced), verdict, is_drift, code_version, now, now),
+                (key, str(model), str(task), str(probe), self._safe_json(target), str(hypothesis),
+                 effect, baseline, int(bool(significant)), int(bool(reproduced)), verdict, is_drift, str(code_version), now, now),
             )
         else:
             self.conn.execute(
                 "update experiments set effect_size=?, control=?, significant=?, reproduced=?, verdict=?, "
                 "hypothesis=?, observed_count=observed_count+1, drift_count=drift_count+?, code_version=?, last_seen=? "
                 "where id=?",
-                (effect_size, control, int(significant), int(reproduced), verdict, hypothesis,
-                 is_drift, code_version, now, key),
+                (effect, baseline, int(bool(significant)), int(bool(reproduced)), verdict, str(hypothesis),
+                 is_drift, str(code_version), now, key),
             )
         if commit:
             self.conn.commit()
         return is_drift
 
     def clear_experiments_and_mechanisms(self) -> None:
-        """Wipe the experiment ledger + mechanisms (used to replay a demo cleanly)."""
+        """Wipe the experiment ledger + mechanisms before a presenter walkthrough."""
 
         self.conn.execute("delete from experiments")
         self.conn.execute("delete from mechanisms")
@@ -147,7 +218,7 @@ class ResearchMemory:
 
     def experiments_by_hypothesis(self, limit: int = 200) -> dict:
         rows = self.conn.execute(
-            "select * from experiments order by last_seen desc limit ?", (limit,)
+            "select * from experiments order by last_seen desc limit ?", (self._limit(limit, 200),)
         ).fetchall()
         grouped: dict[str, list[dict]] = {}
         for row in rows:
@@ -158,17 +229,22 @@ class ResearchMemory:
         """Persist confirmed mechanisms so findings compound across sessions."""
 
         rows = []
+        if not isinstance(mechanisms, list):
+            mechanisms = []
         for m in mechanisms:
-            statement = m.get("statement", "")
-            if not statement:
+            if not isinstance(m, dict):
                 continue
+            statement = m.get("statement", "")
+            if not isinstance(statement, str) or not statement.strip():
+                continue
+            model_name = model if isinstance(model, str) else str(model)
             rows.append((
-                stable_id("mech", f"{model}:{statement}"),
-                statement,
-                model,
-                float(m.get("effect_size", 0.0)),
-                float(m.get("reproducibility", 0.0)),
-                float(m.get("novelty", 0.0)),
+                stable_id("mech", f"{model_name}:{statement}"),
+                statement.strip(),
+                model_name,
+                self._finite_float(m.get("effect_size", 0.0)),
+                self._finite_float(m.get("reproducibility", 0.0)),
+                self._finite_float(m.get("novelty", 0.0)),
                 utc_now(),
             ))
         if rows:
@@ -184,11 +260,30 @@ class ResearchMemory:
         rows = self.conn.execute(
             "select statement, model, effect_size, reproducibility, novelty, created_at "
             "from mechanisms order by created_at desc limit ?",
-            (limit,),
+            (self._limit(limit, 12),),
         ).fetchall()
         return [dict(row) for row in rows]
 
     def upsert_sources(self, sources: list[Source]) -> None:
+        rows = []
+        for source in self._rows(sources):
+            source_id = self._field(source, "id", "")
+            text = self._field(source, "text", "")
+            if not source_id or not isinstance(text, str) or not text:
+                continue
+            rows.append(
+                (
+                    str(source_id),
+                    str(self._field(source, "title", "")),
+                    str(self._field(source, "url", "")),
+                    str(self._field(source, "kind", "document")),
+                    text,
+                    self._safe_json(self._field(source, "metadata", {})),
+                    str(self._field(source, "created_at", utc_now())),
+                )
+            )
+        if not rows:
+            return
         self.conn.executemany(
             """
             insert into sources (id, title, url, kind, text, metadata_json, created_at)
@@ -200,61 +295,63 @@ class ResearchMemory:
               text=excluded.text,
               metadata_json=excluded.metadata_json
             """,
-            [
-                (
-                    source.id,
-                    source.title,
-                    source.url,
-                    source.kind,
-                    source.text,
-                    json.dumps(source.metadata, sort_keys=True),
-                    source.created_at,
-                )
-                for source in sources
-            ],
+            rows,
         )
         self.conn.commit()
 
     def record_run(self, run: ResearchRun) -> None:
+        run_id = self._field(run, "run_id", "")
+        if not run_id:
+            return
+        created_at = str(self._field(run, "created_at", utc_now()))
         self.conn.execute(
             """
             insert or replace into runs (id, question, answer, metrics_json, artifacts_json, created_at)
             values (?, ?, ?, ?, ?, ?)
             """,
             (
-                run.run_id,
-                run.question,
-                run.answer,
-                json.dumps(run.metrics, sort_keys=True),
-                json.dumps(run.artifacts, sort_keys=True),
-                run.created_at,
+                str(run_id),
+                str(self._field(run, "question", "")),
+                str(self._field(run, "answer", "")),
+                self._safe_json(self._field(run, "metrics", {})),
+                self._safe_json(self._field(run, "artifacts", {})),
+                created_at,
             ),
         )
+        claim_rows = []
+        for claim in self._rows(self._field(run, "claims", [])):
+            claim_id = self._field(claim, "id", "")
+            text = self._field(claim, "text", "")
+            if not claim_id or not isinstance(text, str) or not text:
+                continue
+            claim_rows.append(
+                (
+                    str(claim_id),
+                    str(run_id),
+                    text,
+                    self._safe_json(self._field(claim, "citations", [])),
+                    self._safe_json(self._field(claim, "source_ids", [])),
+                    self._finite_float(self._field(claim, "confidence", 0.0)),
+                    self._finite_float(self._field(claim, "support_score", 0.0)),
+                    str(self._field(claim, "stance", "finding")),
+                    self._safe_json(self._field(claim, "quality_flags", [])),
+                    created_at,
+                )
+            )
         self.conn.executemany(
             """
             insert or replace into claims
             (id, run_id, text, citations_json, source_ids_json, confidence, support_score, stance, quality_flags_json, created_at)
             values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            [
-                (
-                    claim.id,
-                    run.run_id,
-                    claim.text,
-                    json.dumps(claim.citations),
-                    json.dumps(claim.source_ids),
-                    claim.confidence,
-                    claim.support_score,
-                    claim.stance,
-                    json.dumps(claim.quality_flags),
-                    run.created_at,
-                )
-                for claim in run.claims
-            ],
+            claim_rows,
         )
         self.conn.commit()
 
     def recall_sources(self, question: str, limit: int = 3) -> list[Source]:
+        limit = self._limit(limit, 3)
+        if limit <= 0:
+            return []
         rows = self.conn.execute(
             """
             select c.text, c.confidence, c.support_score, c.created_at, r.question
@@ -266,22 +363,27 @@ class ResearchMemory:
         ).fetchall()
         if not rows:
             return []
-        sources = [
-            Source(
+        sources: list[Source] = []
+        for row in rows:
+            text = row["text"] if isinstance(row["text"], str) else ""
+            created_at = row["created_at"] if isinstance(row["created_at"], str) else utc_now()
+            question_text = row["question"] if isinstance(row["question"], str) else ""
+            if not text.strip():
+                continue
+            sources.append(Source(
                 id=stable_id("mem", f"{row['created_at']}:{row['text']}"),
-                title=f"Memory from prior run: {row['question'][:72]}",
+                title=f"Memory from prior run: {question_text[:72]}",
                 text=(
-                    f"Prior claim: {row['text']}\n"
-                    f"Confidence: {row['confidence']:.2f}; support: {row['support_score']:.2f}; "
-                    f"recorded_at: {row['created_at']}"
+                    f"Prior claim: {text}\n"
+                    f"Confidence: {self._finite_float(row['confidence']):.2f}; support: {self._finite_float(row['support_score']):.2f}; "
+                    f"recorded_at: {created_at}"
                 ),
-                url=f"memory://{row['created_at']}",
+                url=f"memory://{created_at}",
                 kind="memory",
                 created_at=utc_now(),
-            )
-            for row in rows
-        ]
+            ))
+        if not sources:
+            return []
         index = BM25Index.from_sources(sources)
         selected_ids = {chunk.source_id for chunk in index.search(question, limit=limit)}
         return [source for source in sources if source.id in selected_ids][:limit]
-

@@ -26,6 +26,7 @@ class GoalLoop:
         provider: str = "auto",
         model: str | None = None,
         include_memory: bool = True,
+        allow_seed_corpus: bool = False,
     ) -> dict[str, Any]:
         out_path = Path(out_dir)
         out_path.mkdir(parents=True, exist_ok=True)
@@ -45,6 +46,7 @@ class GoalLoop:
                 provider=provider,
                 model=model,
                 include_memory=include_memory,
+                allow_seed_corpus=allow_seed_corpus,
             )
             probability = estimate_acceptance_probability(run, venue)
             actions = next_actions(run, venue, probability, target)

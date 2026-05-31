@@ -1,0 +1,35 @@
+model:
+  hf_id: openvla/openvla-7b
+  torch_dtype: bfloat16
+  attn_implementation: sdpa
+
+data:
+  # Start with a small JSONL manifest of image paths + instructions + optional actions.
+  manifest: data/openvla_sae_phase1.jsonl
+  image_key: image_path
+  instruction_key: instruction
+  action_key: action
+  max_examples: 2048
+
+activation_cache:
+  out_dir: runs/openvla_sae/cache_phase1
+  batch_size: 1
+  sites:
+    - language_model.model.layers.16
+    - language_model.model.layers.24
+    - language_model.model.layers.31
+  token_positions: action_prompt_suffix
+
+sae:
+  architecture: topk
+  expansion_factor: 16
+  k: 64
+  lr: 0.0003
+  batch_size: 4096
+  steps: 20000
+  seed: 0
+  normalize_activations: true
+
+eval:
+  random_feature_controls: 100
+  candidate_top_features: 200

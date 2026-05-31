@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="900" viewBox="0 0 1800 900" role="img" aria-labelledby="title desc">
+  <title id="title">MechFerret prompt to paper process</title>
+  <desc id="desc">A linear infographic showing the MechFerret process from a prompt or skill to an auditable paper-ready research dossier.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 14 7 L 0 14 z" fill="#a855f7"/>
+    </marker>
+    <style>
+      .bg { fill: #050208; }
+      .grid { stroke: #2a1738; stroke-width: 1; opacity: 0.42; }
+      .title { font: 800 58px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #fbf7ff; letter-spacing: 0; }
+      .subtitle { font: 500 25px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #d8c9e8; letter-spacing: 0; }
+      .section { font: 800 26px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #fbf7ff; letter-spacing: 0; }
+      .body { font: 500 18px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #d8c9e8; letter-spacing: 0; }
+      .small { font: 600 15px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #bba5cf; letter-spacing: 0; }
+      .eyebrow { font: 800 13px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #c084fc; letter-spacing: 1.2px; text-transform: uppercase; }
+      .card { fill: #0b0610; stroke: #5b2b82; stroke-width: 2; rx: 22; }
+      .card2 { fill: #11081a; stroke: #7e22ce; stroke-width: 2; rx: 18; }
+      .chip { fill: #1a0d25; stroke: #7e22ce; stroke-width: 1.5; rx: 16; }
+      .line { fill: none; stroke: #a855f7; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
+      .numBg { fill: #a855f7; }
+      .num { font: 800 18px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #050208; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1800" height="900"/>
+  <g>
+    <path class="grid" d="M100 0V900M200 0V900M300 0V900M400 0V900M500 0V900M600 0V900M700 0V900M800 0V900M900 0V900M1000 0V900M1100 0V900M1200 0V900M1300 0V900M1400 0V900M1500 0V900M1600 0V900M1700 0V900"/>
+    <path class="grid" d="M0 100H1800M0 200H1800M0 300H1800M0 400H1800M0 500H1800M0 600H1800M0 700H1800M0 800H1800"/>
+  </g>
+
+  <text x="70" y="78" class="title">Prompt to Paper</text>
+  <text x="70" y="122" class="subtitle">How one prompt becomes a causal interpretability claim, not just a literature summary.</text>
+
+  <g transform="translate(70,210)">
+    <rect class="card2" width="240" height="250"/>
+    <circle class="numBg" cx="42" cy="42" r="20"/>
+    <text x="42" y="49" class="num" text-anchor="middle">1</text>
+    <text x="74" y="48" class="section">Intent</text>
+    <text x="28" y="92" class="body">Ask for a behavior,</text>
+    <text x="28" y="120" class="body">task, or playbook.</text>
+    <rect class="chip" x="28" y="146" width="184" height="42"/>
+    <text x="120" y="173" class="small" text-anchor="middle">ioi-circuit</text>
+  </g>
+
+  <g transform="translate(360,210)">
+    <rect class="card2" width="240" height="250"/>
+    <circle class="numBg" cx="42" cy="42" r="20"/>
+    <text x="42" y="49" class="num" text-anchor="middle">2</text>
+    <text x="74" y="48" class="section">Formalize</text>
+    <text x="28" y="92" class="body">Map the question to</text>
+    <text x="28" y="120" class="body">a model task.</text>
+    <rect class="chip" x="28" y="146" width="184" height="42"/>
+    <text x="120" y="173" class="small" text-anchor="middle">task spec</text>
+  </g>
+
+  <g transform="translate(650,210)">
+    <rect class="card2" width="240" height="250"/>
+    <circle class="numBg" cx="42" cy="42" r="20"/>
+    <text x="42" y="49" class="num" text-anchor="middle">3</text>
+    <text x="74" y="48" class="section">Ground</text>
+    <text x="28" y="92" class="body">Retrieve prior art</text>
+    <text x="28" y="120" class="body">and remembered circuits.</text>
+    <rect class="chip" x="28" y="146" width="184" height="42"/>
+    <text x="120" y="173" class="small" text-anchor="middle">sources + memory</text>
+  </g>
+
+  <g transform="translate(940,210)">
+    <rect class="card2" width="240" height="250"/>
+    <circle class="numBg" cx="42" cy="42" r="20"/>
+    <text x="42" y="49" class="num" text-anchor="middle">4</text>
+    <text x="74" y="48" class="section">Search</text>
+    <text x="28" y="92" class="body">Screen components</text>
+    <text x="28" y="120" class="body">by causal ablation.</text>
+    <rect class="chip" x="28" y="146" width="184" height="42"/>
+    <text x="120" y="173" class="small" text-anchor="middle">candidate heads</text>
+  </g>
+
+  <g transform="translate(1230,210)">
+    <rect class="card2" width="240" height="250"/>
+    <circle class="numBg" cx="42" cy="42" r="20"/>
+    <text x="42" y="49" class="num" text-anchor="middle">5</text>
+    <text x="74" y="48" class="section">Validate</text>
+    <text x="28" y="92" class="body">Triangulate with</text>
+    <text x="28" y="120" class="body">independent probes.</text>
+    <rect class="chip" x="28" y="146" width="184" height="42"/>
+    <text x="120" y="173" class="small" text-anchor="middle">effects + controls</text>
+  </g>
+
+  <g transform="translate(1520,210)">
+    <rect class="card2" width="210" height="250"/>
+    <circle class="numBg" cx="42" cy="42" r="20"/>
+    <text x="42" y="49" class="num" text-anchor="middle">6</text>
+    <text x="74" y="48" class="section">Dossier</text>
+    <text x="28" y="92" class="body">Export claim graph,</text>
+    <text x="28" y="120" class="body">ledger, and report.</text>
+    <rect class="chip" x="28" y="146" width="154" height="42"/>
+    <text x="105" y="173" class="small" text-anchor="middle">report + graph</text>
+  </g>
+
+  <path class="line" d="M310 335H354"/>
+  <path class="line" d="M600 335H644"/>
+  <path class="line" d="M890 335H934"/>
+  <path class="line" d="M1180 335H1224"/>
+  <path class="line" d="M1470 335H1514"/>
+
+  <g transform="translate(160,570)">
+    <rect class="card" width="1480" height="190"/>
+    <text x="32" y="54" class="eyebrow">The non-generic part</text>
+    <text x="32" y="94" class="body">Candidate mechanisms are not written up until they survive matched controls, multiple seeds, and independent probe agreement.</text>
+    <text x="32" y="132" class="body">If the critic finds a gap, the system spawns follow-up interventions instead of hiding uncertainty in prose.</text>
+  </g>
+
+  <path class="line" d="M1350 570C1350 520 1055 520 1055 466"/>
+</svg>

@@ -12,6 +12,7 @@ empty/no-op so the normal path is never affected. Connections are cached.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import threading
 from dataclasses import dataclass
@@ -20,6 +21,7 @@ from typing import Any
 
 CONFIG_PATH = Path(".mechferret/mcp.json")
 _PREFIX = "mcp__"
+_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
 _connected: dict[str, "MCPClient"] | None = None
 _specs: list[dict] | None = None
 _lock = threading.Lock()
@@ -33,34 +35,65 @@ class ServerConfig:
     env: dict[str, str]
 
 
-def load_servers() -> list[ServerConfig]:
-    if not CONFIG_PATH.exists():
+def _valid_name(value: Any) -> bool:
+    return isinstance(value, str) and _NAME_PATTERN.fullmatch(value) is not None
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
         return []
+    return [item for item in value if isinstance(item, str)]
+
+
+def _string_dict(value: Any) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    return {str(key): item for key, item in value.items() if isinstance(item, str)}
+
+
+def _read_config_payload() -> dict[str, Any]:
+    if not CONFIG_PATH.exists():
+        return {"servers": {}}
     try:
         payload = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
-        return []
+        return {"servers": {}}
+    if not isinstance(payload, dict):
+        return {"servers": {}}
+    servers = payload.get("servers", {})
+    if not isinstance(servers, dict):
+        payload["servers"] = {}
+    return payload
+
+
+def load_servers() -> list[ServerConfig]:
+    payload = _read_config_payload()
     servers = []
     for name, cfg in payload.get("servers", {}).items():
+        if not _valid_name(name) or not isinstance(cfg, dict):
+            continue
+        command = cfg.get("command", "")
+        if not isinstance(command, str):
+            continue
         servers.append(ServerConfig(
             name=name,
-            command=cfg.get("command", ""),
-            args=list(cfg.get("args", [])),
-            env=dict(cfg.get("env", {})),
+            command=command.strip(),
+            args=_string_list(cfg.get("args", [])),
+            env=_string_dict(cfg.get("env", {})),
         ))
     return servers
 
 
 def add_server(name: str, command: str, args: list[str] | None = None) -> Path:
+    if not _valid_name(name):
+        raise ValueError("invalid MCP server name")
+    if not isinstance(command, str) or not command.strip():
+        raise ValueError("invalid MCP command")
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"servers": {}}
-    if CONFIG_PATH.exists():
-        try:
-            payload = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            payload = {"servers": {}}
-    payload.setdefault("servers", {})[name] = {"command": command, "args": args or []}
-    CONFIG_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    payload = _read_config_payload()
+    servers = payload.setdefault("servers", {})
+    servers[name] = {"command": command.strip(), "args": _string_list(args or [])}
+    CONFIG_PATH.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     reset()
     return CONFIG_PATH
 
@@ -151,11 +184,19 @@ def _connect_all() -> None:
             client = MCPClient(cfg)
             _connected[cfg.name] = client
             for tool in client.list_tools():
-                full = f"{_PREFIX}{cfg.name}__{tool['name']}"
+                if not isinstance(tool, dict):
+                    continue
+                tool_name = tool.get("name")
+                if not _valid_name(tool_name):
+                    continue
+                full = f"{_PREFIX}{cfg.name}__{tool_name}"
+                parameters = tool.get("inputSchema") or {"type": "object", "properties": {}, "required": []}
+                if not isinstance(parameters, dict):
+                    parameters = {"type": "object", "properties": {}, "required": []}
                 _specs.append({
                     "name": full,
-                    "description": f"[mcp:{cfg.name}] " + tool.get("description", ""),
-                    "parameters": tool.get("inputSchema") or {"type": "object", "properties": {}, "required": []},
+                    "description": f"[mcp:{cfg.name}] " + (tool.get("description") if isinstance(tool.get("description"), str) else ""),
+                    "parameters": parameters,
                 })
         except Exception:  # noqa: BLE001 - a bad server must not break the agent
             continue

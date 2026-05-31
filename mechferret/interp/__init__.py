@@ -1,10 +1,10 @@
 """Mechanistic interpretability experiment engine.
 
-This package turns interpretability research questions into reproducible
-experiments. It runs offline by default through a deterministic
-``SyntheticBackend`` (no torch, no GPU, no network) and upgrades transparently
-to a real ``TransformerLensBackend`` (locally or on Modal GPUs) when the
-optional dependencies are installed.
+This package turns interpretability research questions into auditable
+experiments. It runs locally by default through ``SyntheticBackend`` (no torch,
+no GPU, no network) and upgrades transparently to a real
+``TransformerLensBackend`` (locally or on Modal GPUs) when the optional
+dependencies are installed.
 
 Public surface:
 

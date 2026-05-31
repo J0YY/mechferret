@@ -33,8 +33,8 @@
     <path class="grid" d="M0 100H1800M0 200H1800M0 300H1800M0 400H1800M0 500H1800M0 600H1800M0 700H1800M0 800H1800M0 900H1800M0 1000H1800M0 1100H1800"/>
   </g>
 
-  <text x="70" y="78" class="title">MechFerret Architecture</text>
-  <text x="70" y="122" class="subtitle">A research agent for mechanistic interpretability: grounded, experimental, scalable, and auditable.</text>
+  <text x="70" y="78" class="title">MechFerret: Causal Autoresearch</text>
+  <text x="70" y="122" class="subtitle">Not a paper summarizer: an agent that turns interpretability questions into controlled model interventions.</text>
 
   <g transform="translate(1260,50)">
     <rect class="chip" x="0" y="0" width="138" height="42"/>
@@ -48,7 +48,8 @@
   <g transform="translate(70,185)">
     <rect class="card" width="330" height="270"/>
     <text x="28" y="48" class="section">Agent Shell</text>
-    <text x="28" y="84" class="body">CLI and REPL wrap a provider-native tool loop.</text>
+    <text x="28" y="84" class="body">CLI and REPL wrap a</text>
+    <text x="28" y="112" class="body">provider-native tool loop.</text>
     <g transform="translate(28,118)">
       <rect class="chip" x="0" y="0" width="132" height="42"/>
       <text x="66" y="27" class="small" text-anchor="middle">prompt</text>
@@ -68,53 +69,54 @@
   <g transform="translate(70,520)">
     <rect class="card" width="330" height="300"/>
     <text x="28" y="48" class="section">Tool Registry</text>
-    <text x="28" y="84" class="body">Capabilities exposed to the agent with explicit permissions.</text>
-    <text x="28" y="130" class="small">bash, read, write, edit, glob, grep</text>
-    <text x="28" y="162" class="small">web search, fetch, arXiv, Neuronpedia</text>
-    <text x="28" y="194" class="small">run_discovery, skills, environment</text>
-    <text x="28" y="226" class="small">dynamic MCP tools</text>
+    <text x="28" y="84" class="body">Agent capabilities with explicit</text>
+    <text x="28" y="112" class="body">permissions.</text>
+    <text x="28" y="158" class="small">bash, read, write, edit</text>
+    <text x="28" y="190" class="small">glob, grep, web, arXiv</text>
+    <text x="28" y="222" class="small">Neuronpedia, discovery</text>
+    <text x="28" y="254" class="small">skills, environment, MCP</text>
   </g>
 
   <g transform="translate(490,175)">
     <rect class="core" width="800" height="440"/>
-    <text x="34" y="52" class="section">Autonomous Discovery Loop</text>
-    <text x="34" y="88" class="body">Budget-bounded causal discovery over model internals.</text>
+    <text x="34" y="52" class="section">Autonomous Mechanism Discovery Loop</text>
+    <text x="34" y="88" class="body">Searches internals, then promotes only causal, reproducible mechanisms.</text>
     <g transform="translate(34,126)">
       <rect class="card2" x="0" y="0" width="220" height="84"/>
       <circle class="dot" cx="34" cy="42" r="17"/>
       <text x="34" y="48" class="num" text-anchor="middle">1</text>
-      <text x="68" y="36" class="label">Ground</text>
-      <text x="68" y="63" class="small">prior art + memory</text>
+      <text x="68" y="36" class="label">Task Model</text>
+      <text x="68" y="63" class="small">behavior + prior art</text>
 
       <rect class="card2" x="274" y="0" width="220" height="84"/>
       <circle class="dot" cx="308" cy="42" r="17"/>
       <text x="308" y="48" class="num" text-anchor="middle">2</text>
-      <text x="342" y="36" class="label">Hypothesize</text>
-      <text x="342" y="63" class="small">falsifiable claims</text>
+      <text x="342" y="36" class="label">Hypothesis</text>
+      <text x="342" y="63" class="small">promote or refute</text>
 
       <rect class="card2" x="548" y="0" width="186" height="84"/>
       <circle class="dot" cx="582" cy="42" r="17"/>
       <text x="582" y="48" class="num" text-anchor="middle">3</text>
-      <text x="616" y="36" class="label">Screen</text>
-      <text x="616" y="63" class="small">candidate heads</text>
+      <text x="616" y="36" class="label">Causal Test</text>
+      <text x="616" y="63" class="small">ablate components</text>
 
       <rect class="card2" x="548" y="140" width="186" height="84"/>
       <circle class="dot" cx="582" cy="182" r="17"/>
       <text x="582" y="188" class="num" text-anchor="middle">4</text>
       <text x="616" y="176" class="label">Triangulate</text>
-      <text x="616" y="203" class="small">independent probes</text>
+      <text x="616" y="203" class="small">3 probe types</text>
 
       <rect class="card2" x="274" y="140" width="220" height="84"/>
       <circle class="dot" cx="308" cy="182" r="17"/>
       <text x="308" y="188" class="num" text-anchor="middle">5</text>
-      <text x="342" y="176" class="label">Critique</text>
-      <text x="342" y="203" class="small">controls + rigor</text>
+      <text x="342" y="176" class="label">Rigor Critic</text>
+      <text x="342" y="203" class="small">controls, seeds, gaps</text>
 
       <rect class="card2" x="0" y="140" width="220" height="84"/>
       <circle class="dot" cx="34" cy="182" r="17"/>
       <text x="34" y="188" class="num" text-anchor="middle">6</text>
-      <text x="68" y="176" class="label">Synthesize</text>
-      <text x="68" y="203" class="small">discoveries</text>
+      <text x="68" y="176" class="label">Claim Graph</text>
+      <text x="68" y="203" class="small">evidence to discovery</text>
 
       <path class="lineSoft" d="M220 42H268"/>
       <path class="lineSoft" d="M494 42H542"/>
@@ -123,25 +125,27 @@
       <path class="lineSoft" d="M274 182H226"/>
     </g>
     <line class="divider" x1="34" y1="390" x2="766" y2="390"/>
-    <text x="34" y="414" class="eyebrow">Stop criteria</text>
-    <text x="190" y="414" class="body">confirmed mechanisms, rigor score, convergence, or budget guard</text>
+    <text x="34" y="414" class="eyebrow">Novel control loop</text>
+    <text x="230" y="414" class="body">critic gaps spawn new intervention batches</text>
   </g>
 
   <g transform="translate(1395,185)">
     <rect class="card" width="335" height="330"/>
     <text x="28" y="48" class="section">Experiment Engine</text>
-    <text x="28" y="84" class="body">Parallel, deterministic batches of intervention specs.</text>
-    <text x="28" y="130" class="small">Coordinator.map(engine.run_spec)</text>
-    <text x="28" y="162" class="small">effect size vs matched control</text>
-    <text x="28" y="194" class="small">cross-seed reproducibility</text>
-    <text x="28" y="226" class="small">significance thresholds</text>
-    <text x="28" y="258" class="small">ablation, patching, attention, DLA, logit lens</text>
+    <text x="28" y="84" class="body">Turns claims into intervention</text>
+    <text x="28" y="112" class="body">specs with measurable effects.</text>
+    <text x="28" y="152" class="small">matched negative controls</text>
+    <text x="28" y="184" class="small">effect/control separation</text>
+    <text x="28" y="216" class="small">cross-seed reproducibility</text>
+    <text x="28" y="248" class="small">role classification evidence</text>
+    <text x="28" y="280" class="small">order-stable parallel fan-out</text>
   </g>
 
   <g transform="translate(1395,585)">
     <rect class="card" width="335" height="235"/>
     <text x="28" y="48" class="section">Backends</text>
-    <text x="28" y="84" class="body">Same probe surface, different compute substrate.</text>
+    <text x="28" y="84" class="body">One probe contract upgrades</text>
+    <text x="28" y="112" class="body">from local runs to real models.</text>
     <rect class="chip" x="28" y="116" width="132" height="42"/>
     <text x="94" y="143" class="small" text-anchor="middle">Synthetic</text>
     <rect class="chip" x="176" y="116" width="132" height="42"/>
@@ -155,7 +159,7 @@
   <g transform="translate(490,720)">
     <rect class="card" width="800" height="300"/>
     <text x="34" y="52" class="section">Auditable Research Dossier</text>
-    <text x="34" y="88" class="body">The output is judge-readable and machine-readable.</text>
+    <text x="34" y="88" class="body">Every conclusion preserves the causal trail from source to intervention to discovery.</text>
     <g transform="translate(34,128)">
       <rect class="chip" x="0" y="0" width="150" height="52"/>
       <text x="75" y="33" class="small" text-anchor="middle">report.html</text>
@@ -183,8 +187,9 @@
   <path class="line" d="M890 615V714"/>
 
   <g transform="translate(70,930)">
-    <rect class="card" width="330" height="90"/>
-    <text x="28" y="38" class="eyebrow">Rubric fit</text>
-    <text x="28" y="66" class="body">Original because it runs causal experiments, not just summaries.</text>
+    <rect class="card" width="330" height="115"/>
+    <text x="28" y="38" class="eyebrow">Novelty thesis</text>
+    <text x="28" y="66" class="body">Falsifies its own</text>
+    <text x="28" y="90" class="body">mechanism claims.</text>
   </g>
 </svg>

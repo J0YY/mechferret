@@ -10,13 +10,14 @@
 
 ```bash
 ./install.sh        # global `mechferret` (pipx); or use ./bin/mechferret with zero install
-mechferret          # bare command = headline discovery, like `claude`
+mechferret          # bare command = interactive prompt, like `claude`
 ```
 
-## 1. Run the headline discovery (offline, deterministic)
+## 1. Run the headline discovery
 
 ```bash
 mechferret discover --skill ioi-circuit --out runs/demo
+mechferret discover --skill ioi-circuit --out runs/demo --json
 open runs/demo/report.html
 ```
 
@@ -45,6 +46,7 @@ Talk track while it runs (~1s):
 ```bash
 cat runs/demo/evals.json        # has_confirmed_mechanism, every_experiment_has_control,
                                 # significant_effects_reproduce, discoveries_are_triangulated
+python3 -m mechferret verify runs/demo/run.json --strict
 cat runs/demo/discoveries.json  # discoveries + full hypothesis lifecycle
 cat runs/demo/graph.json        # sources -> evidence -> claims -> hypotheses -> discoveries
 cat runs/demo/trace.jsonl       # per-phase spans (mirror to Raindrop Workshop)
@@ -66,18 +68,19 @@ condition; no human approves each step."
 ```bash
 python3 -m mechferret /modal status                 # detects install + auth + GPU
 python3 -m mechferret /modal setup                  # one-time setup steps
+python3 -m mechferret /modal status --json          # script-friendly status
 python3 -m mechferret /modal run --skill ioi-circuit # whole loop on a GPU, real GPT-2
 ```
 
-"Same code, same probes — the synthetic backend swaps for `transformer_lens` on
-a Modal A10G. Offline when you want determinism; GPU when you want ground
-truth."
+"Same code, same probes — the local backend swaps for `transformer_lens` on a
+Modal A10G when you want real model measurements."
 
 ## 5b. Or run it on your own SLURM cluster
 
 ```bash
 mechferret /cluster setup                            # generic connection steps
 mechferret /cluster run --skill ioi-circuit --dry-run # shows the exact ssh+srun command
+mechferret /cluster run --skill ioi-circuit --dry-run --json
 mechferret /cluster run --skill ioi-circuit          # ssh -> srun -> discover -> scp dossier back
 ```
 
@@ -98,5 +101,5 @@ export RAINDROP_LOCAL_DEBUGGER=1 && raindrop workshop  # live trace of every pha
   autonomy; GPU offload.
 - **Originality** — an agent that *runs experiments and makes reproducible
   discoveries*, not a summariser.
-- **Demo clarity** — deterministic, offline, fully inspectable dossier.
+- **Demo clarity** — fast local run, fully inspectable dossier.
 - **Applied autonomous research** — mechanistic interpretability, end to end.

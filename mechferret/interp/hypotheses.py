@@ -12,11 +12,14 @@ way a researcher would:
    confirmation never rests on a single measurement.
 4. **Update** -- confirm / refute / mark inconclusive from the evidence.
 
-An optional LLM can sharpen the natural-language statements, but the whole
-pipeline runs deterministically without one.
+An optional LLM can sharpen the natural-language statements, but the experiment
+loop can still run without one.
 """
 
 from __future__ import annotations
+
+import math
+from typing import Any
 
 from ..models import ExperimentResult, ExperimentSpec, Hypothesis
 from ..text import stable_id
@@ -26,10 +29,132 @@ from .tasks import get_task
 CONFIRMATORY_PROBES = ("attention_pattern", "direct_logit_attribution", "activation_patching")
 
 
+def _text(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="ignore")
+    return ""
+
+
+def _mapping(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _items(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    if isinstance(value, (str, bytes, dict)) or value is None:
+        return []
+    try:
+        return list(value)
+    except TypeError:
+        return []
+
+
+def _strings(value: Any) -> list[str]:
+    return [_text(item).strip() for item in _items(value) if _text(item).strip()]
+
+
+def _number(value: Any, default: float = 0.0) -> float:
+    if type(value) is bool:
+        return default
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if math.isfinite(parsed) else default
+
+
+def _positive_int(value: Any, default: int) -> int:
+    if type(value) is bool:
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _nonnegative_int(value: Any) -> int | None:
+    if type(value) is bool:
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _bool(value: Any) -> bool:
+    if type(value) is bool:
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y"}
+    if type(value) in {int, float}:
+        return bool(value)
+    return False
+
+
+def _seeds(value: Any) -> list[int]:
+    seeds: list[int] = []
+    for seed in _items(value):
+        parsed = _nonnegative_int(seed)
+        if parsed is not None and parsed not in seeds:
+            seeds.append(parsed)
+    return seeds or [0, 1, 2]
+
+
+def _task(name: Any):
+    try:
+        return get_task(_text(name).strip())
+    except Exception:  # noqa: BLE001 - malformed boundary input falls back to the default task
+        return get_task("ioi")
+
+
+def _head_target(value: Any) -> tuple[int, int] | None:
+    target = _mapping(value)
+    layer = _nonnegative_int(target.get("layer"))
+    head = _nonnegative_int(target.get("head"))
+    if layer is None or head is None:
+        return None
+    return layer, head
+
+
+def _hypothesis(value: Any) -> Hypothesis | None:
+    target = _mapping(getattr(value, "target", {}))
+    if isinstance(value, Hypothesis):
+        value.target = target
+        value.experiment_ids = _strings(getattr(value, "experiment_ids", []))
+        value.source_ids = _strings(getattr(value, "source_ids", []))
+        value.status = _text(getattr(value, "status", "")).strip() or "open"
+        value.confidence = _number(getattr(value, "confidence", 0.0))
+        return value
+    hyp_id = _text(getattr(value, "id", "")).strip()
+    statement = _text(getattr(value, "statement", "")).strip()
+    if not hyp_id or not statement:
+        return None
+    return Hypothesis(
+        id=hyp_id,
+        statement=statement,
+        rationale=_text(getattr(value, "rationale", "")).strip(),
+        task=_text(getattr(value, "task", "")).strip(),
+        predicted_effect=_text(getattr(value, "predicted_effect", "")).strip(),
+        target=target,
+        status=_text(getattr(value, "status", "")).strip() or "open",
+        confidence=_number(getattr(value, "confidence", 0.0)),
+        experiment_ids=_strings(getattr(value, "experiment_ids", [])),
+        parent_id=_text(getattr(value, "parent_id", "")).strip(),
+        source_ids=_strings(getattr(value, "source_ids", [])),
+    )
+
+
 class HypothesisGenerator:
     def __init__(self, model: str = "gpt2", seeds: tuple[int, ...] = (0, 1, 2)) -> None:
-        self.model = model
-        self.seeds = list(seeds)
+        self.model = _text(model).strip() or "gpt2"
+        self.seeds = _seeds(seeds)
 
     # --- round 0: screening ---------------------------------------------------------
 
@@ -40,7 +165,9 @@ class HypothesisGenerator:
         max_heads: int = 96,
         source_ids: list[str] | None = None,
     ) -> tuple[list[Hypothesis], list[ExperimentSpec]]:
-        task = get_task(task_name)
+        task = _task(task_name)
+        max_heads = _positive_int(max_heads, 96)
+        source_ids = _strings(source_ids or [])
         n_layers, n_heads, _ = _shape(self.model)
         start_layer = n_layers // 3  # the upper two-thirds carry task-specific computation
         candidates = [
@@ -62,7 +189,7 @@ class HypothesisGenerator:
             task=task.name,
             predicted_effect="Ablating the responsible head(s) significantly reduces the task metric.",
             target={"scope": "upper_layers", "candidates": len(candidates)},
-            source_ids=list(source_ids or []),
+            source_ids=source_ids,
         )
         lens_hyp = Hypothesis(
             id=stable_id("hyp", f"lens:{self.model}:{task.name}"),
@@ -74,7 +201,7 @@ class HypothesisGenerator:
             task=task.name,
             predicted_effect="Correct-token probability rises sharply around one decision layer.",
             target={"probe": "logit_lens"},
-            source_ids=list(source_ids or []),
+            source_ids=source_ids,
         )
 
         specs: list[ExperimentSpec] = [
@@ -119,38 +246,45 @@ class HypothesisGenerator:
         top_k: int = 4,
         source_ids: list[str] | None = None,
     ) -> tuple[list[Hypothesis], list[ExperimentSpec]]:
-        hits = [
-            result
-            for result in screen_results
-            if result.probe == "head_ablation" and result.status == "ran"
-            and result.significant and result.reproduced
-        ]
-        hits.sort(key=lambda r: abs(r.effect_size), reverse=True)
-        task = get_task(task_name)
+        top_k = _positive_int(top_k, 4)
+        hits = []
+        for result in _items(screen_results):
+            if (
+                _text(getattr(result, "probe", "")).strip() != "head_ablation"
+                or _text(getattr(result, "status", "")).strip() != "ran"
+                or not _bool(getattr(result, "significant", False))
+                or not _bool(getattr(result, "reproduced", False))
+                or _head_target(getattr(result, "target", {})) is None
+            ):
+                continue
+            hits.append(result)
+        hits.sort(key=lambda r: abs(_number(getattr(r, "effect_size", 0.0))), reverse=True)
+        task = _task(task_name)
+        source_ids = _strings(source_ids or [])
 
         hypotheses: list[Hypothesis] = []
         specs: list[ExperimentSpec] = []
         for result in hits[:top_k]:
-            layer = int(result.target.get("layer", 0))
-            head = int(result.target.get("head", 0))
-            polarity = "promotes" if result.effect_size > 0 else "suppresses"
+            layer, head = _head_target(getattr(result, "target", {})) or (0, 0)
+            effect_size = _number(getattr(result, "effect_size", 0.0))
+            polarity = "promotes" if effect_size > 0 else "suppresses"
             hyp = Hypothesis(
                 id=stable_id("hyp", f"head:{self.model}:{task.name}:{layer}:{head}"),
                 statement=(
                     f"In {self.model}, attention head {layer}.{head} causally {polarity} the correct "
-                    f"answer for the {task.name} task (effect {result.effect_size:+.2f})."
+                    f"answer for the {task.name} task (effect {effect_size:+.2f})."
                 ),
                 rationale=(
                     f"Screening ablation flagged head {layer}.{head} with a reproducible "
-                    f"{result.effect_size:+.2f} effect; triangulate with independent probes."
+                    f"{effect_size:+.2f} effect; triangulate with independent probes."
                 ),
                 task=task.name,
                 predicted_effect=(
                     "Direct logit attribution and activation patching agree in sign with the ablation, "
                     "and the attention pattern matches a known head type."
                 ),
-                target={"layer": layer, "head": head, "screen_effect": result.effect_size},
-                source_ids=list(source_ids or []),
+                target={"layer": layer, "head": head, "screen_effect": effect_size},
+                source_ids=source_ids,
             )
             triangulation = self._triangulate(hyp, layer, head, task.name)
             hyp.experiment_ids = [spec.id for spec in triangulation]
@@ -160,6 +294,7 @@ class HypothesisGenerator:
 
     def _triangulate(self, hyp: Hypothesis, layer: int, head: int, task_name: str) -> list[ExperimentSpec]:
         specs: list[ExperimentSpec] = []
+        task = _task(task_name)
         for probe in CONFIRMATORY_PROBES:
             target = {"layer": layer, "head": head}
             if probe == "attention_pattern":
@@ -175,7 +310,7 @@ class HypothesisGenerator:
                     name=f"{probe} {layer}.{head}",
                     probe=probe,
                     model=self.model,
-                    task=task_name,
+                    task=task.name,
                     target=target,
                     metric=metric,
                     controls=["random control head"],
@@ -192,26 +327,40 @@ def update_hypotheses(
 ) -> None:
     """Mutate hypothesis status/confidence from the evidence gathered so far."""
 
-    for hyp in hypotheses:
-        results = [results_by_id[eid] for eid in hyp.experiment_ids if eid in results_by_id]
-        ran = [r for r in results if r.status == "ran"]
+    result_map = results_by_id if isinstance(results_by_id, dict) else {}
+    for hyp_raw in _items(hypotheses):
+        hyp = _hypothesis(hyp_raw)
+        if hyp is None:
+            continue
+        results = [result_map[eid] for eid in hyp.experiment_ids if eid in result_map]
+        ran = [r for r in results if _text(getattr(r, "status", "")).strip() == "ran"]
         if not ran:
             continue
 
         # Screening / sweep hypotheses: confirmed if any candidate showed a real effect.
-        if hyp.target.get("scope") == "upper_layers":
-            winners = [r for r in ran if r.significant and r.reproduced]
+        target = _mapping(getattr(hyp, "target", {}))
+        if target.get("scope") == "upper_layers":
+            winners = [
+                r
+                for r in ran
+                if _bool(getattr(r, "significant", False)) and _bool(getattr(r, "reproduced", False))
+            ]
             hyp.status = "confirmed" if winners else "refuted"
             hyp.confidence = round(min(0.95, 0.5 + 0.1 * len(winners)), 3) if winners else 0.1
             continue
-        if hyp.target.get("probe") == "logit_lens":
+        if target.get("probe") == "logit_lens":
             lens = ran[0]
-            hyp.status = "confirmed" if lens.significant else "inconclusive"
-            hyp.confidence = round(min(0.92, 0.4 + lens.effect_size * 0.5), 3)
+            lens_effect = _number(getattr(lens, "effect_size", 0.0))
+            hyp.status = "confirmed" if _bool(getattr(lens, "significant", False)) else "inconclusive"
+            hyp.confidence = round(min(0.92, 0.4 + lens_effect * 0.5), 3)
             continue
 
         # Targeted single-head hypotheses: triangulation across independent probes.
-        agree = [r for r in ran if r.significant and r.reproduced]
+        agree = [
+            r
+            for r in ran
+            if _bool(getattr(r, "significant", False)) and _bool(getattr(r, "reproduced", False))
+        ]
         n_agree = len(agree)
         if n_agree >= 2:
             hyp.status = "confirmed"
@@ -227,10 +376,10 @@ def update_hypotheses(
 def classify_head_role(triangulation: list[ExperimentResult]) -> str:
     """Name a confirmed head from its attention profile and attribution sign."""
 
-    attn = next((r for r in triangulation if r.probe == "attention_pattern"), None)
-    dla = next((r for r in triangulation if r.probe == "direct_logit_attribution"), None)
+    rows = _items(triangulation)
+    attn = next((r for r in rows if _text(getattr(r, "probe", "")).strip() == "attention_pattern"), None)
+    dla = next((r for r in rows if _text(getattr(r, "probe", "")).strip() == "direct_logit_attribution"), None)
     if attn is not None:
-        profile = {k: v for k, v in attn.metrics.items()}
         scores = attn_profile(attn)
         if scores:
             dominant = max(scores, key=scores.get)
@@ -242,7 +391,7 @@ def classify_head_role(triangulation: list[ExperimentResult]) -> str:
             }.get(dominant)
             if label and scores[dominant] >= 0.4:
                 return label
-    if dla is not None and dla.effect_size < 0:
+    if dla is not None and _number(getattr(dla, "effect_size", 0.0)) < 0:
         return "suppressor (negative) head"
     return "task-relevant attention head"
 
@@ -251,4 +400,5 @@ def attn_profile(result: ExperimentResult) -> dict[str, float]:
     # The attention probe stashes the full profile in its first observation extra; we
     # recover the dominant pattern from metrics where possible.
     keys = ("induction", "previous_token", "duplicate_token", "current_token")
-    return {k: result.metrics[k] for k in keys if k in result.metrics}
+    metrics = _mapping(getattr(result, "metrics", {}))
+    return {k: _number(metrics[k]) for k in keys if k in metrics}

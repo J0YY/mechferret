@@ -1,7 +1,10 @@
 import json
+import math
 import os
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 
 
@@ -25,6 +28,242 @@ class AgentStackTest(unittest.TestCase):
         self.assertEqual(metas[0].turns, 1)
         with self.assertRaises(KeyError):
             sessions.load_session("nope")
+
+    def test_list_sessions_normalizes_malformed_limits(self):
+        from mechferret import sessions
+
+        sessions.save_session("s1", "anthropic", "claude-opus-4-8", [{"role": "user", "content": "hi"}], {"usd": 0.02})
+        sessions.save_session("s2", "openai", "gpt-5", [{"role": "user", "content": "hi"}], {"usd": 0.03})
+
+        self.assertEqual(sessions.list_sessions(limit=0), [])
+        self.assertEqual(sessions.list_sessions(limit=-5), [])
+        self.assertEqual(len(sessions.list_sessions(limit="bad")), 2)
+
+    def test_sessions_reject_path_like_ids(self):
+        from mechferret import sessions
+
+        for bad_id in ("../escape", "nested/session", "", "x" * 129):
+            with self.subTest(session_id=bad_id):
+                with self.assertRaises(ValueError):
+                    sessions.load_session(bad_id)
+                with self.assertRaises(ValueError):
+                    sessions.save_session(bad_id, "anthropic", "model", [], {})
+
+    def test_load_session_rejects_non_object_json(self):
+        from mechferret import agent, sessions
+
+        sessions.SESSIONS_DIR.mkdir(parents=True)
+        (sessions.SESSIONS_DIR / "bad-shape.json").write_text(json.dumps(["not", "a", "dict"]), encoding="utf-8")
+
+        with self.assertRaises(ValueError):
+            sessions.load_session("bad-shape")
+
+        a = agent.Agent()
+        a.provider, a.model, a._key = "anthropic", "claude-opus-4-8", "x"
+        with self.assertRaises(ValueError):
+            a.load_session("bad-shape")
+
+    def test_load_session_reports_corrupt_json_cleanly(self):
+        from mechferret import sessions
+
+        sessions.SESSIONS_DIR.mkdir(parents=True)
+        (sessions.SESSIONS_DIR / "bad-json.json").write_text("{", encoding="utf-8")
+
+        with self.assertRaisesRegex(ValueError, "could not read JSON"):
+            sessions.load_session("bad-json")
+
+    def test_save_session_normalizes_non_json_payloads(self):
+        from mechferret import sessions
+
+        path = sessions.save_session(
+            "odd",
+            "anthropic",
+            "claude-opus-4-8",
+            [
+                {
+                    "role": "assistant",
+                    "content": [{"type": "tool_result", "path": Path("runs/demo"), "blob": b"abc"}],
+                }
+            ],
+            {"usd": math.nan, "nested": {1: Path("artifact"), "items": ("a", Path("b")), "bad": math.inf}},
+        )
+
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+
+        self.assertEqual(loaded["messages"][0]["content"][0]["path"], "runs/demo")
+        self.assertEqual(loaded["messages"][0]["content"][0]["blob"], "b'abc'")
+        self.assertIsNone(loaded["cost"]["usd"])
+        self.assertEqual(loaded["cost"]["nested"]["1"], "artifact")
+        self.assertEqual(loaded["cost"]["nested"]["items"], ["a", "b"])
+        self.assertIsNone(loaded["cost"]["nested"]["bad"])
+        with path.open("r", encoding="utf-8") as handle:
+            json.load(handle, parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)))
+
+    def test_session_listing_tolerates_corrupt_metadata(self):
+        from mechferret import sessions
+
+        sessions.SESSIONS_DIR.mkdir(parents=True)
+        (sessions.SESSIONS_DIR / "bad-shape.json").write_text(json.dumps(["not", "a", "dict"]), encoding="utf-8")
+        (sessions.SESSIONS_DIR / "bad-meta.json").write_text(
+            json.dumps(
+                {
+                    "id": "../bad",
+                    "provider": [],
+                    "model": {"name": "x"},
+                    "messages": "not a list",
+                    "cost": {"usd": "Infinity"},
+                    "updated_at": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        sessions.save_session(
+            "good",
+            "anthropic",
+            "claude-opus-4-8",
+            [{"role": "user", "content": "hi"}],
+            {"usd": 0.25},
+        )
+
+        metas = sessions.list_sessions(limit=10)
+        by_id = {meta.id: meta for meta in metas}
+
+        self.assertIn("good", by_id)
+        self.assertIn("bad-meta", by_id)
+        self.assertNotIn("bad-shape", by_id)
+        self.assertEqual(by_id["bad-meta"].turns, 0)
+        self.assertEqual(by_id["bad-meta"].usd, 0.0)
+        self.assertEqual(by_id["bad-meta"].provider, "")
+        self.assertEqual(by_id["bad-meta"].model, "")
+
+    def test_session_listing_skips_invalid_fallback_ids_and_non_directory_store(self):
+        from mechferret import sessions
+
+        sessions.SESSIONS_DIR.mkdir(parents=True)
+        (sessions.SESSIONS_DIR / f"{'x' * 129}.json").write_text(
+            json.dumps({"id": "../bad", "messages": [{"role": "user"}]}),
+            encoding="utf-8",
+        )
+        sessions.save_session("good", "anthropic", "claude-opus-4-8", [], {})
+
+        self.assertEqual([meta.id for meta in sessions.list_sessions(limit=10)], ["good"])
+
+        for path in sessions.SESSIONS_DIR.iterdir():
+            path.unlink()
+        sessions.SESSIONS_DIR.rmdir()
+        sessions.SESSIONS_DIR.parent.mkdir(exist_ok=True)
+        sessions.SESSIONS_DIR.write_text("not a directory", encoding="utf-8")
+
+        self.assertEqual(sessions.list_sessions(), [])
+
+    def test_agent_load_session_sanitizes_corrupt_payload(self):
+        from mechferret import agent, sessions
+
+        sessions.save_session(
+            "corrupt",
+            "",
+            "",
+            [{"role": "user", "content": "keep"}, "drop", []],
+            {"usd": "bad", "input": "also bad", "output": 3},
+        )
+
+        a = agent.Agent()
+        a.provider, a.model, a._key = "anthropic", "claude-opus-4-8", "x"
+        a.load_session("corrupt")
+
+        self.assertEqual(a.session_id, "corrupt")
+        self.assertEqual(a.provider, "anthropic")
+        self.assertEqual(a.model, "claude-opus-4-8")
+        self.assertEqual(a.messages, [{"role": "user", "content": "keep"}])
+        self.assertEqual(a.cost.usd, 0.0)
+        self.assertEqual(a.cost.input_tokens, 0)
+        self.assertEqual(a.cost.output_tokens, 3)
+
+    def test_agent_load_session_rejects_embedded_bad_id_and_provider(self):
+        from mechferret import agent, sessions
+
+        sessions.SESSIONS_DIR.mkdir(parents=True)
+        (sessions.SESSIONS_DIR / "bad-provider.json").write_text(
+            json.dumps(
+                {
+                    "id": "../bad",
+                    "provider": "local",
+                    "model": "should-not-load",
+                    "messages": [{"role": "user", "content": "keep"}],
+                    "cost": {"usd": 1, "input": 2, "output": 3},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        a = agent.Agent()
+        a.provider, a.model, a._key = "anthropic", "claude-opus-4-8", "x"
+        a.load_session("bad-provider")
+
+        self.assertEqual(a.session_id, "bad-provider")
+        self.assertEqual(a.provider, "anthropic")
+        self.assertEqual(a.model, "claude-opus-4-8")
+        self.assertEqual(a.messages, [{"role": "user", "content": "keep"}])
+        self.assertEqual(a.cost.input_tokens, 2)
+
+    def test_persist_failure_is_traced_without_blocking_send(self):
+        from mechferret import agent, sessions
+
+        def fake_post(url, payload, headers):
+            return {"stop_reason": "end_turn", "content": [{"type": "text", "text": "reply"}]}
+
+        def fail_save(*args, **kwargs):
+            raise OSError("disk full")
+
+        original_post = agent._http_post
+        original_save = sessions.save_session
+        agent._http_post = fake_post
+        sessions.save_session = fail_save
+        try:
+            a = agent.Agent()
+            a.provider, a.model, a._key = "anthropic", "claude-opus-4-8", "x"
+            reply = a.send("hello")
+        finally:
+            agent._http_post = original_post
+            sessions.save_session = original_save
+
+        self.assertEqual(reply, "reply")
+        trace_path = Path(".mechferret/trace.jsonl")
+        records = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines()]
+        persist_failures = [record for record in records if record.get("name") == "session_persist_failed"]
+        self.assertEqual(len(persist_failures), 1)
+        self.assertIn("OSError: disk full", persist_failures[0]["attributes"]["error"])
+
+    def test_trace_recorder_normalizes_attrs_and_write_failures(self):
+        from mechferret.tracing import TraceRecorder
+
+        tracer = TraceRecorder("run", ".mechferret")
+        tracer.event("rich_attrs", path=Path("runs/demo"), bad=math.inf, nested={1: (Path("artifact"), math.nan)})
+
+        record = json.loads(Path(".mechferret/trace.jsonl").read_text(encoding="utf-8").splitlines()[-1])
+        self.assertEqual(record["attributes"]["path"], "runs/demo")
+        self.assertIsNone(record["attributes"]["bad"])
+        self.assertEqual(record["attributes"]["nested"]["1"][0], "artifact")
+        self.assertIsNone(record["attributes"]["nested"]["1"][1])
+        with Path(".mechferret/trace.jsonl").open("r", encoding="utf-8") as handle:
+            for line in handle:
+                json.loads(line, parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)))
+
+        tracer.path = Path("missing") / "trace.jsonl"
+        tracer.event("write_failure_is_best_effort", path=Path("no-parent"))
+
+    def test_trace_recorder_initialization_is_best_effort(self):
+        from mechferret import agent
+        from mechferret.tracing import TraceRecorder
+
+        Path(".mechferret").write_text("not a directory", encoding="utf-8")
+
+        tracer = TraceRecorder("run", ".mechferret")
+        tracer.event("disabled_local_trace")
+        self.assertIsNone(tracer.path)
+
+        a = agent.Agent()
+        self.assertIsNone(a.tracer.path)
 
     def test_mechanisms_record_and_recall(self):
         from mechferret.memory import ResearchMemory
@@ -54,6 +293,34 @@ class AgentStackTest(unittest.TestCase):
         finally:
             agent._http_post = original
 
+    def test_automatic_compaction_failure_does_not_block_send(self):
+        from mechferret import agent
+
+        calls = {"n": 0}
+
+        def fake_post(url, payload, headers):
+            calls["n"] += 1
+            if payload.get("system") == agent.COMPACT_SYSTEM:
+                raise RuntimeError("summary provider unavailable")
+            return {"stop_reason": "end_turn", "content": [{"type": "text", "text": "normal reply"}]}
+
+        original_post = agent._http_post
+        original_threshold = agent.COMPACT_CHAR_THRESHOLD
+        agent._http_post = fake_post
+        agent.COMPACT_CHAR_THRESHOLD = 1
+        try:
+            a = agent.Agent()
+            a.provider, a.model, a._key = "anthropic", "claude-opus-4-8", "x"
+            a.messages = [{"role": "user", "content": "old context " * 50} for _ in range(6)]
+            reply = a.send("continue")
+        finally:
+            agent._http_post = original_post
+            agent.COMPACT_CHAR_THRESHOLD = original_threshold
+
+        self.assertEqual(reply, "normal reply")
+        self.assertEqual(calls["n"], 2)
+        self.assertTrue(any(message.get("content") == "continue" for message in a.messages))
+
     def test_parallel_readonly_and_plan_denial(self):
         from mechferret import agent
 
@@ -64,22 +331,161 @@ class AgentStackTest(unittest.TestCase):
         self.assertTrue(all(res.values()))
         a.permission_mode = "plan"
         res2 = a._run_tool_calls([("a", "write_file", {"path": "x", "content": "y"})])
-        self.assertTrue(json.loads(res2["a"])["denied"])
+        denied = json.loads(res2["a"])
+        self.assertFalse(denied["ok"])
+        self.assertTrue(denied["denied"])
+        self.assertIn("tool_permission", denied["failed_checks"])
+
+        malformed = json.loads(a._dispatch("read_file", []))
+        self.assertFalse(malformed["ok"])
+        self.assertIn("tool_arguments", malformed["failed_checks"])
+
+        a.abort.set()
+        aborted = json.loads(a._run_tool_calls([("b", "write_file", {"path": "x", "content": "y"})])["b"])
+        self.assertFalse(aborted["ok"])
+        self.assertTrue(aborted["aborted"])
+        self.assertIn("tool_aborted", aborted["failed_checks"])
 
     def test_mcp_no_server_is_safe(self):
         from mechferret import mcp, tools
 
         self.assertEqual(mcp.status()["configured"], [])
         self.assertEqual(mcp.tool_specs(), [])
-        self.assertIn("error", tools.run_tool("mcp__x__y", {}))
+        payload = json.loads(tools.run_tool("mcp__x__y", {}))
+        self.assertIn("error", payload)
+        self.assertFalse(payload["ok"])
+        self.assertIn("mcp_tool_call", payload["failed_checks"])
+
+    def test_mcp_config_filters_malformed_servers(self):
+        from mechferret import mcp
+
+        mcp.CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        mcp.CONFIG_PATH.write_text(
+            json.dumps(
+                {
+                    "servers": {
+                        "good": {"command": " python ", "args": ["-m", 123], "env": {"TOKEN": "x", "BAD": 1}},
+                        "../bad": {"command": "python"},
+                        "bad-command": {"command": ["python"]},
+                        "bad-row": "not an object",
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        try:
+            servers = mcp.load_servers()
+            self.assertEqual(len(servers), 1)
+            self.assertEqual(servers[0].name, "good")
+            self.assertEqual(servers[0].command, "python")
+            self.assertEqual(servers[0].args, ["-m"])
+            self.assertEqual(servers[0].env, {"TOKEN": "x"})
+
+            with self.assertRaises(ValueError):
+                mcp.add_server("../bad", "python")
+            with self.assertRaises(ValueError):
+                mcp.add_server("good2", "")
+
+            mcp.CONFIG_PATH.write_text("{", encoding="utf-8")
+            path = mcp.add_server("new", " python ", ["-m", 3])
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["servers"]["new"], {"command": "python", "args": ["-m"]})
+        finally:
+            mcp.reset()
 
     def test_command_registry_matches_handlers(self):
-        from mechferret import commands
+        from mechferret import commands, repl
 
         # every REPL-handled bare word should appear in the grouped help registry
         names = " ".join(c.name for _title, cmds in commands.SECTIONS for c in cmds)
-        for handled in ("login", "model", "plan", "cost", "compact", "resume", "memory", "export", "init", "goal", "why", "arch", "paper"):
+        for handled in (
+            "login", "model", "plan", "cost", "compact", "resume", "memory",
+            "tool-results", "export", "init", "goal", "why", "arch", "paper",
+            "audit", "bundle", "verify-bundle", "sae", "quickstart", "status", "next",
+            "runs", "open", "version", "commands", "completion", "api",
+        ):
             self.assertIn(handled, names)
+        self.assertIn("run_research", names)
+        self.assertIn("commands --workflow first_run", names)
+        self.assertIn("tool-results", repl.KNOWN_COMMANDS)
+        self.assertIn("verify-bundle", repl.KNOWN_COMMANDS)
+        self.assertIn("completion", repl.KNOWN_COMMANDS)
+        self.assertIn("api", repl.KNOWN_COMMANDS)
+        self.assertIn("tool-results", commands.REPL_HANDLED)
+        self.assertIn("verify-bundle", commands.REPL_HANDLED)
+        self.assertEqual(repl.KNOWN_COMMANDS, commands.COMMAND_WORDS)
+        self.assertTrue(commands.CLI_FALLBACK <= repl.KNOWN_COMMANDS)
+
+        out = StringIO()
+        with redirect_stdout(out):
+            repl._print_help()
+        rendered_help = out.getvalue()
+        self.assertIn("/commands --workflow first_run", rendered_help)
+        self.assertIn("/commands --workflow first_run  show a runnable workflow recipe", rendered_help)
+
+    def test_cli_command_index_primary_names_route_from_repl(self):
+        from mechferret import commands
+        from mechferret.cli import _command_index_payload, build_parser
+
+        payload = _command_index_payload(build_parser())
+        command_names = {row["name"] for row in payload["commands"]}
+        # `repl` intentionally launches the interactive prompt and should not
+        # recurse when typed inside an existing prompt.
+        command_names.discard("repl")
+        self.assertTrue(command_names <= commands.COMMAND_WORDS)
+
+    def test_repl_shortcuts_do_not_shadow_argument_bearing_cli_commands(self):
+        from mechferret import repl
+
+        cli_fallbacks = [
+            ("open", ["open", "bundle"]),
+            ("demo", ["demo", "--out", "runs/custom"]),
+            ("init", ["init", "--project-root", "subdir"]),
+            ("status", ["status", "--json"]),
+            ("status", ["status", "--project-root", "project"]),
+            ("audit", ["audit", "--json"]),
+            ("audit", ["audit", "--strict"]),
+            ("paper", ["paper", "--help"]),
+            ("quickstart", ["quickstart", "--mode", "ci"]),
+            ("quickstart", ["quickstart", "--run"]),
+            ("review-paper", ["review-paper", "--json"]),
+            ("review-paper", ["review-paper", "--provider", "openai"]),
+            ("review-paper", ["review-paper", "--help"]),
+            ("verify", ["verify", "--json"]),
+        ]
+
+        self.assertTrue(repl._uses_repl_shortcut("open", ["open"]))
+        self.assertFalse(repl._uses_repl_shortcut("open", ["open", "bundle"]))
+        self.assertTrue(repl._uses_repl_shortcut("demo", ["demo"]))
+        self.assertFalse(repl._uses_repl_shortcut("demo", ["demo", "--out", "runs/custom"]))
+        self.assertTrue(repl._uses_repl_shortcut("init", ["init"]))
+        self.assertFalse(repl._uses_repl_shortcut("init", ["init", "--project-root", "subdir"]))
+        self.assertTrue(repl._uses_repl_shortcut("status", ["status", "--select", "best"]))
+        self.assertFalse(repl._uses_repl_shortcut("status", ["status", "--json"]))
+        self.assertFalse(repl._uses_repl_shortcut("status", ["status", "--project-root", "project"]))
+        self.assertTrue(repl._uses_repl_shortcut("audit", ["audit", "--select", "best"]))
+        self.assertFalse(repl._uses_repl_shortcut("audit", ["audit", "--json"]))
+        self.assertFalse(repl._uses_repl_shortcut("audit", ["audit", "--strict"]))
+        self.assertTrue(repl._uses_repl_shortcut("paper", ["paper", "--select", "best"]))
+        self.assertFalse(repl._uses_repl_shortcut("paper", ["paper", "--help"]))
+        self.assertTrue(repl._uses_repl_shortcut("quickstart", ["quickstart"]))
+        self.assertTrue(repl._uses_repl_shortcut("quickstart", ["quickstart", "ci"]))
+        self.assertFalse(repl._uses_repl_shortcut("quickstart", ["quickstart", "--mode", "ci"]))
+        self.assertFalse(repl._uses_repl_shortcut("quickstart", ["quickstart", "--run"]))
+        self.assertTrue(repl._uses_repl_shortcut("review-paper", ["review-paper", "--select", "best"]))
+        for bare, tokens in cli_fallbacks:
+            self.assertFalse(repl._uses_repl_shortcut(bare, tokens))
+            self.assertIn(bare, repl.KNOWN_COMMANDS)
+
+    def test_system_prompt_routes_research_and_discovery_tools(self):
+        from mechferret import agent
+
+        prompt = agent.BASE_SYSTEM_PROMPT
+        self.assertIn("run_research", prompt)
+        self.assertIn("run_discovery", prompt)
+        self.assertIn("Use run_research for general literature/source-grounded research", prompt)
+        self.assertIn("Use run_discovery only", prompt)
+        self.assertIn("audit advisories", prompt)
 
 
 if __name__ == "__main__":

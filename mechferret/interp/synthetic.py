@@ -1,14 +1,14 @@
-"""Deterministic synthetic interpretability backend.
+"""Offline synthetic interpretability backend.
 
 The synthetic backend lets the whole autonomous loop run offline -- no torch,
 no GPU, no network, no API keys -- while still producing *structured,
-reproducible, literature-plausible* experiment outcomes.
+literature-plausible* experiment outcomes.
 
 It does this by fabricating a hidden "ground-truth circuit" for each
-(model, task) pair: a small set of important heads/layers with stable
-magnitudes, plus seed-dependent noise. Probes then read this ground truth, so
-ablating a genuine name-mover head reliably hurts the metric (and reproduces
-across seeds) while a control head does not. That is exactly the signal the
+(model, task, run) triple: a small set of important heads/layers with stable
+magnitudes inside that run, plus seed-dependent noise. Probes then read this
+ground truth, so ablating a genuine name-mover head reliably hurts the metric
+across seeds while a control head does not. That is exactly the signal the
 experiment critic needs to confirm or refute a hypothesis.
 
 The numbers are simulated, not measured -- every artifact records
@@ -73,28 +73,30 @@ class GroundTruthCircuit:
         return None
 
 
-def build_circuit(model: str, task_name: str) -> GroundTruthCircuit:
-    """Deterministically fabricate a plausible circuit for (model, task)."""
+def build_circuit(model: str, task_name: str, run_salt: object | None = None) -> GroundTruthCircuit:
+    """Fabricate a plausible circuit for the requested model/task/run."""
 
     task = get_task(task_name)
     n_layers, n_heads, d_model = _shape(model)
-    rng = _seeded_rng("circuit", model, task.name)
+    salt = run_salt if run_salt is not None else random.SystemRandom().getrandbits(64)
+    rng = _seeded_rng("circuit", salt, model, task.name)
 
     # The decision usually crystallises in the upper-middle of the network.
     decision_layer = int(n_layers * rng.uniform(0.55, 0.82))
 
     roles = list(task.expected_components) or ["primary_head"]
     n_key = min(len(roles) + rng.randint(0, 1), max(2, n_layers // 3))
+    min_screen_layer = n_layers // 3
     chosen: set[tuple[int, int]] = set()
     heads: list[GroundTruthHead] = []
     for index in range(n_key):
         role = roles[index % len(roles)]
         # Name-mover / induction heads cluster a bit before the decision layer.
-        layer = max(0, min(n_layers - 1, decision_layer - rng.randint(0, 3)))
+        layer = max(min_screen_layer, min(n_layers - 1, decision_layer - rng.randint(0, 3)))
         head = rng.randrange(n_heads)
         while (layer, head) in chosen:
             head = rng.randrange(n_heads)
-            layer = max(0, min(n_layers - 1, layer + rng.choice((-1, 0, 1))))
+            layer = max(min_screen_layer, min(n_layers - 1, layer + rng.choice((-1, 0, 1))))
             if (layer, head) not in chosen:
                 break
         chosen.add((layer, head))
@@ -124,21 +126,22 @@ class SyntheticBackend:
     name = "synthetic"
     available = True
 
-    def __init__(self, model: str = "gpt2") -> None:
+    def __init__(self, model: str = "gpt2", run_salt: object | None = None) -> None:
         self.model = (model or "gpt2").lower()
         self.n_layers, self.n_heads, self.d_model = _shape(self.model)
+        self.run_salt = run_salt if run_salt is not None else random.SystemRandom().getrandbits(64)
         self._circuits: dict[str, GroundTruthCircuit] = {}
 
     def circuit(self, task_name: str) -> GroundTruthCircuit:
         if task_name not in self._circuits:
-            self._circuits[task_name] = build_circuit(self.model, task_name)
+            self._circuits[task_name] = build_circuit(self.model, task_name, self.run_salt)
         return self._circuits[task_name]
 
     # --- probe-facing measurements -------------------------------------------------
 
     def clean_metric(self, task_name: str, seed: int) -> float:
         circuit = self.circuit(task_name)
-        rng = _seeded_rng("clean", self.model, task_name, seed)
+        rng = _seeded_rng("clean", self.run_salt, self.model, task_name, seed)
         return round(circuit.full_metric * rng.uniform(0.97, 1.03), 4)
 
     def head_ablation_effect(self, task_name: str, layer: int, head: int, seed: int) -> float:
@@ -146,7 +149,7 @@ class SyntheticBackend:
 
         circuit = self.circuit(task_name)
         truth = circuit.head(layer, head)
-        rng = _seeded_rng("ablate", self.model, task_name, layer, head, seed)
+        rng = _seeded_rng("ablate", self.run_salt, self.model, task_name, layer, head, seed)
         if truth is None:
             return round(rng.gauss(0.0, 0.05), 4)
         noise = rng.gauss(0.0, abs(truth.magnitude) * 0.06 + 0.02)
@@ -157,7 +160,7 @@ class SyntheticBackend:
 
         circuit = self.circuit(task_name)
         truth = circuit.head(layer, head)
-        rng = _seeded_rng("patch", self.model, task_name, layer, head, seed)
+        rng = _seeded_rng("patch", self.run_salt, self.model, task_name, layer, head, seed)
         if truth is None:
             return round(abs(rng.gauss(0.0, 0.03)), 4)
         share = max(0.0, truth.magnitude) / max(circuit.full_metric, 1e-6)
@@ -167,7 +170,7 @@ class SyntheticBackend:
     def attention_score(self, task_name: str, layer: int, head: int, seed: int) -> dict[str, float]:
         circuit = self.circuit(task_name)
         truth = circuit.head(layer, head)
-        rng = _seeded_rng("attn", self.model, task_name, layer, head, seed)
+        rng = _seeded_rng("attn", self.run_salt, self.model, task_name, layer, head, seed)
         scores = {
             "induction": abs(rng.gauss(0.0, 0.05)),
             "previous_token": abs(rng.gauss(0.0, 0.05)),
@@ -189,14 +192,14 @@ class SyntheticBackend:
     def direct_logit_attribution(self, task_name: str, layer: int, head: int, seed: int) -> float:
         circuit = self.circuit(task_name)
         truth = circuit.head(layer, head)
-        rng = _seeded_rng("dla", self.model, task_name, layer, head, seed)
+        rng = _seeded_rng("dla", self.run_salt, self.model, task_name, layer, head, seed)
         if truth is None:
             return round(rng.gauss(0.0, 0.04), 4)
         return round(truth.magnitude * rng.uniform(0.85, 1.05), 4)
 
     def logit_lens(self, task_name: str, seed: int) -> list[dict[str, float]]:
         circuit = self.circuit(task_name)
-        rng = _seeded_rng("lens", self.model, task_name, seed)
+        rng = _seeded_rng("lens", self.run_salt, self.model, task_name, seed)
         rows: list[dict[str, float]] = []
         for layer in range(circuit.n_layers):
             # Logistic rise of the correct-token probability, crossing 0.5 at the decision layer.
@@ -215,7 +218,7 @@ class SyntheticBackend:
 
         circuit = self.circuit(task_name)
         key = {(h.layer, h.head) for h in circuit.heads}
-        rng = _seeded_rng("control", self.model, task_name, seed)
+        rng = _seeded_rng("control", self.run_salt, self.model, task_name, seed)
         for _ in range(64):
             layer = rng.randrange(self.n_layers)
             head = rng.randrange(self.n_heads)

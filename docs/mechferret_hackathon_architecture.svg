@@ -155,7 +155,7 @@
       <text x="68" y="118" class="small" text-anchor="middle">Permissions</text>
       <text x="68" y="152" class="small" text-anchor="middle">Costs</text>
       <text x="68" y="186" class="small" text-anchor="middle">Tracing</text>
-      <text x="68" y="220" class="small" text-anchor="middle">Replay</text>
+      <text x="68" y="220" class="small" text-anchor="middle">Audit</text>
       <text x="68" y="254" class="small" text-anchor="middle">Memory</text>
     </g>
 
@@ -202,7 +202,7 @@
   <g transform="translate(1770,215)">
     <rect class="card" x="0" y="0" width="540" height="640" rx="22"/>
     <text x="34" y="60" class="section">Parallel Experiment Swarm</text>
-    <text x="34" y="102" class="body">Deterministic fan-out over experiment specs.</text>
+    <text x="34" y="102" class="body">Parallel fan-out over experiment specs.</text>
 
     <g transform="translate(34,142)">
       <rect class="chipWarm" x="0" y="0" width="472" height="78" rx="18"/>
@@ -218,7 +218,7 @@
 
       <rect class="chipLime" x="0" y="404" width="220" height="86" rx="18"/>
       <text x="110" y="439" class="label" text-anchor="middle">Synthetic</text>
-      <text x="110" y="470" class="small" text-anchor="middle">offline replay</text>
+      <text x="110" y="470" class="small" text-anchor="middle">local fallback</text>
 
       <rect class="chipCyan" x="252" y="404" width="220" height="86" rx="18"/>
       <text x="362" y="439" class="label" text-anchor="middle">TransformerLens</text>
@@ -236,13 +236,13 @@
   <g transform="translate(1320,930)">
     <rect class="card" x="0" y="0" width="990" height="360" rx="22"/>
     <text x="34" y="60" class="section">Scale Plane: same loop, bigger compute</text>
-    <text x="34" y="101" class="body">Offline determinism for demo clarity, GPU execution for real measurements.</text>
+    <text x="34" y="101" class="body">Local runs for demo clarity, GPU execution for real measurements.</text>
 
     <g transform="translate(34,145)">
       <rect class="chipLime" x="0" y="0" width="260" height="126" rx="20"/>
       <text x="130" y="43" class="label" text-anchor="middle">Local synthetic</text>
       <text x="130" y="77" class="small" text-anchor="middle">no keys, no GPU</text>
-      <text x="130" y="106" class="small" text-anchor="middle">replayable in seconds</text>
+      <text x="130" y="106" class="small" text-anchor="middle">smoke runs in seconds</text>
 
       <rect class="chipCyan" x="310" y="0" width="260" height="126" rx="20"/>
       <text x="440" y="43" class="label" text-anchor="middle">Modal GPU</text>
@@ -268,7 +268,7 @@
   <g transform="translate(90,1165)">
     <rect class="card" x="0" y="0" width="1150" height="330" rx="22"/>
     <text x="34" y="62" class="section">Memory, Observability, and Auditable Output</text>
-    <text x="34" y="104" class="body">Every run becomes a replayable research dossier with machine-readable proof trails.</text>
+    <text x="34" y="104" class="body">Every run becomes an inspectable research dossier with machine-readable proof trails.</text>
 
     <g transform="translate(34,145)">
       <rect class="chipLime" x="0" y="0" width="235" height="95" rx="18"/>
