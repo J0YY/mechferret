@@ -334,7 +334,7 @@ mechferret
 You can do things like:
 
 ```text
-/btw <prompt>   queue a compact side question while another reply is running
+/btw <prompt>   run a compact side question while another reply is running
 /queue          show the active and queued prompts
 /queue restore  restore saved queued/running prompts from the last session
 /cancel <id>    remove a queued prompt before it starts

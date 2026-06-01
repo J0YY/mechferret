@@ -19,7 +19,7 @@ class Command:
 SECTIONS: list[tuple[str, list[Command]]] = [
     ("Chat", [
         Command("<your prompt>", "talk to the model; it runs tools/experiments"),
-        Command("/btw <text>", "queue a compact side prompt while another reply is running"),
+        Command("/btw <text>", "run a compact side prompt while another reply is running"),
         Command("/queue", "show the active and queued prompts"),
         Command("/queue restore", "restore saved queued/running prompts from the last session"),
         Command("/cancel <id|all>", "remove queued prompts that have not started yet"),

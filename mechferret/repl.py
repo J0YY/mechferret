@@ -16,6 +16,7 @@ import shlex
 import sys
 import threading
 import time
+from copy import deepcopy
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -85,15 +86,18 @@ class ChatJobRunner:
         session: Session,
         *,
         chat_fn: Callable[..., str | None] | None = None,
+        side_agent_factory: Callable[[Any], Any] | None = None,
         queue_path: Path | None = None,
     ) -> None:
         self.agent = agent
         self.session = session
         self._chat_fn = chat_fn or _chat
+        self._side_agent_factory = side_agent_factory or _clone_agent_for_side_chat
         self._queue_path = queue_path or QUEUE_FILE
         self._queue: queue.Queue[PromptJob | None] = queue.Queue()
         self._jobs: list[PromptJob] = []
         self._active: PromptJob | None = None
+        self._side_threads: list[threading.Thread] = []
         self._next_id = 1
         self._lock = threading.Lock()
         self._stopped = False
@@ -109,6 +113,18 @@ class ChatJobRunner:
         self.save_pending()
         return job
 
+    def submit_side(self, text: str) -> PromptJob:
+        with self._lock:
+            job = PromptJob(id=self._next_id, text=text, kind="btw", status="running")
+            self._next_id += 1
+            self._jobs.append(job)
+        thread = threading.Thread(target=self._run_side, args=(job,), daemon=True)
+        with self._lock:
+            self._side_threads.append(thread)
+        self.save_pending(include_active=True)
+        thread.start()
+        return job
+
     def saved(self) -> list[PromptJob]:
         return _load_saved_queue(self._queue_path)
 
@@ -119,7 +135,10 @@ class ChatJobRunner:
         self.clear_saved()
         restored: list[PromptJob] = []
         for saved in saved_jobs:
-            restored.append(self.submit(saved.text, kind=saved.kind))
+            if saved.kind == "btw":
+                restored.append(self.submit_side(saved.text))
+            else:
+                restored.append(self.submit(saved.text, kind=saved.kind))
         return restored
 
     def clear_saved(self) -> int:
@@ -135,6 +154,10 @@ class ChatJobRunner:
     def active(self) -> PromptJob | None:
         with self._lock:
             return self._active
+
+    def side_active(self) -> list[PromptJob]:
+        with self._lock:
+            return [job for job in self._jobs if job.kind == "btw" and job.status == "running"]
 
     def queued(self) -> list[PromptJob]:
         with self._lock:
@@ -160,6 +183,10 @@ class ChatJobRunner:
 
     def is_busy(self) -> bool:
         with self._lock:
+            return self._active is not None or any(job.status in {"queued", "running"} for job in self._jobs)
+
+    def main_busy(self) -> bool:
+        with self._lock:
             return self._active is not None or any(job.status == "queued" for job in self._jobs)
 
     def wait_idle(self, timeout: float = 10.0) -> bool:
@@ -180,6 +207,8 @@ class ChatJobRunner:
         self._queue.put(None)
         if wait:
             self._thread.join(timeout=2)
+            for thread in list(self._side_threads):
+                thread.join(timeout=2)
         self.save_pending(include_active=True)
 
     def save_pending(self, *, include_active: bool = False) -> int:
@@ -187,6 +216,8 @@ class ChatJobRunner:
             pending = [job for job in self._jobs if job.status == "queued"]
             if include_active and self._active is not None and self._active.status == "running":
                 pending = [self._active, *pending]
+            if include_active:
+                pending.extend(job for job in self._jobs if job.kind == "btw" and job.status == "running")
         return _save_queue_jobs(self._queue_path, pending)
 
     def _set_active(self, job: PromptJob | None) -> None:
@@ -220,6 +251,22 @@ class ChatJobRunner:
             finally:
                 self._set_active(None)
                 self._queue.task_done()
+
+    def _run_side(self, job: PromptJob) -> None:
+        try:
+            print(_c(f"  ▶ side #{job.id}: {_short_job_text(job.text)}", "2"))
+            side_agent = self._side_agent_factory(self.agent)
+            side_session = Session()
+            reply = self._chat_fn(side_agent, side_session, job.text, background=True)
+            job.reply = reply
+            job.status = "done"
+            self.save_pending()
+            print(_c(f"  ✓ finished side #{job.id}", "32"))
+        except Exception as exc:  # noqa: BLE001 - side work should not kill the prompt
+            job.status = "error"
+            job.error = str(exc)
+            self.save_pending()
+            print(_c(f"  error in side #{job.id}: {exc}", "31"))
 
 
 def _job_to_dict(job: PromptJob) -> dict[str, Any]:
@@ -267,6 +314,17 @@ def _save_queue_jobs(path: Path, jobs: list[PromptJob]) -> int:
     tmp.write_text(json.dumps({"jobs": [_job_to_dict(job) for job in jobs]}, indent=2, sort_keys=True), encoding="utf-8")
     tmp.replace(path)
     return len(jobs)
+
+
+def _clone_agent_for_side_chat(agent: Any) -> Any:
+    from .agent import Agent
+
+    side = Agent()
+    for name in ("provider", "model", "_key", "permission_mode"):
+        if hasattr(agent, name):
+            setattr(side, name, getattr(agent, name))
+    side.messages = deepcopy(getattr(agent, "messages", []))
+    return side
 
 
 # --- welcome screen ------------------------------------------------------------------
@@ -338,10 +396,13 @@ def _print_status_and_bar(agent, session, runner: ChatJobRunner | None = None) -
     bits.append(_c(f"mode:{mode}" + (" ⏸" if mode == "plan" else ""), "33" if mode == "plan" else "2"))
     if runner is not None:
         active = runner.active()
+        side_active = len(runner.side_active())
         queued = len(runner.queued())
         saved = len(runner.saved())
         if active is not None:
             bits.append(_c(f"running:#{active.id}", PURPLE))
+        if side_active:
+            bits.append(_c(f"btw:{side_active}", PURPLE))
         if queued:
             bits.append(_c(f"queued:{queued}", "33"))
         if saved:
@@ -528,8 +589,8 @@ def run_repl() -> None:
                 if not onboard():
                     continue
                 agent.reload()
-            job = runner.submit(_btw_prompt(text), kind="btw")
-            print(_c(f"  queued #{job.id} btw", "2"))
+            job = runner.submit_side(_btw_prompt(text))
+            print(_c(f"  started side #{job.id} btw", "2"))
             continue
         if bare == "clear":
             os.system("cls" if os.name == "nt" else "clear")
@@ -690,14 +751,17 @@ def _btw_prompt(text: str) -> str:
 
 def _print_queue(runner: ChatJobRunner) -> None:
     active = runner.active()
+    side_active = runner.side_active()
     queued = runner.queued()
     recent = runner.recent()
     saved = runner.saved()
-    if active is None and not queued and not saved:
+    if active is None and not side_active and not queued and not saved:
         print(_c("  queue empty", "2"))
     else:
         if active is not None:
             print(_c(f"  running #{active.id} {active.kind}: {_short_job_text(active.text)}", PURPLE))
+        for job in side_active:
+            print(_c(f"  side    #{job.id} {job.kind}: {_short_job_text(job.text)}", PURPLE))
         for job in queued:
             print(_c(f"  queued  #{job.id} {job.kind}: {_short_job_text(job.text)}", "2"))
         for job in saved:
@@ -712,7 +776,7 @@ def _print_queue(runner: ChatJobRunner) -> None:
 
 
 def _guard_agent_idle(runner: ChatJobRunner, action: str) -> bool:
-    if not runner.is_busy():
+    if not runner.main_busy():
         return True
     print(_c(f"  {action} waits for the active prompt so conversation state stays consistent.", "33"))
     print(_c("  use /btw for side prompts, /queue to inspect, or /cancel <id|all> for queued work.", "2"))

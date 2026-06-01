@@ -443,7 +443,7 @@ class AgentStackTest(unittest.TestCase):
         with redirect_stdout(out):
             runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue.json"))
             first = runner.submit("first prompt")
-            side = runner.submit(repl._btw_prompt("side question"), kind="btw")
+            side = runner.submit_side(repl._btw_prompt("side question"))
             self.assertTrue(runner.wait_idle(timeout=2))
             repl._print_queue(runner)
             runner.stop(wait=True)
@@ -457,8 +457,43 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("Side request entered with /btw", calls[1][0])
         rendered = out.getvalue()
         self.assertIn("queued #1", rendered)
-        self.assertIn("queued #2", rendered)
+        self.assertIn("side #2", rendered)
         self.assertIn("queue empty", rendered)
+
+    def test_repl_btw_runs_while_main_prompt_is_active(self):
+        from mechferret import repl
+
+        release_main = threading.Event()
+        started = []
+
+        def fake_chat(agent, session, text, *, background=False):
+            started.append(text)
+            if text == "main":
+                self.assertTrue(release_main.wait(timeout=2))
+            return text
+
+        with redirect_stdout(StringIO()):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("btw-live.json"))
+            try:
+                main = runner.submit("main")
+                deadline = time.monotonic() + 2
+                while runner.active() is None and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                side = runner.submit_side(repl._btw_prompt("side question"))
+                deadline = time.monotonic() + 2
+                while side.status == "running" and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertEqual(side.status, "done")
+                self.assertEqual(main.status, "running")
+                release_main.set()
+                self.assertTrue(runner.wait_idle(timeout=2))
+            finally:
+                release_main.set()
+                runner.stop(wait=True)
+
+        self.assertEqual(len(started), 2)
+        self.assertEqual(started[0], "main")
+        self.assertIn("Side request entered with /btw", started[1])
 
     def test_repl_chat_job_runner_cancels_pending_prompts(self):
         from mechferret import repl
