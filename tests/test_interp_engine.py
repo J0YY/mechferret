@@ -101,6 +101,24 @@ class InterpEngineTest(unittest.TestCase):
     def test_run_specs_tolerates_malformed_collection(self):
         self.assertEqual(self.engine.run_specs("not specs"), [])
 
+    def test_auto_backend_does_not_hide_real_model_load_failures(self):
+        from mechferret.interp import backends
+
+        with (
+            patch("mechferret.interp.backends.transformer_lens_available", return_value=True),
+            patch("mechferret.interp.backends.TransformerLensBackend", side_effect=RuntimeError("load failed")),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "loading model 'gpt2' failed"):
+                backends.resolve_backend("gpt2", "auto")
+
+    def test_force_synthetic_keeps_auto_on_offline_backend(self):
+        from mechferret.interp import backends
+
+        with patch.dict("os.environ", {"MECHFERRET_FORCE_SYNTHETIC": "1"}):
+            backend = backends.resolve_backend("gpt2", "auto")
+
+        self.assertIsInstance(backend, SyntheticBackend)
+
 
 if __name__ == "__main__":
     unittest.main()

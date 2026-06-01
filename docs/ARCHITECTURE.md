@@ -40,8 +40,8 @@ attention**.
 |---|---|
 | `tasks.py` | Canonical tasks: IOI, induction, greater-than, factual recall (clean/corrupt prompts + answer pairs). |
 | `probes.py` | Backend-agnostic probes: `head_ablation`, `activation_patching`, `attention_pattern`, `direct_logit_attribution`, `logit_lens`. Each reports a signed **effect** and a matched **control**. |
-| `synthetic.py` | Local fallback backend. Provides structured probe results for smoke tests and demos — **no torch, no GPU, no keys**. |
-| `backends.py` | Backend resolution + the real `TransformerLensBackend` (identical probe surface, measures a real `HookedTransformer`). |
+| `synthetic.py` | Explicit offline smoke backend. Provides structured probe results for tests and demos — **no torch, no GPU, no keys**. |
+| `backends.py` | Backend resolution + the real `TransformerLensBackend` (identical probe surface, measures a real `HookedTransformer`). Auto uses synthetic only when real deps are absent or `MECHFERRET_FORCE_SYNTHETIC=1`; real-model load failures do not silently downgrade. |
 | `engine.py` | Runs a spec across seeds → `ExperimentResult` with effect size, significance (clears a floor *and* beats cross-seed noise), and reproducibility (sign stable across seeds). |
 | `hypotheses.py` | Screen → promote → triangulate; confirm/refute/inconclusive; classify head roles from probe evidence. |
 | `critic.py` | Interpretability rigor: controls, significance, reproducibility rate, triangulation; emits gaps that drive the next round. |
@@ -68,8 +68,10 @@ copied — these are Python re-implementations adapted to research):
 Modal supplies the GPU. The **entire discovery loop** runs remotely on a GPU
 container (`torch` + `transformer_lens`) via `run_discovery_remote`; the dossier
 returns as JSON. `dispatch_discovery` runs on Modal when installed +
-authenticated and otherwise reports the local fallback path, always returning a
-run dict and reporting which path executed.
+authenticated and fails closed with structured setup/dispatch errors otherwise.
+Synthetic local fallback is available only through explicit opt-in such as
+`--local-fallback`, so a requested remote run cannot quietly turn into smoke
+data.
 
 ## Artifacts (every run)
 

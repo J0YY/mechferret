@@ -9,6 +9,11 @@ Resolution order for ``backend="auto"``:
 
 1. ``transformer_lens`` if importable (real measurement), unless disabled.
 2. ``synthetic`` otherwise (always available locally).
+
+If TransformerLens is importable but loading the requested model fails, auto
+raises that error instead of silently substituting synthetic measurements.
+Set ``MECHFERRET_FORCE_SYNTHETIC=1`` or pass ``--backend synthetic`` when the
+offline smoke backend is intentional.
 """
 
 from __future__ import annotations
@@ -47,8 +52,11 @@ def resolve_backend(model: str | None, backend: str = "auto"):
     if transformer_lens_available():
         try:
             return TransformerLensBackend(model_name)
-        except Exception:  # pragma: no cover - fall back if model load fails
-            return SyntheticBackend(model_name)
+        except Exception as exc:  # pragma: no cover - depends on optional deps/model load
+            raise RuntimeError(
+                f"transformer_lens backend is available, but loading model {model_name!r} failed. "
+                "Pass --backend synthetic or set MECHFERRET_FORCE_SYNTHETIC=1 only if synthetic smoke data is intentional."
+            ) from exc
     return SyntheticBackend(model_name)
 
 
