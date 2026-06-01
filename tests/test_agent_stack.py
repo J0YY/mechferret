@@ -2,6 +2,8 @@ import json
 import math
 import os
 import tempfile
+import threading
+import time
 import unittest
 from contextlib import redirect_stdout
 from io import StringIO
@@ -400,7 +402,7 @@ class AgentStackTest(unittest.TestCase):
         names = " ".join(c.name for _title, cmds in commands.SECTIONS for c in cmds)
         for handled in (
             "login", "model", "plan", "cost", "compact", "resume", "memory",
-            "tool-results", "export", "init", "btw", "queue", "goal", "why", "arch", "paper",
+            "tool-results", "export", "init", "btw", "queue", "cancel", "goal", "why", "arch", "paper",
             "audit", "bundle", "verify-bundle", "sae", "quickstart", "status", "next",
             "runs", "open", "version", "commands", "completion", "api",
         ):
@@ -422,6 +424,7 @@ class AgentStackTest(unittest.TestCase):
         rendered_help = out.getvalue()
         self.assertIn("/btw <text>", rendered_help)
         self.assertIn("/queue", rendered_help)
+        self.assertIn("/cancel <id|all>", rendered_help)
         self.assertIn("/commands --workflow first_run", rendered_help)
         self.assertIn("/commands --workflow first_run  show a runnable workflow recipe", rendered_help)
 
@@ -455,6 +458,40 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("queued #1", rendered)
         self.assertIn("queued #2", rendered)
         self.assertIn("queue empty", rendered)
+
+    def test_repl_chat_job_runner_cancels_pending_prompts(self):
+        from mechferret import repl
+
+        started = []
+        release = threading.Event()
+
+        def fake_chat(agent, session, text, *, background=False):
+            started.append(text)
+            if text == "first":
+                self.assertTrue(release.wait(timeout=2))
+            return text
+
+        with redirect_stdout(StringIO()):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat)
+            try:
+                first = runner.submit("first")
+                second = runner.submit("second")
+                deadline = time.monotonic() + 2
+                while runner.active() is None and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                canceled = runner.cancel(str(second.id))
+                self.assertEqual(canceled, [second])
+                self.assertEqual(second.status, "canceled")
+                self.assertEqual(runner.queued(), [])
+                release.set()
+                self.assertTrue(runner.wait_idle(timeout=2))
+            finally:
+                release.set()
+                runner.stop(wait=True)
+
+        self.assertEqual(first.status, "done")
+        self.assertEqual(second.status, "canceled")
+        self.assertEqual(started, ["first"])
 
     def test_repl_btw_parsing_preserves_prompt_text(self):
         from mechferret import repl

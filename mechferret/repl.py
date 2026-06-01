@@ -113,6 +113,18 @@ class ChatJobRunner:
         with self._lock:
             return [job for job in self._jobs if job.status == "queued"]
 
+    def cancel(self, target: str) -> list[PromptJob]:
+        target = target.strip().lower()
+        canceled: list[PromptJob] = []
+        with self._lock:
+            for job in self._jobs:
+                if job.status != "queued":
+                    continue
+                if target == "all" or str(job.id) == target:
+                    job.status = "canceled"
+                    canceled.append(job)
+        return canceled
+
     def recent(self, limit: int = 8) -> list[PromptJob]:
         with self._lock:
             return list(self._jobs[-limit:])
@@ -147,6 +159,9 @@ class ChatJobRunner:
             try:
                 if job is None:
                     return
+                if job.status == "canceled":
+                    print(_c(f"  skipped canceled #{job.id}", "2"))
+                    continue
                 job.status = "running"
                 self._set_active(job)
                 print(_c(f"  ▶ queued #{job.id} {job.kind}: {_short_job_text(job.text)}", "2"))
@@ -387,6 +402,18 @@ def run_repl() -> None:
         if bare == "queue":
             _print_queue(runner)
             continue
+        if bare == "cancel":
+            target = tokens[1] if len(tokens) > 1 else ""
+            if not target:
+                print(_c("  usage: /cancel <job id|all>", "33"))
+                continue
+            canceled = runner.cancel(target)
+            if canceled:
+                ids = ", ".join(f"#{job.id}" for job in canceled)
+                print(_c(f"  canceled {ids}", "32"))
+            else:
+                print(_c(f"  no queued job matched {target!r}", "33"))
+            continue
         if bare == "btw":
             text = _line_after_command(line)
             if not text:
@@ -552,11 +579,11 @@ def _print_queue(runner: ChatJobRunner) -> None:
             print(_c(f"  running #{active.id} {active.kind}: {_short_job_text(active.text)}", PURPLE))
         for job in queued:
             print(_c(f"  queued  #{job.id} {job.kind}: {_short_job_text(job.text)}", "2"))
-    done = [job for job in recent if job.status in {"done", "error"}]
+    done = [job for job in recent if job.status in {"done", "error", "canceled"}]
     for job in done[-3:]:
-        status = "error" if job.status == "error" else "done"
+        status = job.status
         detail = f" ({job.error})" if job.error else ""
-        print(_c(f"  {status:7} #{job.id} {job.kind}{detail}", "31" if job.error else "2"))
+        print(_c(f"  {status:8} #{job.id} {job.kind}{detail}", "31" if job.error else "2"))
 
 
 class _BackgroundPrinter:

@@ -21,6 +21,7 @@ SECTIONS: list[tuple[str, list[Command]]] = [
         Command("<your prompt>", "talk to the model; it runs tools/experiments"),
         Command("/btw <text>", "queue a compact side prompt while another reply is running"),
         Command("/queue", "show the active and queued prompts"),
+        Command("/cancel <id|all>", "remove queued prompts that have not started yet"),
         Command("/goal <text>", "set an objective and loop autonomously until reached"),
         Command("/plan", "toggle plan mode (approve write/exec/GPU tools)"),
         Command("/compact", "summarise older turns to free context"),
@@ -79,7 +80,7 @@ SECTIONS: list[tuple[str, list[Command]]] = [
 # CLI parser. Keep this list aligned with the explicit branches in repl.py.
 REPL_HANDLED = {
     "exit", "quit", "q", "help", "clear", "open", "login", "connect", "model",
-    "btw", "queue",
+    "btw", "queue", "cancel",
     "goal", "plan", "cost", "compact", "resume", "memory", "tool-results",
     "export", "init", "review", "mcp", "why", "arch", "paper", "audit",
     "verify", "review-paper", "bundle", "verify-bundle", "demo", "trace",
