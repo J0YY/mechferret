@@ -31,11 +31,11 @@ DEFAULT_ARXIV_RESULTS = 50
 NOVELTY_RELATED_LIMIT = 24
 NOVELTY_FOCUSED_LIMIT = 10
 NOVELTY_QUERY_RESULT_LIMIT = 50
-NOVELTY_MAX_QUERY_PASSES = 20
+NOVELTY_MAX_QUERY_PASSES = 36
 NOVELTY_CLOSEST_PRIOR_LIMIT = 8
 NOVELTY_WEB_RESULT_LIMIT = 24
-NOVELTY_WEB_MAX_QUERY_PASSES = 12
-NOVELTY_WEB_FETCH_LIMIT = 10
+NOVELTY_WEB_MAX_QUERY_PASSES = 24
+NOVELTY_WEB_FETCH_LIMIT = 12
 NOVELTY_WEB_FETCH_CHARS = 2400
 NOVELTY_RISKS = {
     "high_prior_art_risk",
@@ -211,6 +211,8 @@ def _essential_novelty_summary(payload: dict[str, Any]) -> dict[str, Any]:
             "source_diversity",
             "required_delta",
             "comparison_matrix",
+            "novelty_threat_model",
+            "disqualifying_overlap_tests",
             "recent_pressure",
             "claim_readiness",
         ):
@@ -250,7 +252,7 @@ def _compact_novelty_coverage(coverage: dict[str, Any]) -> dict[str, Any]:
     ):
         if key in coverage:
             compact[key] = coverage[key]
-    for key in ("focus_coverage", "web_source_types", "credible_source_types", "arxiv_focuses", "web_focuses"):
+    for key in ("focus_coverage", "threat_model_coverage", "web_source_types", "credible_source_types", "arxiv_focuses", "web_focuses"):
         if key in coverage:
             compact[key] = _compact_json_value(coverage[key])
     return compact
@@ -284,6 +286,8 @@ def _compact_novelty_prior(value: Any) -> Any:
 def _compact_json_object(payload: dict[str, Any]) -> dict[str, Any]:
     summary: dict[str, Any] = {}
     for key, value in payload.items():
+        if key in {"related_papers", "recent_papers", "focused_papers", "method_papers", "web_results", "errors"} and isinstance(value, list):
+            summary[f"{key}_count" if key != "errors" else "error_count"] = len(value)
         summary[key] = _compact_json_value(value)
     return summary
 
@@ -328,16 +332,23 @@ def _compact_json_value(value: Any) -> Any:
             "source_diversity",
             "required_delta",
             "comparison_matrix",
+            "novelty_threat_model",
+            "disqualifying_overlap_tests",
             "recent_pressure",
             "closest_prior_art",
             "claim_readiness",
         ):
-            if key in value and isinstance(value[key], (str, int, float, bool, list, type(None))):
+            if key in value and isinstance(value[key], (str, int, float, bool, type(None))):
                 summary[key] = value[key]
+            elif key in value and key == "closest_prior_art" and isinstance(value[key], list):
+                summary["closest_prior_art_count"] = len(value[key])
+                summary[key] = [_compact_novelty_prior(item) for item in value[key][:5]]
+            elif key in value and isinstance(value[key], list):
+                summary[key] = _compact_json_value(value[key])
             elif key in value and key == "claim_readiness" and isinstance(value[key], dict):
                 summary[key] = _compact_json_value(value[key])
             elif key in value and key == "coverage" and isinstance(value[key], dict):
-                summary[key] = _compact_json_value(value[key])
+                summary[key] = _compact_novelty_coverage(value[key])
         return summary
     if isinstance(value, str):
         return {
@@ -1150,7 +1161,7 @@ def tool_verify_novelty(args: dict[str, Any]) -> str:
         "errors": errors,
         "novelty_questions": _novelty_questions(idea),
         "guidance": "Do not claim high novelty unless the idea survives relevance, submitted-date, "
-                    "updated-date, recent-discovery, architecture-variant, method, mechanism, evaluation, implementation, replication, failure-mode, and protocol searches. Compare against the closest "
+                    "updated-date, exact-phrase, claim-collision, recent-discovery, architecture-variant, method, mechanism, evaluation, implementation, replication, failure-mode, and protocol searches. Compare against the closest "
                     "recent papers, name the exact delta, cite likely prior art, and downgrade any "
                     "direction that only renames an existing method.",
     })
@@ -1217,6 +1228,10 @@ def _novelty_search_plan(idea: str, queries: list[str] | None) -> list[dict[str,
     for phrase in phrases[:3]:
         candidates.append(_novelty_plan_item(f"{phrase} ablation evaluation", "relevance", "phrase_evaluation"))
         candidates.append(_novelty_plan_item(f"{phrase} recent benchmark", "submittedDate", "phrase_recent_benchmark"))
+    for phrase in phrases[:4]:
+        candidates.append(_novelty_plan_item(f'"{phrase}"', "relevance", "exact_phrase"))
+        candidates.append(_novelty_plan_item(f'"{phrase}" same contribution', "relevance", "claim_collision"))
+        candidates.append(_novelty_plan_item(f'"{phrase}" independent replication critique', "lastUpdatedDate", "peer_review_critique"))
     plan: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     for item in candidates:
@@ -1253,6 +1268,10 @@ def _novelty_web_search_plan(idea: str, queries: list[str] | None) -> list[dict[
     for phrase in phrases[:2]:
         candidates.append(_novelty_web_plan_item(f"{phrase} code benchmark", "web_phrase_code_benchmark"))
         candidates.append(_novelty_web_plan_item(f"{phrase} technical report", "web_phrase_report"))
+    for phrase in phrases[:3]:
+        candidates.append(_novelty_web_plan_item(f'"{phrase}" exact method', "web_exact_phrase"))
+        candidates.append(_novelty_web_plan_item(f'"{phrase}" "we propose" "novel"', "web_claim_collision"))
+        candidates.append(_novelty_web_plan_item(f'"{phrase}" OpenReview review rebuttal', "web_peer_review"))
     plan: list[dict[str, Any]] = []
     seen: set[str] = set()
     for item in candidates:
@@ -1280,6 +1299,10 @@ def _novelty_focus_is_deep(focus: Any) -> bool:
             "benchmark",
             "discovery",
             "architecture",
+            "exact",
+            "claim",
+            "critique",
+            "peer",
         )
     )
 
@@ -1397,7 +1420,7 @@ def _novelty_assessment(
     arxiv_plan = arxiv_plan or []
     web_plan = web_plan or []
     coverage = {
-        "search_strategy": "deep_recent_discovery_method_mechanism_architecture_evaluation_implementation_replication",
+        "search_strategy": "deep_recent_discovery_method_mechanism_architecture_evaluation_implementation_replication_exact_claim_collision",
         "arxiv_query_count": len(arxiv_plan),
         "web_query_count": len(web_plan),
         "arxiv_results_per_query": max((int(row.get("max_results", 0)) for row in arxiv_plan), default=0),
@@ -1424,7 +1447,9 @@ def _novelty_assessment(
         "recent_window": _novelty_recent_window_label(),
     }
     coverage["focus_coverage"] = _novelty_focus_coverage(coverage["arxiv_focuses"], coverage["web_focuses"])
+    coverage["threat_model_coverage"] = _novelty_threat_model_coverage(coverage["arxiv_focuses"], coverage["web_focuses"])
     comparison_matrix = _novelty_comparison_matrix(scored, coverage)
+    threat_model = _novelty_threat_model(scored, coverage)
     recent_pressure = _novelty_recent_pressure(rows)
     if not rows and errors:
         risk = "unknown_search_incomplete"
@@ -1450,6 +1475,8 @@ def _novelty_assessment(
         "claim_readiness": _novelty_claim_readiness(risk, top_score, coverage),
         "coverage": coverage,
         "comparison_matrix": comparison_matrix,
+        "novelty_threat_model": threat_model,
+        "disqualifying_overlap_tests": _novelty_disqualifying_overlap_tests(threat_model, coverage),
         "recent_pressure": recent_pressure,
         "required_delta": _novelty_required_delta(idea, closest, comparison_matrix, coverage),
     }
@@ -1499,10 +1526,15 @@ def _novelty_focus_coverage(arxiv_focuses: list[str], web_focuses: list[str]) ->
         "survey": "survey" in text,
         "recent_discovery": "discovery" in text,
         "architecture": "architecture" in text,
+        "exact_phrase": "exact" in text,
+        "claim_collision": "claim" in text,
+        "peer_review": "peer" in text or "critique" in text,
     }
 
 
 _NOVELTY_COMPARISON_AXES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
+    ("exact_phrase", ("exact", "same contribution"), ()),
+    ("claim_collision", ("claim", "same contribution", "we propose", "novel"), ()),
     ("recency", ("recent", "submitted", "updated", "discovery"), ()),
     ("method", ("method", "design", "approach"), ()),
     ("mechanism", ("mechanism", "ablation", "causal", "probe"), ()),
@@ -1510,6 +1542,7 @@ _NOVELTY_COMPARISON_AXES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ..
     ("evaluation", ("evaluation", "benchmark", "leaderboard", "metric"), ("benchmark",)),
     ("implementation", ("implementation", "repository", "code"), ("code_repository",)),
     ("replication", ("replication", "reproduction", "reproduce"), ()),
+    ("peer_review", ("peer", "critique", "review", "rebuttal"), ()),
     ("failure_modes", ("failure", "limitations", "negative"), ()),
     ("protocol", ("protocol", "dataset", "task"), ()),
 )
@@ -1569,6 +1602,113 @@ def _novelty_axis_next_action(axis: str, covered: bool, representative: dict[str
     return f"Summarize the strongest retrieved {axis.replace('_', ' ')} evidence and the remaining delta."
 
 
+def _novelty_threat_model_coverage(arxiv_focuses: list[str], web_focuses: list[str]) -> dict[str, bool]:
+    text = " ".join([*arxiv_focuses, *web_focuses]).lower()
+    return {
+        "exact_phrase_overlap": "exact" in text,
+        "claim_collision": "claim" in text,
+        "method_overlap": "method" in text,
+        "mechanism_overlap": "mechanism" in text,
+        "architecture_overlap": "architecture" in text,
+        "evaluation_overlap": "evaluation" in text or "benchmark" in text,
+        "implementation_overlap": "implementation" in text or "code" in text,
+        "replication_or_critique": "replication" in text or "reproduction" in text or "critique" in text or "peer" in text,
+    }
+
+
+def _novelty_threat_model(scored: list[dict[str, Any]], coverage: dict[str, Any]) -> list[dict[str, Any]]:
+    threat_specs = (
+        ("exact_phrase_overlap", ("exact", "same contribution"), "A prior uses the same phrase or names the same contribution."),
+        ("claim_collision", ("claim", "same contribution", "we propose", "novel"), "A prior claims the same core contribution."),
+        ("method_overlap", ("method", "design", "approach"), "A prior already implements the method."),
+        ("mechanism_overlap", ("mechanism", "ablation", "causal", "probe"), "A prior already gives the mechanistic explanation or causal test."),
+        ("architecture_overlap", ("architecture", "variant", "model"), "A prior already studies the same architectural variant."),
+        ("evaluation_overlap", ("evaluation", "benchmark", "leaderboard", "metric"), "A prior already runs the key evaluation or benchmark."),
+        ("implementation_overlap", ("implementation", "repository", "code"), "A prior already publishes implementation-level evidence."),
+        ("replication_or_critique", ("replication", "reproduction", "critique", "rebuttal"), "A replication, critique, or negative result changes the claim."),
+    )
+    coverage_map = coverage.get("threat_model_coverage") if isinstance(coverage.get("threat_model_coverage"), dict) else {}
+    rows: list[dict[str, Any]] = []
+    for name, terms, failure_mode in threat_specs:
+        matches = [row for row in scored if _novelty_prior_matches_axis(row, terms, ())]
+        top = max(matches, key=lambda row: row.get("score", 0.0), default={})
+        strongest = round(float(top.get("score", 0.0) or 0.0), 3) if top else 0.0
+        if strongest >= 0.55:
+            risk = "disqualifying_until_delta_is_demonstrated"
+        elif strongest >= 0.25 or matches:
+            risk = "needs_delta_review"
+        elif coverage_map.get(name):
+            risk = "searched_no_strong_overlap"
+        else:
+            risk = "not_searched"
+        rows.append(
+            {
+                "threat": name,
+                "searched": bool(coverage_map.get(name)),
+                "risk": risk,
+                "evidence_count": len(matches),
+                "strongest_score": strongest,
+                "representative_prior": _novelty_representative_prior(top),
+                "failure_mode": failure_mode,
+                "next_action": _novelty_threat_next_action(name, risk, top),
+            }
+        )
+    return rows
+
+
+def _novelty_threat_next_action(name: str, risk: str, top: dict[str, Any]) -> str:
+    label = name.replace("_", " ")
+    title = str(top.get("title", "")).strip() if top else ""
+    if risk == "not_searched":
+        return f"Run a targeted {label} search before considering the idea."
+    if title:
+        return f"Write the exact delta from '{title}' for the {label} threat."
+    if risk == "searched_no_strong_overlap":
+        return f"Record why retrieved evidence does not trigger the {label} threat."
+    return f"Resolve the {label} threat with a concrete empirical or architectural delta."
+
+
+def _novelty_disqualifying_overlap_tests(threat_model: list[dict[str, Any]], coverage: dict[str, Any]) -> list[dict[str, Any]]:
+    tests: list[dict[str, Any]] = []
+    for row in threat_model:
+        threat = str(row.get("threat", ""))
+        risk = str(row.get("risk", ""))
+        representative = row.get("representative_prior") if isinstance(row.get("representative_prior"), dict) else {}
+        tests.append(
+            {
+                "test": threat,
+                "passed": risk == "searched_no_strong_overlap",
+                "risk": risk,
+                "representative_prior": representative,
+                "required_evidence": _novelty_disqualifier_required_evidence(threat),
+            }
+        )
+    if coverage.get("recent_evidence", 0) < 1:
+        tests.append(
+            {
+                "test": "recent_prior_art_window",
+                "passed": False,
+                "risk": "missing_recent_prior_art",
+                "representative_prior": {},
+                "required_evidence": "Find at least one relevant prior in the recent-paper window or document why current search could not retrieve it.",
+            }
+        )
+    return tests
+
+
+def _novelty_disqualifier_required_evidence(threat: str) -> str:
+    return {
+        "exact_phrase_overlap": "Nearest exact-phrase prior and why its claim is materially different.",
+        "claim_collision": "Closest paper/project claiming the same contribution and the specific delta.",
+        "method_overlap": "Method-level comparison against the nearest implementation or paper.",
+        "mechanism_overlap": "Mechanism-level comparison backed by causal or ablation evidence.",
+        "architecture_overlap": "Architecture/model-family comparison showing what is new.",
+        "evaluation_overlap": "Evaluation and benchmark delta, including negative or replication evidence.",
+        "implementation_overlap": "Code/project comparison showing whether this is more than a reimplementation.",
+        "replication_or_critique": "Replication, critique, or failure-mode evidence and how it changes the claim.",
+    }.get(threat, "Closest counterexample and a concrete delta.")
+
+
 def _novelty_recent_pressure(rows: list[dict[str, Any]]) -> dict[str, Any]:
     recent_rows = [row for row in rows if _novelty_is_recent(row.get("published", ""))]
     years = sorted({year for row in rows if (year := _novelty_year(row.get("published", "")))}, reverse=True)
@@ -1622,6 +1762,7 @@ def _novelty_required_delta(
 
 def _novelty_claim_readiness(risk: str, top_score: float, coverage: dict[str, Any]) -> dict[str, Any]:
     focus_coverage = coverage.get("focus_coverage") if isinstance(coverage.get("focus_coverage"), dict) else {}
+    threat_coverage = coverage.get("threat_model_coverage") if isinstance(coverage.get("threat_model_coverage"), dict) else {}
     checks = {
         "deep_query_plan": coverage.get("arxiv_query_count", 0) >= 10
         and coverage.get("web_query_count", 0) >= 8
@@ -1646,6 +1787,19 @@ def _novelty_claim_readiness(risk: str, top_score: float, coverage: dict[str, An
         "credible_source_diversity": coverage.get("unique_source_domains", 0) >= 3
         and coverage.get("credible_source_count", 0) >= 2,
         "web_page_enrichment": coverage.get("web_results_with_page_text", 0) >= 1,
+        "threat_model_depth": all(
+            bool(threat_coverage.get(name))
+            for name in (
+                "exact_phrase_overlap",
+                "claim_collision",
+                "method_overlap",
+                "mechanism_overlap",
+                "architecture_overlap",
+                "evaluation_overlap",
+                "implementation_overlap",
+                "replication_or_critique",
+            )
+        ),
         "search_completed": coverage.get("failed_arxiv_queries", 0) == 0 and coverage.get("failed_web_queries", 0) == 0,
     }
     missing = [name for name, passed in checks.items() if not passed]
@@ -1682,6 +1836,8 @@ def _novelty_readiness_next_actions(status: str, missing: list[str]) -> list[str
         actions.append("Add recent submitted-date and updated-date searches for the last two years.")
     if "web_page_enrichment" in missing:
         actions.append("Fetch the top credible web/code/project pages and compare their technical details.")
+    if "threat_model_depth" in missing:
+        actions.append("Run exact-phrase, claim-collision, method, mechanism, architecture, evaluation, implementation, and critique searches before ranking novelty.")
     if not actions:
         actions.append("Use the closest prior art list to write a precise required delta; do not claim high novelty without expert review.")
     return actions
