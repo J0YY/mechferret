@@ -58,9 +58,9 @@ Workflow when the user wants to plan research:
 3. Call present_options with 2-5 concrete directions (each with a one-line
    summary, a fuller detail paragraph, key citations, novelty_risk,
    novelty_verdict, closest_prior_art, claim_readiness, comparison_matrix,
-   novelty_threat_model, disqualifying_overlap_tests, recent_pressure, and
-   required_delta) so the user can browse and pick. Do NOT write the options out
-   as prose.
+   novelty_threat_model, disqualifying_overlap_tests, search_audit,
+   recent_pressure, and required_delta) so the user can browse and pick. Do NOT
+   write the options out as prose.
 
 OUTPUT RULES (important):
 - Plain text only. No markdown: no #, *, **, backticks, tables, or '-' bullets.

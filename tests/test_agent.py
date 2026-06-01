@@ -52,6 +52,42 @@ def _option_disqualifying_tests():
     ]
 
 
+def _option_search_audit():
+    return {
+        "pass_count": 18,
+        "failed_passes": 0,
+        "empty_search_passes": 2,
+        "empty_arxiv_passes": 1,
+        "empty_web_passes": 1,
+        "duplicate_only_search_passes": 3,
+        "empty_focuses": [
+            {"source": "arxiv", "focus": "peer_review_critique"},
+            {"source": "web", "focus": "web_peer_review"},
+        ],
+        "failed_focuses": [],
+        "focus_summary": [
+            {
+                "source": "arxiv",
+                "focus": "recent_discovery",
+                "passes": 1,
+                "failed_passes": 0,
+                "retrieved": 50,
+                "unique_added": 4,
+                "requested_results_max": 50,
+            },
+            {
+                "source": "web",
+                "focus": "web_recent_discovery",
+                "passes": 1,
+                "failed_passes": 0,
+                "retrieved": 24,
+                "unique_added": 3,
+                "requested_results_max": 24,
+            },
+        ],
+    }
+
+
 class AgentToolTest(unittest.TestCase):
     def test_tool_schemas_are_well_formed(self):
         from mechferret import tools
@@ -106,6 +142,7 @@ class AgentToolTest(unittest.TestCase):
         option_schema = next(tool for tool in tools.TOOL_SPECS if tool["name"] == "present_options")["parameters"]["properties"]["options"]["items"]
         self.assertIn("novelty_threat_model", option_schema["required"])
         self.assertIn("disqualifying_overlap_tests", option_schema["required"])
+        self.assertIn("search_audit", option_schema["required"])
 
     def test_resolve_artifact_tool_returns_json(self):
         from mechferret import tools
@@ -757,6 +794,45 @@ class AgentToolTest(unittest.TestCase):
             "objects with disqualifying_overlap_tests from verify_novelty assessment",
         )
 
+        bad_search_audit = json.loads(
+            tools.run_tool(
+                "present_options",
+                {
+                    "options": [
+                        {
+                            "title": "Thin option",
+                            "summary": "missing search audit",
+                            "detail": "A direction without per-query search audit evidence should be rejected.",
+                            "citations": ["https://arxiv.org/abs/2501.0001"],
+                            "novelty_risk": "medium_prior_art_risk",
+                            "novelty_verdict": "Related work exists.",
+                            "closest_prior_art": [],
+                            "claim_readiness": {
+                                "status": "not_ready_needs_more_evidence",
+                                "can_claim_high_novelty": False,
+                                "missing_checks": ["focus_breadth"],
+                                "next_actions": ["Run follow-up searches."],
+                            },
+                            "comparison_matrix": [
+                                {"axis": "method", "covered": True, "evidence_count": 1, "next_action": "Compare method."},
+                                {"axis": "evaluation", "covered": False, "evidence_count": 0, "next_action": "Add benchmark."},
+                            ],
+                            "novelty_threat_model": _option_threat_model(),
+                            "disqualifying_overlap_tests": _option_disqualifying_tests(),
+                            "recent_pressure": {
+                                "status": "recent_prior_present",
+                                "recent_window": "2024-2026",
+                                "recent_evidence_count": 1,
+                            },
+                            "required_delta": ["Show a measurable delta."],
+                        }
+                    ]
+                },
+            )
+        )
+        self.assertFalse(bad_search_audit["ok"])
+        self.assertEqual(bad_search_audit["expected"], "objects with search_audit from verify_novelty assessment")
+
         ok = json.loads(
             tools.run_tool(
                 "present_options",
@@ -793,6 +869,7 @@ class AgentToolTest(unittest.TestCase):
                             ],
                             "novelty_threat_model": _option_threat_model(),
                             "disqualifying_overlap_tests": _option_disqualifying_tests(),
+                            "search_audit": _option_search_audit(),
                             "recent_pressure": {
                                 "status": "recent_prior_present",
                                 "recent_window": "2024-2026",
@@ -819,6 +896,9 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(ok["option_details"][0]["novelty_threat_model"][1]["representative_prior"]["source_type"], "paper")
         self.assertEqual(ok["option_details"][0]["disqualifying_overlap_tests"][1]["test"], "claim_collision")
         self.assertFalse(ok["option_details"][0]["disqualifying_overlap_tests"][1]["passed"])
+        self.assertEqual(ok["option_details"][0]["search_audit"]["pass_count"], 18)
+        self.assertEqual(ok["option_details"][0]["search_audit"]["empty_search_passes"], 2)
+        self.assertEqual(ok["option_details"][0]["search_audit"]["focus_summary"][0]["requested_results_max"], 50)
         self.assertEqual(ok["option_details"][0]["recent_pressure"]["status"], "recent_prior_present")
         self.assertEqual(ok["option_details"][0]["recent_pressure"]["latest_year"], 2025)
 
@@ -1750,6 +1830,7 @@ class AgentToolTest(unittest.TestCase):
                     ],
                     "novelty_threat_model": _option_threat_model(),
                     "disqualifying_overlap_tests": _option_disqualifying_tests(),
+                    "search_audit": _option_search_audit(),
                     "recent_pressure": {
                         "status": "recent_prior_present",
                         "recent_window": "2024-2026",
@@ -1770,10 +1851,12 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(selected["selected_option"]["comparison_matrix"][1]["axis"], "evaluation")
         self.assertEqual(selected["selected_option"]["novelty_threat_model"][1]["threat"], "claim_collision")
         self.assertEqual(selected["selected_option"]["disqualifying_overlap_tests"][0]["test"], "exact_phrase_overlap")
+        self.assertEqual(selected["selected_option"]["search_audit"]["pass_count"], 18)
         self.assertEqual(picked[0][0]["required_delta"], "Show a causal ablation.")
         self.assertEqual(picked[0][0]["comparison_matrix"][1]["axis"], "evaluation")
         self.assertEqual(picked[0][0]["novelty_threat_model"][1]["risk"], "needs_delta_review")
         self.assertFalse(picked[0][0]["disqualifying_overlap_tests"][1]["passed"])
+        self.assertEqual(picked[0][0]["search_audit"]["duplicate_only_search_passes"], 3)
         self.assertEqual(picked[0][0]["recent_pressure"]["status"], "recent_prior_present")
 
     def test_agent_dispatch_preserves_deferred_option_selection_payload(self):
@@ -1808,6 +1891,7 @@ class AgentToolTest(unittest.TestCase):
                     ],
                     "novelty_threat_model": _option_threat_model(),
                     "disqualifying_overlap_tests": _option_disqualifying_tests(),
+                    "search_audit": _option_search_audit(),
                     "recent_pressure": {
                         "status": "recent_prior_present",
                         "recent_window": "2024-2026",
@@ -1828,6 +1912,7 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(selected["option_details"][0]["title"], "Novelty audit")
         self.assertEqual(selected["option_details"][0]["novelty_threat_model"][0]["threat"], "exact_phrase_overlap")
         self.assertEqual(selected["option_details"][0]["disqualifying_overlap_tests"][1]["test"], "claim_collision")
+        self.assertEqual(selected["option_details"][0]["search_audit"]["empty_search_passes"], 2)
         self.assertNotIn("selected_option", selected)
 
     def test_large_output_persisted(self):

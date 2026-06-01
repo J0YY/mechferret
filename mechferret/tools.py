@@ -2314,6 +2314,14 @@ def _validate_option_card(option: dict[str, Any], index: int) -> dict[str, Any] 
             index=index,
             expected="objects with disqualifying_overlap_tests from verify_novelty assessment",
         )
+    search_audit = option.get("search_audit")
+    if not _valid_option_search_audit(search_audit):
+        return _invalid_object_list_payload(
+            "options",
+            search_audit,
+            index=index,
+            expected="objects with search_audit from verify_novelty assessment",
+        )
     recent_pressure = option.get("recent_pressure")
     if not _valid_option_recent_pressure(recent_pressure):
         return _invalid_object_list_payload(
@@ -2369,6 +2377,9 @@ def _option_detail(option: dict[str, Any]) -> dict[str, Any]:
     disqualifying_tests = _option_disqualifying_tests(option.get("disqualifying_overlap_tests"))
     if disqualifying_tests:
         detail["disqualifying_overlap_tests"] = disqualifying_tests
+    search_audit = _option_search_audit(option.get("search_audit"))
+    if search_audit:
+        detail["search_audit"] = search_audit
     recent_pressure = _option_recent_pressure(option.get("recent_pressure"))
     if recent_pressure:
         detail["recent_pressure"] = recent_pressure
@@ -2522,6 +2533,80 @@ def _option_disqualifying_tests(value: Any) -> list[dict[str, Any]]:
             row["representative_prior"] = prior
         rows.append(row)
     return rows[:8]
+
+
+def _valid_option_search_audit(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    required_keys = {"pass_count", "failed_passes", "empty_search_passes", "duplicate_only_search_passes"}
+    if not required_keys <= set(value):
+        return False
+    audit = _option_search_audit(value)
+    if not audit:
+        return False
+    return audit.get("pass_count", 0) > 0 and "failed_passes" in audit and "empty_search_passes" in audit
+
+
+def _option_search_audit(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    audit: dict[str, Any] = {}
+    for key in (
+        "pass_count",
+        "failed_passes",
+        "empty_search_passes",
+        "empty_arxiv_passes",
+        "empty_web_passes",
+        "duplicate_only_search_passes",
+    ):
+        audit[key] = _safe_int(value.get(key))
+    for key in ("empty_focuses", "failed_focuses"):
+        rows = _option_search_focus_rows(value.get(key))
+        if rows:
+            audit[key] = rows[:8]
+    focus_summary = _option_search_focus_summary(value.get("focus_summary"))
+    if focus_summary:
+        audit["focus_summary"] = focus_summary
+    return audit if audit["pass_count"] > 0 else {}
+
+
+def _option_search_focus_rows(value: Any) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        return []
+    rows: list[dict[str, str]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        source = str(item.get("source", "")).strip()
+        focus = str(item.get("focus", "")).strip()
+        if source and focus:
+            rows.append({"source": source, "focus": focus})
+    return rows
+
+
+def _option_search_focus_summary(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    rows: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        source = str(item.get("source", "")).strip()
+        focus = str(item.get("focus", "")).strip()
+        if not source or not focus:
+            continue
+        rows.append(
+            {
+                "source": source,
+                "focus": focus,
+                "passes": _safe_int(item.get("passes")),
+                "failed_passes": _safe_int(item.get("failed_passes")),
+                "retrieved": _safe_int(item.get("retrieved")),
+                "unique_added": _safe_int(item.get("unique_added")),
+                "requested_results_max": _safe_int(item.get("requested_results_max")),
+            }
+        )
+    return rows[:12]
 
 
 def _option_prior(value: Any) -> dict[str, Any]:
@@ -3411,7 +3496,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
      "parameters": _obj({"model_id": {"type": "string"}, "query": {"type": "string"}}, ["model_id", "query"])},
     {"name": "verify_novelty", "description": "Deep novelty check for a research idea using multi-pass arXiv and web searches across relevance, recency, recent discoveries, architecture variants, method, mechanism, evaluation, implementation, replication, failure-mode, and protocol angles. Call this for each proposed research direction before presenting it.",
      "parameters": _obj({"idea": {"type": "string", "description": "the research idea/direction to novelty-check"}, "queries": {"type": "array", "items": {"type": "string"}, "description": "optional arXiv queries to probe for prior work"}}, ["idea"])},
-    {"name": "present_options", "description": "Present 2-5 research directions to the user as an interactive, expandable picker and return their choice. Use this instead of writing options as prose. Every option must include detail, citations, novelty_risk, novelty_verdict, closest_prior_art, claim_readiness, comparison_matrix, novelty_threat_model, disqualifying_overlap_tests, recent_pressure, and required_delta from verify_novelty assessment.",
+    {"name": "present_options", "description": "Present 2-5 research directions to the user as an interactive, expandable picker and return their choice. Use this instead of writing options as prose. Every option must include detail, citations, novelty_risk, novelty_verdict, closest_prior_art, claim_readiness, comparison_matrix, novelty_threat_model, disqualifying_overlap_tests, search_audit, recent_pressure, and required_delta from verify_novelty assessment.",
      "parameters": _obj({"options": {"type": "array", "items": {"type": "object", "properties": {
          "title": {"type": "string"},
          "summary": {"type": "string", "description": "one line"},
@@ -3446,6 +3531,17 @@ TOOL_SPECS: list[dict[str, Any]] = [
              "representative_prior": {"type": "object"},
              "required_evidence": {"type": "string"},
          }}, "description": "assessment.disqualifying_overlap_tests from verify_novelty; include exact_phrase_overlap and claim_collision rows."},
+         "search_audit": {"type": "object", "properties": {
+             "pass_count": {"type": "integer"},
+             "failed_passes": {"type": "integer"},
+             "empty_search_passes": {"type": "integer"},
+             "empty_arxiv_passes": {"type": "integer"},
+             "empty_web_passes": {"type": "integer"},
+             "duplicate_only_search_passes": {"type": "integer"},
+             "empty_focuses": {"type": "array", "items": {"type": "object"}},
+             "failed_focuses": {"type": "array", "items": {"type": "object"}},
+             "focus_summary": {"type": "array", "items": {"type": "object"}},
+         }, "description": "assessment.search_audit from verify_novelty; include pass_count, failed_passes, empty_search_passes, duplicate_only_search_passes, and focus_summary."},
          "recent_pressure": {"type": "object", "properties": {
              "status": {"type": "string"},
              "recent_window": {"type": "string"},
@@ -3454,7 +3550,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
              "recent_prior_titles": {"type": "array", "items": {"type": "string"}},
          }, "description": "assessment.recent_pressure from verify_novelty; include status, recent_window, recent_evidence_count, latest_year, and recent_prior_titles."},
          "required_delta": {"type": "string", "description": "specific deltas from assessment.required_delta; join multiple entries into one concise string"},
-     }, "required": ["title", "summary", "detail", "citations", "novelty_risk", "novelty_verdict", "closest_prior_art", "claim_readiness", "comparison_matrix", "novelty_threat_model", "disqualifying_overlap_tests", "recent_pressure", "required_delta"]}}}, ["options"])},
+     }, "required": ["title", "summary", "detail", "citations", "novelty_risk", "novelty_verdict", "closest_prior_art", "claim_readiness", "comparison_matrix", "novelty_threat_model", "disqualifying_overlap_tests", "search_audit", "recent_pressure", "required_delta"]}}}, ["options"])},
     {"name": "run_research", "description": "Run the general prompt-to-dossier literature/research pipeline over explicit sources, URLs, memory, or a configured provider.",
      "parameters": _obj({
          "question": {"type": "string"},

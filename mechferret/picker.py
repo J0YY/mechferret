@@ -91,6 +91,28 @@ def _disqualifier_bits(value) -> list[str]:
     return bits
 
 
+def _search_audit_bits(value) -> list[str]:
+    if not isinstance(value, dict):
+        return []
+    bits: list[str] = []
+    for key, label in (
+        ("pass_count", "passes"),
+        ("failed_passes", "failed"),
+        ("empty_search_passes", "empty"),
+        ("duplicate_only_search_passes", "duplicates"),
+    ):
+        count = value.get(key)
+        if isinstance(count, int) and count:
+            bits.append(f"{label}:{count}")
+    failed_focuses = value.get("failed_focuses")
+    if isinstance(failed_focuses, list) and failed_focuses:
+        bits.append("failed focuses:" + str(len(failed_focuses)))
+    empty_focuses = value.get("empty_focuses")
+    if isinstance(empty_focuses, list) and empty_focuses:
+        bits.append("empty focuses:" + str(len(empty_focuses)))
+    return bits
+
+
 def _select_rich_fallback(prompt, options):
     out = sys.stderr
     if prompt:
@@ -113,6 +135,9 @@ def _select_rich_fallback(prompt, options):
         disqualifiers = _disqualifier_bits(o.get("disqualifying_overlap_tests"))
         if disqualifiers:
             out.write("      disqualifiers: " + ", ".join(disqualifiers[:3]) + "\n")
+        audit = _search_audit_bits(o.get("search_audit"))
+        if audit:
+            out.write("      search audit: " + ", ".join(audit[:5]) + "\n")
         if o.get("novelty"):
             out.write(f"      novelty: {o['novelty']}\n")
         closest = o.get("closest_prior_art") or []
@@ -175,6 +200,9 @@ def _select_rich_tty(prompt, options):
                 disqualifiers = _disqualifier_bits(o.get("disqualifying_overlap_tests"))
                 if disqualifiers:
                     rows.append("      disqualifiers: " + ", ".join(disqualifiers[:5]))
+                audit = _search_audit_bits(o.get("search_audit"))
+                if audit:
+                    rows.append("      search audit: " + ", ".join(audit[:5]))
                 matrix = o.get("comparison_matrix") or []
                 if isinstance(matrix, list) and matrix:
                     axis_bits = []
