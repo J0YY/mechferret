@@ -81,6 +81,10 @@ def _record_background_output(text: str) -> None:
         return
     job.output.append(cleaned)
     _trim_job_output(job)
+    runner = getattr(_BACKGROUND_JOB, "runner", None)
+    save_pending = getattr(runner, "save_pending", None)
+    if callable(save_pending):
+        save_pending(include_active=True)
 
 
 def _trim_job_output(job: "PromptJob") -> None:
@@ -183,6 +187,7 @@ class ChatJobRunner:
         kind: str = "prompt",
         preferred_id: int | None = None,
         created_at: float | None = None,
+        output: list[str] | None = None,
     ) -> PromptJob:
         with self._lock:
             job = PromptJob(
@@ -190,7 +195,9 @@ class ChatJobRunner:
                 text=text,
                 kind=kind,
                 created_at=created_at if created_at is not None else time.time(),
+                output=list(output or [])[-80:],
             )
+            _trim_job_output(job)
             self._jobs.append(job)
         self._queue.put(job)
         self.save_pending()
@@ -202,6 +209,7 @@ class ChatJobRunner:
         *,
         preferred_id: int | None = None,
         created_at: float | None = None,
+        output: list[str] | None = None,
     ) -> PromptJob:
         with self._lock:
             job = PromptJob(
@@ -210,7 +218,9 @@ class ChatJobRunner:
                 kind="btw",
                 status="running",
                 created_at=created_at if created_at is not None else time.time(),
+                output=list(output or [])[-80:],
             )
+            _trim_job_output(job)
             self._jobs.append(job)
         thread = threading.Thread(target=self._run_side, args=(job,), daemon=True)
         with self._lock:
@@ -266,9 +276,24 @@ class ChatJobRunner:
         restored: list[PromptJob] = []
         for saved in restored_jobs:
             if saved.kind == "btw":
-                restored.append(self.submit_side(saved.text, preferred_id=saved.id, created_at=saved.created_at))
+                restored.append(
+                    self.submit_side(
+                        saved.text,
+                        preferred_id=saved.id,
+                        created_at=saved.created_at,
+                        output=saved.output,
+                    )
+                )
             else:
-                restored.append(self.submit(saved.text, kind=saved.kind, preferred_id=saved.id, created_at=saved.created_at))
+                restored.append(
+                    self.submit(
+                        saved.text,
+                        kind=saved.kind,
+                        preferred_id=saved.id,
+                        created_at=saved.created_at,
+                        output=saved.output,
+                    )
+                )
         return restored
 
     def clear_saved(self) -> int:
@@ -687,6 +712,7 @@ class ChatJobRunner:
                 self._set_active(job)
                 self.save_pending()
                 _BACKGROUND_JOB.job = job
+                _BACKGROUND_JOB.runner = self
                 _print_background(_c(f"  ▶ queued #{job.id} {job.kind}: {_short_job_text(_display_job_text(job))}", "2"))
                 reply = self._chat_fn(self.agent, self.session, job.text, background=True)
                 if reply is None:
@@ -705,12 +731,14 @@ class ChatJobRunner:
             finally:
                 if getattr(_BACKGROUND_JOB, "job", None) is job:
                     _BACKGROUND_JOB.job = None
+                    _BACKGROUND_JOB.runner = None
                 self._set_active(None)
                 self._queue.task_done()
 
     def _run_side(self, job: PromptJob) -> None:
         try:
             _BACKGROUND_JOB.job = job
+            _BACKGROUND_JOB.runner = self
             _print_background(_c(f"  ▶ side #{job.id}: {_short_job_text(_display_job_text(job))}", "2"))
             side_agent = self._side_agent_factory(self.agent)
             side_session = Session()
@@ -730,6 +758,7 @@ class ChatJobRunner:
         finally:
             if getattr(_BACKGROUND_JOB, "job", None) is job:
                 _BACKGROUND_JOB.job = None
+                _BACKGROUND_JOB.runner = None
 
 
 def _job_to_dict(job: PromptJob) -> dict[str, Any]:

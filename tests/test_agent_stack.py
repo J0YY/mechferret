@@ -3021,6 +3021,63 @@ class AgentStackTest(unittest.TestCase):
 
         self.assertEqual(started, ["active prompt"])
 
+    def test_repl_background_output_is_persisted_while_job_runs(self):
+        from mechferret import repl
+
+        queue_path = Path("active-output-queue.json")
+        release = threading.Event()
+        emitted = threading.Event()
+
+        def fake_chat(agent, session, text, *, background=False):
+            repl._print_background("partial output saved before shutdown")
+            emitted.set()
+            self.assertTrue(release.wait(timeout=2))
+            return text
+
+        with redirect_stdout(StringIO()):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=queue_path)
+            try:
+                runner.submit("active prompt")
+                self.assertTrue(emitted.wait(timeout=2))
+                saved = runner.saved()
+            finally:
+                release.set()
+                runner.stop(wait=True)
+
+        self.assertEqual([job.text for job in saved], ["active prompt"])
+        self.assertTrue(any("partial output saved before shutdown" in item for item in saved[0].output))
+
+    def test_repl_restore_saved_job_preserves_captured_output(self):
+        from mechferret import repl
+
+        queue_path = Path("restore-output-queue.json")
+        repl._save_queue_jobs(
+            queue_path,
+            [
+                repl.PromptJob(
+                    id=7,
+                    text="resume prompt",
+                    status="running",
+                    output=["captured before restart"],
+                )
+            ],
+        )
+
+        with redirect_stdout(StringIO()):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: "resumed", queue_path=queue_path)
+            try:
+                runner.pause()
+                restored = runner.restore_saved("running")
+                self.assertEqual([job.output for job in restored], [["captured before restart"]])
+                runner.resume()
+                self.assertTrue(runner.wait_idle(timeout=2))
+            finally:
+                runner.resume()
+                runner.stop(wait=True)
+
+        self.assertEqual(restored[0].status, "done")
+        self.assertTrue(any("captured before restart" in item for item in restored[0].output))
+
     def test_repl_stop_wait_joins_side_jobs_after_fast_shutdown(self):
         from mechferret import repl
 
