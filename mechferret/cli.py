@@ -11,7 +11,7 @@ from typing import Any
 
 from . import __version__
 from .audit import audit_run_artifact, latest_run_json, print_audit
-from .config import PROVIDERS, configure_provider, configured_model, default_config_path, load_config, prompt_api_key, save_config
+from .config import PROVIDERS, configure_provider, configured_api_key, configured_model, default_config_path, load_config, prompt_api_key, save_config
 from .controller import MechFerret
 from .costs import estimate_run_cost
 from .discovery import DiscoveryController
@@ -129,7 +129,7 @@ COMMAND_EXAMPLES = {
         'mechferret run "What should I investigate?" --seed-corpus --json',
     ],
     "demo": ["mechferret demo --out runs/demo", "mechferret demo --json"],
-    "login": ['mechferret login openai --api-key "$OPENAI_API_KEY" --json'],
+    "login": ['mechferret login openai --api-key "$OPENAI_API_KEY" --model "$OPENAI_MODEL" --json'],
     "api": [
         "mechferret api --show --json",
         "mechferret api --provider local --json",
@@ -709,7 +709,10 @@ def main(argv: list[str] | None = None) -> None:
             make_default=not args.no_default,
         )
         if args.json:
-            print(json.dumps(_api_payload(load_config(), action="login", path=path, provider=args.provider), indent=2, sort_keys=True))
+            payload = _api_payload(load_config(), action="login", path=path, provider=args.provider)
+            print(json.dumps(payload, indent=2, sort_keys=True))
+            if not payload["ok"]:
+                raise SystemExit(2)
             return
         print(f"Stored {args.provider} credentials in {path}")
         if not configured_model(args.provider, load_config()):
@@ -3053,7 +3056,10 @@ def handle_api_command(args) -> None:
             config.default_provider = "local"
             path = save_config(config)
             if args.json:
-                print(json.dumps(_api_payload(config, action="set-default", path=path, provider="local"), indent=2, sort_keys=True))
+                payload = _api_payload(config, action="set-default", path=path, provider="local")
+                print(json.dumps(payload, indent=2, sort_keys=True))
+                if not payload["ok"]:
+                    raise SystemExit(2)
                 return
             print(f"Default provider: local ({path})")
             return
@@ -3063,17 +3069,27 @@ def handle_api_command(args) -> None:
         if args.model:
             settings.model = args.model
         if args.api_key or args.model:
-            config.default_provider = args.provider
+            if _provider_ready_for_default(args.provider, config):
+                config.default_provider = args.provider
+            elif config.default_provider == args.provider:
+                config.default_provider = "local"
             path = save_config(config)
             if args.json:
-                print(json.dumps(_api_payload(config, action="update", path=path, provider=args.provider), indent=2, sort_keys=True))
+                payload = _api_payload(config, action="update", path=path, provider=args.provider)
+                print(json.dumps(payload, indent=2, sort_keys=True))
+                if not payload["ok"]:
+                    raise SystemExit(2)
                 return
             print(f"Updated {args.provider} in {path}")
             return
-        config.default_provider = args.provider
+        if _provider_ready_for_default(args.provider, config):
+            config.default_provider = args.provider
         path = save_config(config)
         if args.json:
-            print(json.dumps(_api_payload(config, action="set-default", path=path, provider=args.provider), indent=2, sort_keys=True))
+            payload = _api_payload(config, action="set-default", path=path, provider=args.provider)
+            print(json.dumps(payload, indent=2, sort_keys=True))
+            if not payload["ok"]:
+                raise SystemExit(2)
             return
         print(f"Default provider: {args.provider} ({path})")
         return
@@ -3105,6 +3121,10 @@ def handle_api_command(args) -> None:
     raise SystemExit(2)
 
 
+def _provider_ready_for_default(provider: str, config) -> bool:
+    return bool(configured_api_key(provider, config) and configured_model(provider, config))
+
+
 def _api_payload(config, *, action: str, path: str | Path, provider: str = "") -> dict[str, Any]:
     providers = {}
     for name in sorted(PROVIDERS):
@@ -3128,7 +3148,7 @@ def _api_payload(config, *, action: str, path: str | Path, provider: str = "") -
         payload["ok"] = False
         env_name = f"{default_provider.upper()}_API_KEY"
         next_actions.append(
-            f"Configure the default provider with `mechferret login {default_provider} --api-key ${env_name}` "
+            f"Configure the default provider with `mechferret login {default_provider} --api-key ${env_name} --model <model>` "
             "or switch to local with `mechferret api --provider local`."
         )
     if default_provider in PROVIDERS and providers[default_provider]["key"] != "missing" and providers[default_provider]["model"] == "missing":
@@ -3138,15 +3158,29 @@ def _api_payload(config, *, action: str, path: str | Path, provider: str = "") -
             f"Set a model for {default_provider} with `mechferret api --provider {default_provider} --model <model>` "
             f"or export {env_name}."
         )
+    if provider in PROVIDERS and action in {"login", "update", "set-default"}:
+        if providers[provider]["key"] == "missing":
+            payload["ok"] = False
+            env_name = f"{provider.upper()}_API_KEY"
+            next_actions.append(f"Configure {provider} with `mechferret login {provider} --api-key ${env_name} --model <model>`.")
+        if providers[provider]["model"] == "missing":
+            payload["ok"] = False
+            env_name = f"MECHFERRET_{provider.upper()}_MODEL"
+            next_actions.append(
+                f"Set a model for {provider} with `mechferret api --provider {provider} --model <model>` "
+                f"or export {env_name}."
+            )
     for name in sorted(PROVIDERS):
-        if name == default_provider:
+        if name == default_provider or (name == provider and action in {"login", "update", "set-default"}):
             continue
         if providers[name]["key"] == "missing":
             env_name = f"{name.upper()}_API_KEY"
-            suggested_next_actions.append(f"Configure {name} with `mechferret login {name} --api-key ${env_name}`.")
+            suggested_next_actions.append(f"Configure {name} with `mechferret login {name} --api-key ${env_name} --model <model>`.")
         elif providers[name]["model"] == "missing":
             env_name = f"MECHFERRET_{name.upper()}_MODEL"
             suggested_next_actions.append(f"Set {name}'s model with `mechferret api --provider {name} --model <model>` or {env_name}.")
+    next_actions = list(dict.fromkeys(next_actions))
+    suggested_next_actions = list(dict.fromkeys(suggested_next_actions))
     if next_actions:
         payload["next_actions"] = next_actions
     if suggested_next_actions:

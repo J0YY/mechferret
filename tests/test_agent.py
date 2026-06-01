@@ -2182,8 +2182,16 @@ class AgentToolTest(unittest.TestCase):
 
             configured = configure_provider("openai", "  key  ", model="  gpt-trim  ", path=root / "configured.json")
             loaded = load_config(configured)
+            self.assertEqual(loaded.default_provider, "openai")
             self.assertEqual(loaded.providers["openai"].api_key, "key")
             self.assertEqual(loaded.providers["openai"].model, "gpt-trim")
+
+            with patch.dict(os.environ, {}, clear=True):
+                partial = configure_provider("anthropic", "  key  ", path=root / "partial.json")
+            partial_loaded = load_config(partial)
+            self.assertEqual(partial_loaded.default_provider, "local")
+            self.assertEqual(partial_loaded.providers["anthropic"].api_key, "key")
+            self.assertEqual(partial_loaded.providers["anthropic"].model, "")
 
 
 if __name__ == "__main__":

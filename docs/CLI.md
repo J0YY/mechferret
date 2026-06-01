@@ -937,7 +937,7 @@ Options:
 
 Examples:
 
-- `mechferret login openai --api-key "$OPENAI_API_KEY" --json`
+- `mechferret login openai --api-key "$OPENAI_API_KEY" --model "$OPENAI_MODEL" --json`
 
 ### `api`
 

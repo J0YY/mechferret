@@ -853,14 +853,15 @@ class OpsRegistryTest(unittest.TestCase):
                 self.assertIn("mechferret login anthropic", " ".join(shown["suggested_next_actions"]))
 
                 default_out = StringIO()
-                with redirect_stdout(default_out):
-                    main(["api", "--provider", "openai", "--json"])
+                with self.assertRaises(SystemExit) as ctx:
+                    with redirect_stdout(default_out):
+                        main(["api", "--provider", "openai", "--json"])
+                self.assertEqual(ctx.exception.code, 2)
                 defaulted = json.loads(default_out.getvalue())
                 self.assertFalse(defaulted["ok"])
                 self.assertEqual(defaulted["action"], "set-default")
-                self.assertEqual(defaulted["default_provider"], "openai")
+                self.assertEqual(defaulted["default_provider"], "local")
                 self.assertIn("mechferret login openai", " ".join(defaulted["next_actions"]))
-                self.assertIn("mechferret api --provider local", " ".join(defaulted["next_actions"]))
                 self.assertIn("mechferret login anthropic", " ".join(defaulted["suggested_next_actions"]))
 
                 update_out = StringIO()
@@ -933,11 +934,13 @@ class OpsRegistryTest(unittest.TestCase):
                 self.assertNotIn("sk-test-secret", login_out.getvalue())
 
                 update_out = StringIO()
-                with redirect_stdout(update_out):
-                    main(["login", "openai", "--api-key", "sk-openai-secret", "--json"])
+                with self.assertRaises(SystemExit) as ctx:
+                    with redirect_stdout(update_out):
+                        main(["login", "openai", "--api-key", "sk-openai-secret", "--json"])
+                self.assertEqual(ctx.exception.code, 2)
                 updated = json.loads(update_out.getvalue())
                 self.assertFalse(updated["ok"])
-                self.assertEqual(updated["default_provider"], "openai")
+                self.assertEqual(updated["default_provider"], "local")
                 self.assertEqual(updated["providers"]["openai"]["key"], "configured")
                 self.assertEqual(updated["providers"]["openai"]["model"], "missing")
                 self.assertIn("mechferret api --provider openai --model <model>", " ".join(updated["next_actions"]))

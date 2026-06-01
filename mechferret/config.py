@@ -135,6 +135,6 @@ def configure_provider(
         settings.model = model.strip()
     elif not settings.model:
         settings.model = configured_model(provider, config)
-    if make_default:
+    if make_default and configured_api_key(provider, config) and configured_model(provider, config):
         config.default_provider = provider
     return save_config(config, path)
