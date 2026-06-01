@@ -1166,6 +1166,64 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("partial two", rendered)
         self.assertIn("job #1 done", rendered)
 
+    def test_repl_queue_tail_single_numeric_arg_is_timeout_for_active_job(self):
+        from mechferret import repl
+
+        release = threading.Event()
+        partial_emitted = threading.Event()
+
+        def fake_chat(agent, session, text, *, background=False):
+            repl._print_background(f"partial {text}")
+            partial_emitted.set()
+            self.assertTrue(release.wait(timeout=2))
+            return "final answer"
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-tail-timeout.json"))
+            try:
+                runner.submit("numeric timeout prompt")
+                self.assertTrue(partial_emitted.wait(timeout=2))
+                release.set()
+                repl._queue_tail(runner, ["2"])
+            finally:
+                release.set()
+                runner.wait_idle(timeout=2)
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("following #1", rendered)
+        self.assertIn("timeout 2s", rendered)
+        self.assertIn("partial numeric timeout prompt", rendered)
+        self.assertIn("job #1 done", rendered)
+
+    def test_repl_queue_tail_single_numeric_arg_prefers_matching_job_id(self):
+        from mechferret import repl
+
+        def fake_chat(agent, session, text, *, background=False):
+            repl._print_background(f"output {text}")
+            return f"reply {text}"
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-tail-id.json"))
+            try:
+                runner.submit("one")
+                runner.submit("two")
+                runner.submit("three")
+                self.assertTrue(runner.wait_idle(timeout=2))
+                repl._queue_tail(runner, ["2"])
+            finally:
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("following #2", rendered)
+        tail_section = rendered.split("following #2", 1)[1]
+        self.assertIn("timeout 60s", tail_section)
+        self.assertIn("output two", tail_section)
+        self.assertNotIn("following #3", tail_section)
+        self.assertNotIn("output three", tail_section)
+
     def test_repl_btw_runs_while_main_prompt_is_active(self):
         from mechferret import repl
 

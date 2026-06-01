@@ -1770,24 +1770,46 @@ def _queue_show(runner: ChatJobRunner, args: list[str]) -> None:
             print(_c(f"  use /queue choose #{job.id} <number|title> to continue from one option", "2"))
 
 
-def _queue_tail(runner: ChatJobRunner, args: list[str]) -> None:
+def _queue_tail_args(runner: ChatJobRunner, args: list[str]) -> tuple[str, float, bool, str]:
     target = args[0] if args else "running"
     timeout = 60.0
+    uses_default_target = not args
+    if len(args) == 1:
+        job, _saved = runner.find_job(target)
+        if job is None:
+            try:
+                timeout = float(target)
+            except ValueError:
+                pass
+            else:
+                if timeout <= 0:
+                    return "", 0.0, uses_default_target, "positive"
+                target = "running"
+                uses_default_target = True
     if len(args) > 1:
         try:
             timeout = float(args[1])
         except ValueError:
-            print(_c("  usage: /queue tail [job id|latest|active|running|side] [seconds]", "33"))
-            return
+            return "", 0.0, uses_default_target, "usage"
         if timeout <= 0:
-            print(_c("  tail timeout must be positive", "33"))
-            return
+            return "", 0.0, uses_default_target, "positive"
+    return target, timeout, uses_default_target, ""
+
+
+def _queue_tail(runner: ChatJobRunner, args: list[str]) -> None:
+    target, timeout, uses_default_target, parse_error = _queue_tail_args(runner, args)
+    if parse_error == "usage":
+        print(_c("  usage: /queue tail [job id|latest|active|running|side] [seconds]", "33"))
+        return
+    if parse_error == "positive":
+        print(_c("  tail timeout must be positive", "33"))
+        return
     job, saved = runner.find_job(target)
-    if job is None and not args:
+    if job is None and uses_default_target:
         target = "latest"
         job, saved = runner.find_job(target)
     if job is None:
-        if args:
+        if not uses_default_target:
             print(_c(f"  no queue job matched {target!r}", "33"))
         else:
             print(_c("  no queue job to tail", "2"))
