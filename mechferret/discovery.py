@@ -369,7 +369,7 @@ class DiscoveryController:
             source_ids = [source_id for source_id in source_ids if source_id]
 
             resolved_backend = engine.backend_for(model, backend)
-            backend_name = _text(getattr(resolved_backend, "name", "")).strip() or "synthetic"
+            backend_name = _text(getattr(resolved_backend, "name", "")).strip() or "unknown"
             architecture = _backend_architecture(resolved_backend)
             generator = HypothesisGenerator(model=model, seeds=seeds, architecture=architecture)
             coordinator = Coordinator(max_workers=default_workers(backend_name))

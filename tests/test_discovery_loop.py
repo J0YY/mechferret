@@ -449,6 +449,27 @@ class DiscoveryLoopTest(unittest.TestCase):
             self.assertEqual(run.provenance["budget"]["max_experiments"], 4)
             self.assertEqual(run.provenance["budget"]["max_rounds"], 4)
 
+    def test_discovery_does_not_impute_missing_backend_name_as_synthetic(self):
+        unnamed_backend = SimpleNamespace(n_layers=2, n_heads=2, d_model=16)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch.object(InterpEngine, "backend_for", return_value=unnamed_backend):
+                run = DiscoveryController(root / "mem.sqlite").run(
+                    question="Find IOI heads",
+                    skill="ioi-circuit",
+                    model="gpt2",
+                    backend="auto",
+                    out_dir=root / "run",
+                    include_memory=False,
+                    budget=Budget(max_experiments=1, max_rounds=1),
+                )
+
+            payload = json.loads((root / "run" / "run.json").read_text(encoding="utf-8"))
+            self.assertEqual(run.provenance["backend_used"], "unknown")
+            self.assertEqual(payload["provenance"]["backend_used"], "unknown")
+            self.assertNotEqual(run.provenance["backend_used"], "synthetic")
+
     def test_openvla_sae_prompt_does_not_fall_through_to_ioi(self):
         issue = request_alignment_issue("Find SAEs for OpenVLA", None, "ioi", "gpt2")
         self.assertIn("openvla", issue)
