@@ -82,18 +82,41 @@ def web_search(query: str, max_results: int = 12, timeout: int = 20) -> list[dic
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         html = resp.read().decode("utf-8", errors="ignore")
     results: list[dict] = []
-    for m in re.finditer(r'<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', html, re.S):
+    matches = list(re.finditer(r'<a[^>]*class="[^"]*\bresult__a\b[^"]*"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', html, re.S))
+    for index, m in enumerate(matches):
         href = html_lib.unescape(m.group(1))
-        title = html_lib.unescape(re.sub(r"<[^>]+>", "", m.group(2))).strip()
+        title = _clean_html_text(m.group(2))
         # DuckDuckGo wraps targets in a redirect; pull out uddg=
         target = urllib.parse.parse_qs(urllib.parse.urlparse(href).query).get("uddg", [href])[0]
         target = _text(target).strip()
         if not title or not target:
             continue
-        results.append({"title": title, "url": target})
+        tail_end = matches[index + 1].start() if index + 1 < len(matches) else len(html)
+        snippet = _ddg_result_snippet(html[m.end(): tail_end])
+        row = {"title": title, "url": target, "source_domain": _url_domain(target)}
+        if snippet:
+            row["snippet"] = snippet
+        results.append(row)
         if len(results) >= max_results:
             break
     return results
+
+
+def _clean_html_text(value: str) -> str:
+    text = html_lib.unescape(re.sub(r"<[^>]+>", " ", value))
+    return " ".join(text.split())
+
+
+def _ddg_result_snippet(fragment: str) -> str:
+    match = re.search(r'<(?P<tag>[a-zA-Z0-9]+)[^>]*class="[^"]*\bresult__snippet\b[^"]*"[^>]*>(?P<body>.*?)</(?P=tag)>', fragment, re.S)
+    if not match:
+        return ""
+    return _clean_html_text(match.group("body"))
+
+
+def _url_domain(url: str) -> str:
+    host = urllib.parse.urlparse(url).netloc.lower()
+    return host[4:] if host.startswith("www.") else host
 
 
 # --- arXiv (verified spec) ----------------------------------------------------------

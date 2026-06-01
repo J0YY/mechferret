@@ -29,13 +29,24 @@ class KnowledgeTest(unittest.TestCase):
     def test_web_search_sanitizes_limits_and_result_rows(self):
         html = b"""
         <a class="result__a" href="/l/?uddg=https%3A%2F%2Fexample.com%2Fa">A &amp; B</a>
+        <a class="result__snippet">Snippet with <b>SAE</b> details &amp; code.</a>
         <a class="result__a" href="">missing</a>
         """
 
         with patch("urllib.request.urlopen", return_value=_Response(html)) as opened:
             results = web_search(b" sparse autoencoders ", max_results="bad", timeout="bad")
 
-        self.assertEqual(results, [{"title": "A & B", "url": "https://example.com/a"}])
+        self.assertEqual(
+            results,
+            [
+                {
+                    "title": "A & B",
+                    "url": "https://example.com/a",
+                    "source_domain": "example.com",
+                    "snippet": "Snippet with SAE details & code.",
+                }
+            ],
+        )
         self.assertEqual(opened.call_args.kwargs["timeout"], 20)
 
     def test_web_fetch_handles_empty_url_and_bad_limits(self):

@@ -19,6 +19,7 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import urlparse
 
 MAX_OUTPUT = 12000
 PERSIST_THRESHOLD = 16000  # results larger than this are written to disk, not truncated
@@ -1097,10 +1098,12 @@ def _novelty_terms(idea: str) -> list[str]:
 
 
 def _novelty_paper_row(paper: dict[str, Any], *, focus: str) -> dict[str, Any]:
+    url = str(paper.get("url", "")).strip()
     return {
         "source": "arxiv",
         "title": str(paper.get("title", "")).strip(),
-        "url": str(paper.get("url", "")).strip(),
+        "url": url,
+        "source_domain": _novelty_url_domain(url),
         "published": str(paper.get("published", "")).strip(),
         "abstract": str(paper.get("abstract", "")).strip()[:700],
         "authors": paper.get("authors", []) if isinstance(paper.get("authors"), list) else [],
@@ -1109,11 +1112,13 @@ def _novelty_paper_row(paper: dict[str, Any], *, focus: str) -> dict[str, Any]:
 
 
 def _novelty_web_row(result: dict[str, Any], *, focus: str) -> dict[str, Any]:
+    url = str(result.get("url", "")).strip()
     abstract = result.get("snippet") or result.get("abstract") or result.get("description") or ""
     return {
         "source": "web",
         "title": str(result.get("title", "")).strip(),
-        "url": str(result.get("url", "")).strip(),
+        "url": url,
+        "source_domain": str(result.get("source_domain", "")).strip() or _novelty_url_domain(url),
         "published": "",
         "abstract": str(abstract).strip()[:700],
         "authors": [],
@@ -1158,6 +1163,7 @@ def _novelty_assessment(idea: str, rows: list[dict[str, Any]], errors: list[dict
             "retrieved_evidence": len(rows),
             "retrieved_papers": arxiv_count,
             "web_results": web_count,
+            "web_results_with_snippets": sum(1 for row in rows if row.get("source") == "web" and row.get("abstract")),
             "failed_queries": len(errors),
             "failed_arxiv_queries": sum(1 for error in errors if error.get("source") == "arxiv"),
             "failed_web_queries": sum(1 for error in errors if error.get("source") == "web"),
@@ -1184,10 +1190,12 @@ def _novelty_scored_prior(row: dict[str, Any], terms: list[str]) -> dict[str, An
         "source": row.get("source", ""),
         "title": row.get("title", ""),
         "url": row.get("url", ""),
+        "source_domain": row.get("source_domain", ""),
         "published": row.get("published", ""),
         "focus": focus,
         "score": score,
         "matched_terms": matched,
+        "evidence_excerpt": str(row.get("abstract", ""))[:240],
         "reason": _novelty_prior_reason(matched, focus, row.get("published", ""), row.get("source", "")),
     }
 
@@ -1220,6 +1228,11 @@ def _novelty_year(value: Any) -> int | None:
         return int(text[:4])
     except ValueError:
         return None
+
+
+def _novelty_url_domain(url: str) -> str:
+    host = urlparse(str(url)).netloc.lower()
+    return host[4:] if host.startswith("www.") else host
 
 
 def _novelty_recent_window_label() -> str:
