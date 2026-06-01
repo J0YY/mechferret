@@ -424,6 +424,7 @@ class AgentStackTest(unittest.TestCase):
         rendered_help = out.getvalue()
         self.assertIn("/btw <text>", rendered_help)
         self.assertIn("/queue", rendered_help)
+        self.assertIn("/queue add <text>", rendered_help)
         self.assertIn("/queue show <id|latest|active|running|side|next>", rendered_help)
         self.assertIn("/queue retry <id|latest|running|side|next>", rendered_help)
         self.assertIn("/queue edit <id|latest|next> <text>", rendered_help)
@@ -565,6 +566,29 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("queued  #2", rendered)
         self.assertNotIn("saved   #1", rendered)
         self.assertNotIn("saved   #2", rendered)
+
+    def test_repl_queue_add_explicitly_enqueues_prompt_text(self):
+        from mechferret import repl
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: None, queue_path=Path("queue-add.json"))
+            try:
+                runner.pause()
+                job = repl._queue_add(runner, "/paper draft from latest run")
+                self.assertIsNotNone(job)
+                assert job is not None
+                self.assertEqual(job.status, "queued")
+            finally:
+                runner.resume()
+                runner.stop(wait=True)
+
+        self.assertIsNotNone(job)
+        assert job is not None
+        self.assertEqual(job.text, "/paper draft from latest run")
+        rendered = out.getvalue()
+        self.assertIn("queued #1 (position 1/1)", rendered)
+        self.assertIn("/queue edit #1 <prompt>", rendered)
 
     def test_repl_btw_queue_views_show_user_prompt_not_internal_prefix(self):
         from mechferret import repl
@@ -1180,6 +1204,7 @@ class AgentStackTest(unittest.TestCase):
         with redirect_stdout(out):
             runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: None, queue_path=Path("queue-usage.json"))
             try:
+                repl._queue_add(runner, "")
                 repl._queue_show(runner, [])
                 repl._queue_retry(runner, [])
                 repl._queue_edit(runner, [], "")
@@ -1190,6 +1215,7 @@ class AgentStackTest(unittest.TestCase):
                 runner.stop(wait=True)
 
         rendered = out.getvalue()
+        self.assertIn("/queue add <prompt>", rendered)
         self.assertIn("/queue show <job id|latest|active|running|side|next>", rendered)
         self.assertIn("/queue retry <job id|latest|running|side|next>", rendered)
         self.assertIn("/queue edit <job id|latest|next> <new prompt>", rendered)

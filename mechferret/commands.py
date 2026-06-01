@@ -21,6 +21,7 @@ SECTIONS: list[tuple[str, list[Command]]] = [
         Command("<your prompt>", "talk to the model; it runs tools/experiments"),
         Command("/btw <text>", "run a compact side prompt while another reply is running"),
         Command("/queue", "show the active and queued prompts"),
+        Command("/queue add <text>", "enqueue a prompt explicitly, including prompts that start with /"),
         Command("/queue show <id|latest|active|running|side|next>", "show a queued job's full prompt, reply, or error"),
         Command("/queue retry <id|latest|running|side|next>", "retry a job without retyping its prompt"),
         Command("/queue edit <id|latest|next> <text>", "edit a queued prompt before it starts"),

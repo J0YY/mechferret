@@ -873,7 +873,18 @@ def run_repl() -> None:
             _print_help()
             continue
         if bare == "queue":
-            if len(tokens) > 1 and tokens[1].lower() == "restore":
+            if len(tokens) > 1 and tokens[1].lower() in {"add", "push"}:
+                text = _line_after_words(line, 2)
+                if not text:
+                    print(_c("  usage: /queue add <prompt>", "33"))
+                    continue
+                if not agent.configured:
+                    print(_c("  No model connected yet — let's fix that.", "2"))
+                    if not onboard():
+                        continue
+                    agent.reload()
+                _queue_add(runner, text)
+            elif len(tokens) > 1 and tokens[1].lower() == "restore":
                 restored = runner.restore_saved(tokens[2] if len(tokens) > 2 else "all")
                 if restored:
                     ids = ", ".join(f"#{job.id}" for job in restored)
@@ -1160,6 +1171,15 @@ def _queue_cancel(runner: ChatJobRunner, args: list[str]) -> None:
         _print_canceled(canceled)
     else:
         print(_c(f"  no queued job matched {target!r}", "33"))
+
+
+def _queue_add(runner: ChatJobRunner, text: str) -> PromptJob | None:
+    if not text:
+        print(_c("  usage: /queue add <prompt>", "33"))
+        return None
+    job = runner.submit(text)
+    _print_queued(job, runner)
+    return job
 
 
 def _queue_clear(runner: ChatJobRunner, args: list[str]) -> None:

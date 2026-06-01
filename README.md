@@ -336,6 +336,7 @@ You can do things like:
 ```text
 /btw <prompt>   run a compact side question while another reply is running
 /queue          show the active and queued prompts
+/queue add <prompt> enqueue a prompt explicitly, including prompts that start with /
 /queue show <id|latest|active|running|side|next> show a queued job's full prompt, reply, or error
 /queue retry <id|latest|running|side|next> retry a job without retyping its prompt
 /queue edit <id|latest|next> <prompt> edit a queued prompt before it starts
