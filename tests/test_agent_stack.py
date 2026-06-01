@@ -493,6 +493,32 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("error in queued #1: boom", rendered)
         self.assertIn("use /queue show #1", rendered)
 
+    def test_repl_chat_job_runner_treats_missing_background_reply_as_error(self):
+        from mechferret import repl
+
+        def fake_chat(agent, session, text, *, background=False):
+            return None
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-none-reply.json"))
+            try:
+                queued = runner.submit("missing queued reply")
+                side = runner.submit_side(repl._btw_prompt("missing side reply"))
+                self.assertTrue(runner.wait_idle(timeout=2))
+            finally:
+                runner.stop(wait=True)
+
+        self.assertEqual(queued.status, "error")
+        self.assertEqual(side.status, "error")
+        self.assertEqual(queued.error, "no reply produced")
+        self.assertEqual(side.error, "no reply produced")
+        rendered = out.getvalue()
+        self.assertIn("error in queued #1: no reply produced", rendered)
+        self.assertIn("error in side #2: no reply produced", rendered)
+        self.assertIn("use /queue show #1", rendered)
+        self.assertIn("use /queue show #2", rendered)
+
     def test_repl_print_queued_shows_position_and_controls(self):
         from mechferret import repl
 

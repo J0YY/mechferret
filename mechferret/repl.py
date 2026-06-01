@@ -388,6 +388,8 @@ class ChatJobRunner:
                 self.save_pending()
                 print(_c(f"  ▶ queued #{job.id} {job.kind}: {_short_job_text(job.text)}", "2"))
                 reply = self._chat_fn(self.agent, self.session, job.text, background=True)
+                if reply is None:
+                    raise RuntimeError("no reply produced")
                 job.reply = reply
                 job.status = "done"
                 self.save_pending()
@@ -409,6 +411,8 @@ class ChatJobRunner:
             side_agent = self._side_agent_factory(self.agent)
             side_session = Session()
             reply = self._chat_fn(side_agent, side_session, job.text, background=True)
+            if reply is None:
+                raise RuntimeError("no reply produced")
             job.reply = reply
             job.status = "done"
             self.save_pending()
