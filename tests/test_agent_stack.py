@@ -562,6 +562,76 @@ class AgentStackTest(unittest.TestCase):
 
         self.assertEqual(out.getvalue(), "  finished #1\n")
 
+    def test_repl_background_chat_uses_background_output_for_missing_model(self):
+        from unittest.mock import patch
+
+        from mechferret import repl
+
+        class Agent:
+            configured = False
+
+        emitted = []
+        out = StringIO()
+        with patch.object(repl, "_print_background", emitted.append), redirect_stdout(out):
+            reply = repl._chat(Agent(), repl.Session(), "queued prompt", background=True)
+
+        self.assertIsNone(reply)
+        self.assertEqual(out.getvalue(), "")
+        self.assertEqual(len(emitted), 1)
+        self.assertIn("queued prompt needs a model", emitted[0])
+
+    def test_repl_background_chat_uses_background_output_for_reply_and_cost(self):
+        from unittest.mock import patch
+
+        from mechferret import repl
+
+        class Cost:
+            def format_total(self):
+                return "$0.0000"
+
+        class Agent:
+            configured = True
+            cost = Cost()
+
+            def send(self, text):
+                return f"reply to {text}"
+
+        emitted = []
+        out = StringIO()
+        with patch.object(repl, "_print_background", emitted.append), redirect_stdout(out):
+            reply = repl._chat(Agent(), repl.Session(), "queued prompt", background=True)
+
+        self.assertEqual(reply, "reply to queued prompt")
+        self.assertEqual(out.getvalue(), "")
+        self.assertTrue(any("reply to queued prompt" in line for line in emitted))
+        self.assertTrue(any("$0.0000" in line for line in emitted))
+
+    def test_repl_background_chat_uses_background_output_for_errors(self):
+        from unittest.mock import patch
+
+        from mechferret import repl
+
+        class Cost:
+            def format_total(self):
+                return "$0.0000"
+
+        class Agent:
+            configured = True
+            cost = Cost()
+
+            def send(self, text):
+                raise RuntimeError("401 authentication failed")
+
+        emitted = []
+        out = StringIO()
+        with patch.object(repl, "_print_background", emitted.append), redirect_stdout(out):
+            reply = repl._chat(Agent(), repl.Session(), "queued prompt", background=True)
+
+        self.assertIsNone(reply)
+        self.assertEqual(out.getvalue(), "")
+        self.assertTrue(any("401 authentication failed" in line for line in emitted))
+        self.assertTrue(any("API key may be invalid" in line for line in emitted))
+
     def test_repl_print_queued_shows_position_and_controls(self):
         from mechferret import repl
 

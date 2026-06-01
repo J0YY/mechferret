@@ -1522,13 +1522,14 @@ def _chat(agent, session, text: str, *, background: bool = False) -> str | None:
 
     if not agent.configured:
         if background:
-            print(_c("  queued prompt needs a model; run /login, then submit it again.", "33"))
+            _print_background(_c("  queued prompt needs a model; run /login, then submit it again.", "33"))
             return None
         print(_c("  No model connected yet — let's fix that.", "2"))
         if not onboard():
             return None
         agent.reload()
     spinner = _BackgroundPrinter() if background else Spinner()
+    emit_status = spinner.log if background else print
     session.step = "thinking…"
 
     def _on_tool(name, args):
@@ -1576,18 +1577,21 @@ def _chat(agent, session, text: str, *, background: bool = False) -> str | None:
             reply = agent.send(text)
     except KeyboardInterrupt:
         session.step = "interrupted"
-        print(_c("  (interrupted — Ctrl-C again at the prompt to quit)", "2"))
+        emit_status(_c("  (interrupted — Ctrl-C again at the prompt to quit)", "2"))
         return None
     except Exception as exc:  # noqa: BLE001
         session.step = "error"
-        print(_c(f"  error: {exc}", "31"))
+        emit_status(_c(f"  error: {exc}", "31"))
         if "401" in str(exc) or "authentication" in str(exc).lower():
-            print(_c("  Your API key may be invalid — reconnect with /login.", "33"))
+            emit_status(_c("  Your API key may be invalid — reconnect with /login.", "33"))
         return None
     if not streamed["any"] and reply:
-        print()
-        print(_render_reply(reply))
-    print(_c(f"  ({agent.cost.format_total()})", "2"))
+        if background:
+            spinner.log("\n" + _render_reply(reply) + "\n")
+        else:
+            print()
+            print(_render_reply(reply))
+    emit_status(_c(f"  ({agent.cost.format_total()})", "2"))
     if not background:
         print(_c("  ↵ press enter to continue · or type to redirect", "38;5;141"))
         print()
