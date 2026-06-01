@@ -226,6 +226,8 @@ def _essential_novelty_summary(payload: dict[str, Any]) -> dict[str, Any]:
         ):
             if key in assessment:
                 compact_assessment[key] = _compact_json_value(assessment[key])
+        if isinstance(assessment.get("search_audit"), dict):
+            compact_assessment["search_audit"] = _compact_novelty_search_audit_summary(assessment["search_audit"])
         if isinstance(assessment.get("coverage"), dict):
             compact_assessment["coverage"] = _compact_novelty_coverage(assessment["coverage"])
         closest = assessment.get("closest_prior_art")
@@ -252,6 +254,11 @@ def _compact_novelty_coverage(coverage: dict[str, Any]) -> dict[str, Any]:
         "web_results_with_page_text",
         "unique_source_domains",
         "credible_source_count",
+        "search_audit_rows",
+        "empty_search_passes",
+        "empty_arxiv_passes",
+        "empty_web_passes",
+        "duplicate_only_search_passes",
         "failed_queries",
         "failed_arxiv_queries",
         "failed_web_queries",
@@ -260,9 +267,46 @@ def _compact_novelty_coverage(coverage: dict[str, Any]) -> dict[str, Any]:
     ):
         if key in coverage:
             compact[key] = coverage[key]
-    for key in ("focus_coverage", "threat_model_coverage", "web_source_types", "credible_source_types", "arxiv_focuses", "web_focuses"):
+    for key in (
+        "focus_coverage",
+        "threat_model_coverage",
+        "web_source_types",
+        "credible_source_types",
+        "arxiv_focuses",
+        "web_focuses",
+        "empty_search_focuses",
+        "failed_search_focuses",
+    ):
         if key in coverage:
             compact[key] = _compact_json_value(coverage[key])
+    return compact
+
+
+def _compact_novelty_search_audit_summary(search_audit: dict[str, Any]) -> dict[str, Any]:
+    compact: dict[str, Any] = {}
+    for key in (
+        "pass_count",
+        "failed_passes",
+        "empty_search_passes",
+        "empty_arxiv_passes",
+        "empty_web_passes",
+        "duplicate_only_search_passes",
+    ):
+        if key in search_audit:
+            compact[key] = search_audit[key]
+    for key in ("empty_focuses", "failed_focuses"):
+        value = search_audit.get(key)
+        if isinstance(value, list):
+            compact[key] = [_compact_json_preview_item(row) for row in value[:12]]
+            compact[f"{key}_count"] = len(value)
+    focus_summary = search_audit.get("focus_summary")
+    if isinstance(focus_summary, list):
+        compact["focus_summary_count"] = len(focus_summary)
+        compact["focus_summary"] = [_compact_json_preview_item(row) for row in focus_summary[:12]]
+    passes = search_audit.get("passes")
+    if isinstance(passes, list):
+        compact["passes_count"] = len(passes)
+        compact["passes_preview"] = [_compact_json_preview_item(row) for row in passes[:5]]
     return compact
 
 
@@ -1121,39 +1165,73 @@ def tool_verify_novelty(args: dict[str, Any]) -> str:
     focused: list[dict[str, Any]] = []
     web_results: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
+    search_audit: list[dict[str, Any]] = []
     for item in plan:
         query = item["query"]
         sort_by = item["sort_by"]
+        audit_row: dict[str, Any] = {
+            "source": "arxiv",
+            "focus": item["focus"],
+            "query": query,
+            "sort_by": sort_by,
+            "requested_results": item["max_results"],
+            "retrieved": 0,
+            "unique_added": 0,
+            "failed": False,
+        }
         try:
             _, papers = search_arxiv(query, max_results=item["max_results"], sort_by=sort_by)
         except Exception as exc:  # noqa: BLE001
             papers = []
+            audit_row["failed"] = True
+            audit_row["error"] = str(exc)
             errors.append({"source": "arxiv", "query": query, "error": str(exc)})
+        unique_added = 0
         for p in papers:
             row = _novelty_paper_row(p, focus=item["focus"])
             key = _novelty_paper_key(row)
             if not key or key in seen:
                 continue
             seen.add(key)
+            unique_added += 1
             related.append(row)
             if sort_by in {"submittedDate", "lastUpdatedDate"} and len(recent) < NOVELTY_FOCUSED_LIMIT:
                 recent.append(row)
             if _novelty_focus_is_deep(item["focus"]) and len(focused) < NOVELTY_FOCUSED_LIMIT:
                 focused.append(row)
+        audit_row["retrieved"] = len(papers)
+        audit_row["unique_added"] = unique_added
+        search_audit.append(audit_row)
     for item in web_plan:
         query = item["query"]
+        audit_row = {
+            "source": "web",
+            "focus": item["focus"],
+            "query": query,
+            "requested_results": item["max_results"],
+            "retrieved": 0,
+            "unique_added": 0,
+            "failed": False,
+        }
         try:
             results = web_search(query, max_results=item["max_results"])
         except Exception as exc:  # noqa: BLE001
             results = []
+            audit_row["failed"] = True
+            audit_row["error"] = str(exc)
             errors.append({"source": "web", "query": query, "error": str(exc)})
+        unique_added = 0
         for result in results:
             row = _novelty_web_row(result, focus=item["focus"])
             key = _novelty_paper_key(row)
             if not key or key in seen:
                 continue
             seen.add(key)
+            unique_added += 1
             web_results.append(row)
+        audit_row["retrieved"] = len(results)
+        audit_row["unique_added"] = unique_added
+        search_audit.append(audit_row)
     _novelty_enrich_web_results(web_results, web_fetch, errors)
     return json.dumps({
         "idea": idea,
@@ -1165,7 +1243,15 @@ def tool_verify_novelty(args: dict[str, Any]) -> str:
         "focused_papers": focused,
         "method_papers": [row for row in focused if "method" in str(row.get("focus", ""))],
         "web_results": web_results[:NOVELTY_RELATED_LIMIT],
-        "assessment": _novelty_assessment(idea, [*related, *web_results], errors, arxiv_plan=plan, web_plan=web_plan),
+        "search_audit": search_audit,
+        "assessment": _novelty_assessment(
+            idea,
+            [*related, *web_results],
+            errors,
+            arxiv_plan=plan,
+            web_plan=web_plan,
+            search_audit=search_audit,
+        ),
         "errors": errors,
         "novelty_questions": _novelty_questions(idea),
         "guidance": "Do not claim high novelty unless the idea survives relevance, submitted-date, "
@@ -1415,6 +1501,7 @@ def _novelty_assessment(
     *,
     arxiv_plan: list[dict[str, Any]] | None = None,
     web_plan: list[dict[str, Any]] | None = None,
+    search_audit: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     terms = _novelty_terms(idea)
     scored = [_novelty_scored_prior(row, terms) for row in rows]
@@ -1427,6 +1514,8 @@ def _novelty_assessment(
     source_profile = _novelty_source_profile(rows)
     arxiv_plan = arxiv_plan or []
     web_plan = web_plan or []
+    search_audit = search_audit or []
+    audit_summary = _novelty_search_audit_summary(search_audit)
     coverage = {
         "search_strategy": "deep_recent_discovery_method_mechanism_architecture_evaluation_implementation_replication_exact_claim_collision",
         "arxiv_query_count": len(arxiv_plan),
@@ -1447,6 +1536,13 @@ def _novelty_assessment(
         "source_domain_counts": source_profile["domain_counts"],
         "credible_source_count": source_profile["credible_sources"],
         "credible_source_types": source_profile["credible_types"],
+        "search_audit_rows": len(search_audit),
+        "empty_search_passes": audit_summary["empty_search_passes"],
+        "empty_arxiv_passes": audit_summary["empty_arxiv_passes"],
+        "empty_web_passes": audit_summary["empty_web_passes"],
+        "duplicate_only_search_passes": audit_summary["duplicate_only_search_passes"],
+        "empty_search_focuses": audit_summary["empty_focuses"],
+        "failed_search_focuses": audit_summary["failed_focuses"],
         "failed_queries": len(errors),
         "failed_arxiv_queries": sum(1 for error in errors if error.get("source") == "arxiv"),
         "failed_web_queries": sum(1 for error in errors if error.get("source") == "web"),
@@ -1482,12 +1578,83 @@ def _novelty_assessment(
         "closest_prior_art": closest,
         "claim_readiness": _novelty_claim_readiness(risk, top_score, coverage),
         "coverage": coverage,
+        "search_audit": audit_summary,
         "comparison_matrix": comparison_matrix,
         "novelty_threat_model": threat_model,
         "disqualifying_overlap_tests": _novelty_disqualifying_overlap_tests(threat_model, coverage),
         "recent_pressure": recent_pressure,
         "required_delta": _novelty_required_delta(idea, closest, comparison_matrix, coverage),
     }
+
+
+def _novelty_search_audit_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    normalized = [_compact_novelty_search_audit_row(row) for row in rows]
+    focus_summary: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in normalized:
+        source = str(row.get("source", "")).strip() or "unknown"
+        focus = str(row.get("focus", "")).strip() or "unknown"
+        key = (source, focus)
+        target = focus_summary.setdefault(
+            key,
+            {
+                "source": source,
+                "focus": focus,
+                "passes": 0,
+                "failed_passes": 0,
+                "retrieved": 0,
+                "unique_added": 0,
+                "requested_results_max": 0,
+            },
+        )
+        target["passes"] += 1
+        target["failed_passes"] += 1 if row.get("failed") else 0
+        target["retrieved"] += int(row.get("retrieved", 0) or 0)
+        target["unique_added"] += int(row.get("unique_added", 0) or 0)
+        target["requested_results_max"] = max(
+            int(target.get("requested_results_max", 0) or 0),
+            int(row.get("requested_results", 0) or 0),
+        )
+    focus_rows = sorted(focus_summary.values(), key=lambda row: (row["source"], row["focus"]))
+    empty_focuses = [
+        {"source": row["source"], "focus": row["focus"]}
+        for row in focus_rows
+        if int(row.get("retrieved", 0) or 0) == 0
+    ]
+    failed_focuses = [
+        {"source": row["source"], "focus": row["focus"]}
+        for row in focus_rows
+        if int(row.get("failed_passes", 0) or 0) > 0
+    ]
+    return {
+        "pass_count": len(normalized),
+        "failed_passes": sum(1 for row in normalized if row.get("failed")),
+        "empty_search_passes": sum(1 for row in normalized if int(row.get("retrieved", 0) or 0) == 0),
+        "empty_arxiv_passes": sum(
+            1 for row in normalized if row.get("source") == "arxiv" and int(row.get("retrieved", 0) or 0) == 0
+        ),
+        "empty_web_passes": sum(
+            1 for row in normalized if row.get("source") == "web" and int(row.get("retrieved", 0) or 0) == 0
+        ),
+        "duplicate_only_search_passes": sum(
+            1
+            for row in normalized
+            if int(row.get("retrieved", 0) or 0) > 0 and int(row.get("unique_added", 0) or 0) == 0
+        ),
+        "empty_focuses": empty_focuses,
+        "failed_focuses": failed_focuses,
+        "focus_summary": focus_rows,
+        "passes": normalized,
+    }
+
+
+def _compact_novelty_search_audit_row(row: dict[str, Any]) -> dict[str, Any]:
+    compact: dict[str, Any] = {}
+    for key in ("source", "focus", "query", "sort_by", "requested_results", "retrieved", "unique_added", "failed"):
+        if key in row:
+            compact[key] = _compact_json_value(row[key])
+    if row.get("error"):
+        compact["error"] = str(row.get("error", ""))[:240]
+    return compact
 
 
 def _novelty_scored_prior(row: dict[str, Any], terms: list[str]) -> dict[str, Any]:

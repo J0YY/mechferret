@@ -1120,6 +1120,15 @@ class AgentToolTest(unittest.TestCase):
         self.assertLessEqual(len(fetch_calls), 12)
         self.assertTrue(all(call["max_chars"] == 2400 for call in fetch_calls))
         self.assertIn("web_search_plan", payload)
+        self.assertEqual(len(payload["search_audit"]), len(calls) + len(web_calls))
+        arxiv_audit = [row for row in payload["search_audit"] if row["source"] == "arxiv"]
+        web_audit = [row for row in payload["search_audit"] if row["source"] == "web"]
+        self.assertEqual(len(arxiv_audit), len(calls))
+        self.assertEqual(len(web_audit), len(web_calls))
+        self.assertTrue(all(row["requested_results"] == 50 for row in arxiv_audit))
+        self.assertTrue(all(row["requested_results"] == 24 for row in web_audit))
+        self.assertTrue(all("retrieved" in row and "unique_added" in row for row in payload["search_audit"]))
+        self.assertTrue(any(row["unique_added"] == 0 and row["retrieved"] > 0 for row in payload["search_audit"]))
         self.assertEqual(payload["web_results"][0]["source"], "web")
         self.assertEqual(payload["web_results"][0]["source_domain"], "example.org")
         web_source_types = {row["source_type"] for row in payload["web_results"]}
@@ -1171,6 +1180,19 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("benchmark", payload["assessment"]["coverage"]["credible_source_types"])
         self.assertIn("github.com", payload["assessment"]["coverage"]["source_domain_counts"])
         self.assertGreaterEqual(payload["assessment"]["coverage"]["retrieved_evidence"], 2)
+        self.assertEqual(payload["assessment"]["coverage"]["search_audit_rows"], len(payload["search_audit"]))
+        self.assertGreater(payload["assessment"]["coverage"]["duplicate_only_search_passes"], 0)
+        self.assertEqual(payload["assessment"]["coverage"]["empty_search_passes"], 0)
+        self.assertIn("search_audit", payload["assessment"])
+        self.assertEqual(payload["assessment"]["search_audit"]["pass_count"], len(payload["search_audit"]))
+        self.assertGreater(payload["assessment"]["search_audit"]["duplicate_only_search_passes"], 0)
+        focus_audit = {
+            (row["source"], row["focus"]): row
+            for row in payload["assessment"]["search_audit"]["focus_summary"]
+        }
+        self.assertIn(("arxiv", "recent_discovery"), focus_audit)
+        self.assertIn(("web", "web_recent_discovery"), focus_audit)
+        self.assertGreaterEqual(focus_audit[("arxiv", "recent_discovery")]["retrieved"], 1)
         self.assertIn("claim_readiness", payload["assessment"])
         self.assertFalse(payload["assessment"]["claim_readiness"]["can_claim_high_novelty"])
         self.assertEqual(payload["assessment"]["claim_readiness"]["status"], "not_ready_prior_art_overlap")
@@ -1222,6 +1244,8 @@ class AgentToolTest(unittest.TestCase):
             patch("mechferret.knowledge.web_search", side_effect=RuntimeError("network unavailable")),
         ):
             payload = json.loads(tools.run_tool("verify_novelty", {"idea": "adaptive probe routing for activation patches"}))
+        if payload.get("tool_output_truncated"):
+            payload = json.loads(Path(payload["full_output_path"]).read_text(encoding="utf-8"))
 
         self.assertEqual(payload["assessment"]["risk"], "unknown_search_incomplete")
         self.assertEqual(payload["assessment"]["claim_readiness"]["status"], "not_ready_search_incomplete")
@@ -1230,6 +1254,11 @@ class AgentToolTest(unittest.TestCase):
         self.assertGreater(payload["assessment"]["coverage"]["failed_queries"], 0)
         self.assertGreater(payload["assessment"]["coverage"]["failed_arxiv_queries"], 0)
         self.assertGreater(payload["assessment"]["coverage"]["failed_web_queries"], 0)
+        self.assertEqual(payload["assessment"]["coverage"]["search_audit_rows"], len(payload["search_audit"]))
+        self.assertGreater(payload["assessment"]["coverage"]["empty_search_passes"], 0)
+        self.assertGreater(payload["assessment"]["search_audit"]["failed_passes"], 0)
+        self.assertTrue(all(row["failed"] for row in payload["search_audit"]))
+        self.assertTrue(payload["assessment"]["search_audit"]["failed_focuses"])
         self.assertEqual(payload["related_papers"], [])
         self.assertEqual(payload["web_results"], [])
 
@@ -1254,10 +1283,14 @@ class AgentToolTest(unittest.TestCase):
             patch("mechferret.knowledge.web_fetch", side_effect=RuntimeError("fetch unavailable")),
         ):
             payload = json.loads(tools.run_tool("verify_novelty", {"idea": "sparse autoencoder probes"}))
+        if payload.get("tool_output_truncated"):
+            payload = json.loads(Path(payload["full_output_path"]).read_text(encoding="utf-8"))
 
         self.assertEqual(payload["assessment"]["coverage"]["web_results"], 1)
         self.assertEqual(payload["assessment"]["coverage"]["web_pages_fetched"], 0)
         self.assertGreater(payload["assessment"]["coverage"]["failed_web_fetches"], 0)
+        self.assertEqual(payload["assessment"]["search_audit"]["failed_passes"], 0)
+        self.assertGreaterEqual(payload["assessment"]["coverage"]["empty_arxiv_passes"], 1)
         self.assertTrue(payload["web_results"])
 
     def test_tools_validate_boolean_values(self):
