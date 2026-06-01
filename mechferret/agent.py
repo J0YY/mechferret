@@ -397,6 +397,45 @@ def _looks_like_stale_benchmark_scaffold(text: str) -> bool:
     return benchmark_hits >= 2 or bool(STALE_HEAD_RE.search(lowered))
 
 
+def _tool_call_uses_benchmark_experiment_target(name: str, args: dict[str, Any]) -> bool:
+    if name != "run_discovery":
+        return False
+    model = _text(args.get("model"))
+    task = _text(args.get("task")).lower()
+    skill = _text(args.get("skill")).lower()
+    if model and BENCHMARK_MODEL_LEAK_RE.search(model):
+        return True
+    if re.search(r"\bioi\b", task):
+        return True
+    if "ioi-circuit" in skill:
+        return True
+    return False
+
+
+def _messages_explicitly_selected_benchmark_model(messages: list[dict[str, Any]]) -> bool:
+    for message in messages:
+        if not isinstance(message, dict) or message.get("role") != "user":
+            continue
+        if _user_explicitly_selected_benchmark_model(_extract_provider_text(message.get("content"))):
+            return True
+    return False
+
+
+def _tool_call_needs_explicit_benchmark_target(
+    name: str,
+    args: dict[str, Any],
+    current_user_text: str,
+    messages: list[dict[str, Any]],
+) -> bool:
+    if not _tool_call_uses_benchmark_experiment_target(name, args):
+        return False
+    if _turn_rejects_benchmark_context(current_user_text):
+        return True
+    if _user_explicitly_selected_benchmark_model(current_user_text):
+        return False
+    return not _messages_explicitly_selected_benchmark_model(messages)
+
+
 def _redact_rejected_benchmark_content(value: Any) -> Any:
     replacement = (
         "[Benchmark-specific prior context omitted for this turn because the current prompt rejected "
@@ -552,6 +591,7 @@ class Agent:
         self.abort = threading.Event()
         self.tracer = TraceRecorder(self.session_id, ".mechferret")  # -> .mechferret/trace.jsonl (+ Raindrop mirror)
         self._suppress_benchmark_context = False
+        self._current_user_text = ""
 
     @property
     def configured(self) -> bool:
@@ -565,6 +605,7 @@ class Agent:
         if not self.configured:
             raise RuntimeError("No provider configured.")
         self.abort.clear()
+        self._current_user_text = user_text
         suppress_benchmark_context = self._update_benchmark_context_policy(user_text)
         if suppress_benchmark_context:
             self.messages = _sanitize_loaded_messages(
@@ -750,6 +791,17 @@ class Agent:
                     f"unknown tool {name}",
                     failed_check="tool_registered",
                     next_action="Choose a tool from the registered tool list.",
+                )
+            )
+
+        if _tool_call_needs_explicit_benchmark_target(name, args, self._current_user_text, self.messages):
+            return json.dumps(
+                _agent_tool_failure(
+                    name,
+                    "benchmark-specific discovery target was not explicitly requested",
+                    failed_check="benchmark_context_required",
+                    extra={"blocked": True},
+                    next_action="Ask the user for the model and behavior/task before running benchmark-specific discovery.",
                 )
             )
 

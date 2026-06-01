@@ -1326,6 +1326,59 @@ class AgentToolTest(unittest.TestCase):
 
         self.assertEqual(agent._sanitize_assistant_text("Please run gpt 2 small on IOI.", text), text)
 
+    def test_run_discovery_tool_call_blocks_unrequested_benchmark_target(self):
+        fired = []
+        a = agent.Agent(on_tool=lambda name, args: fired.append((name, args)))
+        a._current_user_text = "Investigate an interesting behavior."
+
+        payload = json.loads(
+            a._dispatch(
+                "run_discovery",
+                {"model": "gpt2", "task": "ioi", "backend": "synthetic"},
+            )
+        )
+
+        self.assertFalse(payload["ok"])
+        self.assertTrue(payload["blocked"])
+        self.assertIn("benchmark_context_required", payload["failed_checks"])
+        self.assertEqual(fired, [])
+
+    def test_run_discovery_tool_call_blocks_after_benchmark_rejection_even_with_prior_explicit_turn(self):
+        fired = []
+        a = agent.Agent(on_tool=lambda name, args: fired.append((name, args)))
+        a._current_user_text = "Why are we still seeing gpt2 by default?"
+        a.messages = [{"role": "user", "content": "Use GPT-2 small for IOI."}]
+
+        payload = json.loads(
+            a._dispatch(
+                "run_discovery",
+                {"model": "gpt2", "task": "ioi", "backend": "synthetic"},
+            )
+        )
+
+        self.assertFalse(payload["ok"])
+        self.assertTrue(payload["blocked"])
+        self.assertIn("benchmark_context_required", payload["failed_checks"])
+        self.assertEqual(fired, [])
+
+    def test_run_discovery_tool_call_allows_explicit_benchmark_target(self):
+        self.assertFalse(
+            agent._tool_call_needs_explicit_benchmark_target(
+                "run_discovery",
+                {"model": "gpt2", "task": "ioi", "backend": "synthetic"},
+                "continue",
+                [{"role": "user", "content": "Use GPT-2 small for IOI."}],
+            )
+        )
+        self.assertFalse(
+            agent._tool_call_needs_explicit_benchmark_target(
+                "run_discovery",
+                {"model": "gpt2", "task": "ioi", "backend": "synthetic"},
+                "Please run gpt 2 small on IOI.",
+                [],
+            )
+        )
+
     def test_openai_stale_benchmark_text_blocks_same_turn_tool_call(self):
         calls = {"n": 0}
         streamed = []
