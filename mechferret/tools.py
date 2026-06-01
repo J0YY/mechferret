@@ -61,6 +61,21 @@ NOVELTY_THREAT_RISKS = {
 }
 NOVELTY_DISQUALIFYING_RISKS = NOVELTY_THREAT_RISKS | {"missing_recent_prior_art"}
 NOVELTY_REQUIRED_THREATS = {"exact_phrase_overlap", "claim_collision"}
+NOVELTY_REQUIRED_OPTION_SEARCH_FOCUS = {
+    "recency",
+    "recent_discovery",
+    "architecture",
+    "method",
+    "mechanism",
+    "evaluation",
+    "implementation",
+    "replication",
+    "failure_modes",
+    "protocol",
+    "exact_phrase",
+    "claim_collision",
+    "peer_review",
+}
 NOVELTY_WEB_SOURCE_TYPES = {
     "paper",
     "benchmark",
@@ -2569,6 +2584,9 @@ def _valid_option_search_audit(value: Any) -> bool:
         return False
     if _option_search_source_requested_max(focus_summary, "web") < NOVELTY_WEB_RESULT_LIMIT:
         return False
+    coverage = _option_search_focus_coverage(focus_summary)
+    if not all(coverage.get(name) for name in NOVELTY_REQUIRED_OPTION_SEARCH_FOCUS):
+        return False
     return True
 
 
@@ -2640,6 +2658,25 @@ def _option_search_source_passes(rows: list[dict[str, Any]], source: str) -> int
 
 def _option_search_source_requested_max(rows: list[dict[str, Any]], source: str) -> int:
     return max((_safe_int(row.get("requested_results_max")) for row in rows if row.get("source") == source), default=0)
+
+
+def _option_search_focus_coverage(rows: list[dict[str, Any]]) -> dict[str, bool]:
+    text = " ".join(str(row.get("focus", "")) for row in rows).lower()
+    return {
+        "recency": "recent" in text or "submitted" in text or "updated" in text,
+        "recent_discovery": "discovery" in text,
+        "architecture": "architecture" in text,
+        "method": "method" in text,
+        "mechanism": "mechanism" in text,
+        "evaluation": "evaluation" in text or "benchmark" in text,
+        "implementation": "implementation" in text or "code" in text,
+        "replication": "replication" in text or "reproduction" in text,
+        "failure_modes": "failure" in text or "limitations" in text,
+        "protocol": "protocol" in text or "dataset" in text,
+        "exact_phrase": "exact" in text,
+        "claim_collision": "claim" in text,
+        "peer_review": "peer" in text or "critique" in text or "review" in text,
+    }
 
 
 def _option_prior(value: Any) -> dict[str, Any]:

@@ -53,29 +53,51 @@ def _option_disqualifying_tests():
 
 
 def _option_search_audit():
+    arxiv_focuses = [
+        "core_relevance",
+        "recent_submitted",
+        "recent_updated",
+        "method_relevance",
+        "mechanism_evidence",
+        "recent_evaluation",
+        "recent_discovery",
+        "architecture_variant",
+        "replication_failure_modes",
+        "evaluation_protocol",
+    ]
+    web_focuses = [
+        "web_recent_method",
+        "web_benchmark_evaluation",
+        "web_code_prior",
+        "web_exact_phrase",
+        "web_claim_collision",
+        "web_peer_review",
+        "web_architecture_variant",
+        "web_replication_results",
+    ]
     focus_summary = [
         {
             "source": "arxiv",
-            "focus": f"arxiv_focus_{i}",
+            "focus": focus,
             "passes": 1,
             "failed_passes": 0,
             "retrieved": 50,
             "unique_added": 4 if i == 0 else 0,
             "requested_results_max": 50,
         }
-        for i in range(10)
+        for i, focus in enumerate(arxiv_focuses)
     ]
     focus_summary.extend(
         {
             "source": "web",
-            "focus": f"web_focus_{i}",
+            "focus": focus,
             "passes": 1,
             "failed_passes": 0,
             "retrieved": 24,
             "unique_added": 3 if i == 0 else 0,
             "requested_results_max": 24,
         }
-        for i in range(8)
+        for i, focus in enumerate(web_focuses)
     )
     return {
         "pass_count": 18,
@@ -880,6 +902,49 @@ class AgentToolTest(unittest.TestCase):
         )
         self.assertFalse(bad_shallow_search["ok"])
         self.assertEqual(bad_shallow_search["expected"], "objects with search_audit from verify_novelty assessment")
+
+        unfocused_search_audit = _option_search_audit()
+        for index, row in enumerate(unfocused_search_audit["focus_summary"]):
+            row["focus"] = f"generic_focus_{index}"
+        bad_unfocused_search = json.loads(
+            tools.run_tool(
+                "present_options",
+                {
+                    "options": [
+                        {
+                            "title": "Thin option",
+                            "summary": "unfocused search audit",
+                            "detail": "A direction with enough passes but no deep focus coverage should be rejected.",
+                            "citations": ["https://arxiv.org/abs/2501.0001"],
+                            "novelty_risk": "medium_prior_art_risk",
+                            "novelty_verdict": "Related work exists.",
+                            "closest_prior_art": [],
+                            "claim_readiness": {
+                                "status": "not_ready_needs_more_evidence",
+                                "can_claim_high_novelty": False,
+                                "missing_checks": ["focus_breadth"],
+                                "next_actions": ["Run focused follow-up searches."],
+                            },
+                            "comparison_matrix": [
+                                {"axis": "method", "covered": True, "evidence_count": 1, "next_action": "Compare method."},
+                                {"axis": "evaluation", "covered": False, "evidence_count": 0, "next_action": "Add benchmark."},
+                            ],
+                            "novelty_threat_model": _option_threat_model(),
+                            "disqualifying_overlap_tests": _option_disqualifying_tests(),
+                            "search_audit": unfocused_search_audit,
+                            "recent_pressure": {
+                                "status": "recent_prior_present",
+                                "recent_window": "2024-2026",
+                                "recent_evidence_count": 1,
+                            },
+                            "required_delta": ["Show a measurable delta."],
+                        }
+                    ]
+                },
+            )
+        )
+        self.assertFalse(bad_unfocused_search["ok"])
+        self.assertEqual(bad_unfocused_search["expected"], "objects with search_audit from verify_novelty assessment")
 
         failed_search_audit = _option_search_audit()
         failed_search_audit["failed_passes"] = 1
