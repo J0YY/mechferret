@@ -520,7 +520,7 @@ usage: mechferret sae [-h] [--project-root PROJECT_ROOT] [--manifest MANIFEST]
                       [--features-dir FEATURES_DIR]
                       [--top-features TOP_FEATURES] [--max-files MAX_FILES]
                       [--d-model D_MODEL] [--tokens TOKENS] [--steps STEPS]
-                      [--k K] [--json]
+                      [--k K] [--seed SEED] [--json]
                       {openvla}
                       [{status,init,plan,commands,validate-manifest,create-manifest,smoke,eval,features,dossier}]
 ```
@@ -551,6 +551,7 @@ Options:
 - `--tokens`: Synthetic token count for smoke.
 - `--steps`: Training steps for smoke.
 - `--k`: Top-K value for smoke.
+- `--seed`: Explicit smoke-test seed; omitted runs use a generated seed recorded in metrics.
 - `--json`: Print machine-readable JSON.
 
 Examples:

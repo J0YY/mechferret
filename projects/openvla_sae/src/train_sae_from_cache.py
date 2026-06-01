@@ -8,6 +8,7 @@ import argparse
 import json
 from pathlib import Path
 import random
+import secrets
 from typing import Any
 
 DEFAULT_CONFIG = {
@@ -18,7 +19,6 @@ DEFAULT_CONFIG = {
         "lr": 0.0003,
         "batch_size": 4096,
         "steps": 20000,
-        "seed": 0,
         "normalize_activations": True,
     }
 }
@@ -104,6 +104,17 @@ def apply_overrides(cfg: dict[str, Any], args: argparse.Namespace) -> dict[str, 
     return merged
 
 
+def resolve_seed(value: Any = None) -> tuple[int, str]:
+    if value is None or value == "":
+        return secrets.SystemRandom().randrange(1, 2**31 - 1), "run_generated"
+    if type(value) is bool:
+        raise ValueError("sae.seed must be an integer, not a boolean")
+    seed = int(value)
+    if seed < 0:
+        raise ValueError("sae.seed must be non-negative")
+    return seed, "explicit"
+
+
 def load_cache(cache_dir: Path, max_tokens: int | None = None):
     import torch  # type: ignore
 
@@ -157,7 +168,9 @@ def main():
 
     cfg = apply_overrides(load_config(args.config), args)
     sae_cfg = cfg["sae"]
-    seed = int(sae_cfg.get("seed", 0))
+    seed, seed_source = resolve_seed(sae_cfg.get("seed"))
+    sae_cfg["seed"] = seed
+    sae_cfg["seed_source"] = seed_source
     torch.manual_seed(seed); random.seed(seed)
 
     x = load_cache(Path(args.cache_dir), args.max_tokens)
@@ -212,6 +225,8 @@ def main():
             "batch_size": bs,
             "device": device,
             "final_loss": final_loss,
+            "seed": seed,
+            "seed_source": seed_source,
         },
     }, out)
     print(f"saved {out}")

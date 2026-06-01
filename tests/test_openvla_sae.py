@@ -157,6 +157,9 @@ class OpenVLASAETest(unittest.TestCase):
             else:
                 self.assertEqual(result["reason"], "torch is not installed")
                 self.assertIn("pip install", result["install"])
+            self.assertEqual(result["seed_source"], "run_generated")
+            self.assertIsInstance(result["seed"], int)
+            self.assertGreater(result["seed"], 0)
             self.assertTrue(Path(result["metrics"]).exists())
             self.assertTrue(Path(result["report"]).exists())
 
@@ -164,6 +167,7 @@ class OpenVLASAETest(unittest.TestCase):
         mod = load_train_module()
         cfg = mod.load_config("projects/openvla_sae/configs/phase1.yaml")
         self.assertEqual(cfg["sae"]["k"], 64)
+        self.assertNotIn("seed", cfg["sae"])
         args = argparse.Namespace(
             steps=3,
             batch_size=8,
@@ -177,6 +181,12 @@ class OpenVLASAETest(unittest.TestCase):
         self.assertEqual(merged["sae"]["batch_size"], 8)
         self.assertEqual(merged["sae"]["k"], 2)
         self.assertEqual(merged["sae"]["seed"], 123)
+        generated, source = mod.resolve_seed(None)
+        self.assertEqual(source, "run_generated")
+        self.assertIsInstance(generated, int)
+        self.assertGreater(generated, 0)
+        explicit, source = mod.resolve_seed("7")
+        self.assertEqual((explicit, source), (7, "explicit"))
 
     def test_cache_script_dry_run_helpers_work_without_heavy_imports(self):
         mod = load_cache_module()

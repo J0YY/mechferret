@@ -27,7 +27,6 @@ sae:
   lr: 0.0003
   batch_size: 4096
   steps: 20000
-  seed: 0
   normalize_activations: true
 
 eval:

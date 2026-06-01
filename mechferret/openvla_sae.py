@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import math
+import secrets
 import sys
 from importlib import resources
 from pathlib import Path
@@ -64,6 +65,20 @@ def _positive_int(value: Any, default: int, *, minimum: int = 1) -> int:
     except (TypeError, ValueError):
         return default
     return parsed if parsed >= minimum else default
+
+
+def _runtime_seed(value: Any = None) -> tuple[int, str]:
+    if value is None or value == "":
+        return secrets.SystemRandom().randrange(1, 2**31 - 1), "run_generated"
+    if type(value) is bool:
+        return secrets.SystemRandom().randrange(1, 2**31 - 1), "run_generated"
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return secrets.SystemRandom().randrange(1, 2**31 - 1), "run_generated"
+    if parsed < 0:
+        return secrets.SystemRandom().randrange(1, 2**31 - 1), "run_generated"
+    return parsed, "explicit"
 
 
 def _flag(value: Any) -> bool:
@@ -300,7 +315,7 @@ def smoke_test(
     tokens: int = 256,
     steps: int = 20,
     k: int = 4,
-    seed: int = 0,
+    seed: int | None = None,
 ) -> dict[str, Any]:
     deps = _dependency_status()
     out = _path(out_dir, "runs/openvla_sae/smoke")
@@ -309,13 +324,15 @@ def smoke_test(
     tokens = _positive_int(tokens, 256)
     steps = _positive_int(steps, 20)
     k = min(_positive_int(k, 4), max(1, d_model * 4))
-    seed = _positive_int(seed, 0, minimum=0)
+    seed, seed_source = _runtime_seed(seed)
     if not deps["torch"]:
         payload = {
             "ok": False,
             "out_dir": str(out),
             "reason": "torch is not installed",
             "install": "pip install torch pyyaml tqdm",
+            "seed": seed,
+            "seed_source": seed_source,
         }
         _write_smoke_artifacts(out, payload)
         return payload
@@ -372,6 +389,8 @@ def smoke_test(
         "final_loss": final_loss,
         "checkpoint": str(checkpoint),
         "cache_dir": str(cache_dir),
+        "seed": seed,
+        "seed_source": seed_source,
     }
     torch.save({"model": model.state_dict(), "mean": mean, "std": std, "metrics": metrics}, checkpoint)
     payload = {"out_dir": str(out), **metrics}
@@ -642,8 +661,10 @@ def print_smoke_result(payload: dict[str, Any]) -> None:
     if not payload["ok"]:
         print(f"Reason: {payload['reason']}")
         print(f"Install: {payload['install']}")
+        print(f"Seed: {payload.get('seed')} ({payload.get('seed_source', 'unknown')})")
         return
     print(f"Device: {payload['device']}")
+    print(f"Seed: {payload['seed']} ({payload['seed_source']})")
     print(f"Loss: {payload['initial_loss']:.4f} -> {payload['final_loss']:.4f}")
     print(f"Checkpoint: {payload['checkpoint']}")
 
@@ -702,6 +723,7 @@ Status: passed
 - d_model: {payload['d_model']}
 - steps: {payload['steps']}
 - k: {payload['k']}
+- seed: {payload['seed']} ({payload['seed_source']})
 - loss: {payload['initial_loss']:.4f} -> {payload['final_loss']:.4f}
 - checkpoint: `{payload['checkpoint']}`
 - synthetic cache: `{payload['cache_dir']}`
@@ -714,6 +736,8 @@ This verifies the local Top-K SAE training path on synthetic activations. It doe
 Status: blocked before training
 
 Reason: {payload['reason']}
+
+- seed: {payload['seed']} ({payload['seed_source']})
 
 Install:
 

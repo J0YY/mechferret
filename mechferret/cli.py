@@ -497,6 +497,7 @@ def build_parser() -> argparse.ArgumentParser:
     sae.add_argument("--tokens", type=int, default=256, help="Synthetic token count for smoke.")
     sae.add_argument("--steps", type=int, default=20, help="Training steps for smoke.")
     sae.add_argument("--k", type=int, default=4, help="Top-K value for smoke.")
+    sae.add_argument("--seed", type=int, help="Explicit smoke-test seed; omitted runs use a generated seed recorded in metrics.")
     sae.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     return parser
 
@@ -1187,6 +1188,7 @@ def handle_sae(args) -> None:
             tokens=args.tokens,
             steps=args.steps,
             k=args.k,
+            seed=args.seed,
         )
         if args.json:
             print(json.dumps(_sae_payload(args.action, result), indent=2, sort_keys=True))
