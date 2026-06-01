@@ -682,6 +682,43 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("queued #1 (position 1/1)", rendered)
         self.assertIn("/queue edit #1 <prompt>", rendered)
 
+    def test_repl_prompt_text_unwraps_single_outer_shell_quote(self):
+        from mechferret import repl
+
+        self.assertEqual(repl._prompt_text_after_words('/queue add "run /paper next"', 2), "run /paper next")
+        self.assertEqual(repl._prompt_text_after_words("/queue edit #1 'new prompt'", 3), "new prompt")
+        self.assertEqual(repl._prompt_text_after_words('/queue add say "hi" exactly', 2), 'say "hi" exactly')
+        self.assertEqual(repl._prompt_text_after_words('/queue add "unfinished prompt', 2), '"unfinished prompt')
+
+    def test_repl_queue_edit_accepts_quoted_replacement_prompt(self):
+        from mechferret import repl
+
+        started = []
+
+        def fake_chat(agent, session, text, *, background=False):
+            started.append(text)
+            return text
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-edit-quoted.json"))
+            try:
+                runner.pause()
+                job = runner.submit("old prompt")
+
+                text = repl._prompt_text_after_words(f"/queue edit #{job.id} 'new prompt'", 3)
+                repl._queue_edit(runner, [str(job.id)], text)
+                self.assertEqual(job.text, "new prompt")
+
+                runner.resume()
+                self.assertTrue(runner.wait_idle(timeout=2))
+            finally:
+                runner.resume()
+                runner.stop(wait=True)
+
+        self.assertEqual(started, ["new prompt"])
+        self.assertIn("edited #1", out.getvalue())
+
     def test_repl_btw_queue_views_show_user_prompt_not_internal_prefix(self):
         from mechferret import repl
 

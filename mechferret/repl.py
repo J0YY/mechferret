@@ -973,7 +973,7 @@ def run_repl() -> None:
             continue
         if bare == "queue":
             if len(tokens) > 1 and tokens[1].lower() in {"add", "push"}:
-                text = _line_after_words(line, 2)
+                text = _prompt_text_after_words(line, 2)
                 if not text:
                     print(_c("  usage: /queue add <prompt>", "33"))
                     continue
@@ -1005,7 +1005,7 @@ def run_repl() -> None:
             elif len(tokens) > 1 and tokens[1].lower() == "apply":
                 _queue_apply(runner, tokens[2:])
             elif len(tokens) > 1 and tokens[1].lower() == "edit":
-                _queue_edit(runner, tokens[2:], _line_after_words(line, 3))
+                _queue_edit(runner, tokens[2:], _prompt_text_after_words(line, 3))
             elif len(tokens) > 1 and tokens[1].lower() == "move":
                 _queue_move(runner, tokens[2:])
             elif len(tokens) > 1 and tokens[1].lower() == "pause":
@@ -1202,6 +1202,19 @@ def _line_after_words(line: str, count: int) -> str:
             return ""
         text = parts[1].strip()
     return text
+
+
+def _prompt_text_after_words(line: str, count: int) -> str:
+    text = _line_after_words(line, count)
+    if not text:
+        return ""
+    if text[0] not in {"'", '"'}:
+        return text
+    try:
+        parts = shlex.split(text)
+    except ValueError:
+        return text
+    return parts[0] if len(parts) == 1 else text
 
 
 def _btw_prompt(text: str) -> str:
