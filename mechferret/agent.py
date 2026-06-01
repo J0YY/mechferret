@@ -144,13 +144,14 @@ def _text(value: Any) -> str:
     return ""
 
 
-def build_system_prompt(user_text: str = "") -> str:
+def build_system_prompt(user_text: str = "", *, suppress_benchmark_context: bool | None = None) -> str:
     """Assemble the system prompt from base + enabled tools + project memory + git."""
 
     sections = [BASE_SYSTEM_PROMPT]
     tool_lines = ", ".join(t["name"] for t in all_specs())
     sections.append(f"Available tools: {tool_lines}.")
-    suppress_benchmark_context = _turn_rejects_benchmark_context(user_text)
+    if suppress_benchmark_context is None:
+        suppress_benchmark_context = _turn_rejects_benchmark_context(user_text)
 
     for fname in ("MECHFERRET.md", "CLAUDE.md"):
         path = Path.cwd() / fname
@@ -443,10 +444,15 @@ def _sanitize_loaded_messages(
     provider: str,
     *,
     current_user_text: str = "",
+    suppress_benchmark_context: bool | None = None,
 ) -> list[dict[str, Any]]:
     sanitized: list[dict[str, Any]] = []
     last_user_text = ""
-    redact_benchmark_context = _turn_rejects_benchmark_context(current_user_text)
+    redact_benchmark_context = (
+        _turn_rejects_benchmark_context(current_user_text)
+        if suppress_benchmark_context is None
+        else suppress_benchmark_context
+    )
     for message in messages:
         role = message.get("role")
         if role == "system":
@@ -465,7 +471,16 @@ def _sanitize_loaded_messages(
             clean["content"] = _redact_rejected_benchmark_content(clean.get("content"))
         sanitized.append(clean)
     if provider == "openai":
-        return [{"role": "system", "content": build_system_prompt(current_user_text)}, *sanitized]
+        return [
+            {
+                "role": "system",
+                "content": build_system_prompt(
+                    current_user_text,
+                    suppress_benchmark_context=redact_benchmark_context,
+                ),
+            },
+            *sanitized,
+        ]
     return sanitized
 
 
@@ -536,6 +551,7 @@ class Agent:
         self.session_id = sessions.new_session_id()
         self.abort = threading.Event()
         self.tracer = TraceRecorder(self.session_id, ".mechferret")  # -> .mechferret/trace.jsonl (+ Raindrop mirror)
+        self._suppress_benchmark_context = False
 
     @property
     def configured(self) -> bool:
@@ -549,6 +565,14 @@ class Agent:
         if not self.configured:
             raise RuntimeError("No provider configured.")
         self.abort.clear()
+        suppress_benchmark_context = self._update_benchmark_context_policy(user_text)
+        if suppress_benchmark_context:
+            self.messages = _sanitize_loaded_messages(
+                self.messages,
+                self.provider,
+                current_user_text=user_text,
+                suppress_benchmark_context=True,
+            )
         self.tracer.event("user_prompt", text=user_text[:200])
         self._maybe_compact()
         try:
@@ -558,6 +582,13 @@ class Agent:
             raise
         self._persist()
         return reply
+
+    def _update_benchmark_context_policy(self, user_text: str) -> bool:
+        if _user_explicitly_selected_benchmark_model(user_text):
+            self._suppress_benchmark_context = False
+        elif _turn_rejects_benchmark_context(user_text):
+            self._suppress_benchmark_context = True
+        return self._suppress_benchmark_context
 
     def _persist(self) -> None:
         try:
@@ -776,7 +807,12 @@ class Agent:
     # --- Anthropic ------------------------------------------------------------------
 
     def _send_anthropic(self, user_text: str) -> str:
-        self.messages = _sanitize_loaded_messages(self.messages, "anthropic", current_user_text=user_text)
+        self.messages = _sanitize_loaded_messages(
+            self.messages,
+            "anthropic",
+            current_user_text=user_text,
+            suppress_benchmark_context=self._suppress_benchmark_context,
+        )
         self.messages.append({"role": "user", "content": user_text})
         tools = [
             {"name": t["name"], "description": t["description"], "input_schema": t["parameters"]}
@@ -787,7 +823,10 @@ class Agent:
             payload = {
                 "model": self.model,
                 "max_tokens": MAX_TOKENS,
-                "system": build_system_prompt(user_text),
+                "system": build_system_prompt(
+                    user_text,
+                    suppress_benchmark_context=self._suppress_benchmark_context,
+                ),
                 "messages": self.messages,
                 "tools": tools,
             }
@@ -857,7 +896,12 @@ class Agent:
     # --- OpenAI ---------------------------------------------------------------------
 
     def _send_openai(self, user_text: str) -> str:
-        self.messages = _sanitize_loaded_messages(self.messages, "openai", current_user_text=user_text)
+        self.messages = _sanitize_loaded_messages(
+            self.messages,
+            "openai",
+            current_user_text=user_text,
+            suppress_benchmark_context=self._suppress_benchmark_context,
+        )
         self.messages.append({"role": "user", "content": user_text})
         tools = [
             {"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["parameters"]}}

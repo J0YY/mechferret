@@ -1457,6 +1457,47 @@ class AgentToolTest(unittest.TestCase):
         self.assertNotIn("IOI", prior_payload)
         self.assertNotIn("duplicate-token", prior_payload)
 
+    def test_openai_benchmark_rejection_persists_across_followup_turns(self):
+        captured = []
+
+        def fake_post(url, payload, headers):
+            captured.append(json.loads(json.dumps(payload["messages"])))
+            reply = "Which model should I use?" if len(captured) == 1 else "I still need the model and task."
+            return {"choices": [{"message": {"role": "assistant", "content": reply}}]}
+
+        original = agent._http_post
+        cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            os.chdir(tmp)
+            Path("MECHFERRET.md").write_text("- Model under study: gpt2\n- Task: IOI\n", encoding="utf-8")
+            try:
+                agent._http_post = fake_post
+                a = agent.Agent()
+                a.provider, a.model, a._key = "openai", "gpt-test", "fake"
+                a.messages = [
+                    {"role": "system", "content": "stale system"},
+                    {"role": "user", "content": "Use GPT-2 small for IOI."},
+                    {
+                        "role": "assistant",
+                        "content": "Run duplicate-token/name-mover tests in GPT-2 small.",
+                    },
+                ]
+                first = a.send("Why are we still seeing gpt2 by default?")
+                second = a.send("continue")
+            finally:
+                agent._http_post = original
+                os.chdir(cwd)
+
+        self.assertEqual(first, "Which model should I use?")
+        self.assertEqual(second, "I still need the model and task.")
+        self.assertEqual(len(captured), 2)
+        self.assertIn("Project notes (MECHFERRET.md) omitted", captured[1][0]["content"])
+        second_payload = json.dumps(captured[1])
+        self.assertNotIn("gpt2", second_payload.lower())
+        self.assertNotIn("GPT-2", second_payload)
+        self.assertNotIn("IOI", second_payload)
+        self.assertNotIn("duplicate-token", second_payload)
+
     def test_anthropic_stale_benchmark_text_blocks_same_turn_tool_call(self):
         calls = {"n": 0}
         streamed = []
