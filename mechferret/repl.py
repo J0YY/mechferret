@@ -1193,7 +1193,7 @@ def _guard_agent_idle(runner: ChatJobRunner, action: str) -> bool:
     if not runner.main_busy():
         return True
     print(_c(f"  {action} waits for the active prompt so conversation state stays consistent.", "33"))
-    print(_c("  use /btw for side prompts, /queue to inspect, or /cancel <id|all> for queued work.", "2"))
+    print(_c("  use /btw for side prompts, /queue to inspect, or /cancel <id|latest|next|all> for queued work.", "2"))
     _print_queue(runner)
     return False
 

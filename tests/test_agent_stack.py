@@ -1357,6 +1357,7 @@ class AgentStackTest(unittest.TestCase):
         rendered = out.getvalue()
         self.assertIn("/model waits for the active prompt", rendered)
         self.assertIn("use /btw", rendered)
+        self.assertIn("/cancel <id|latest|next|all>", rendered)
         self.assertIn("running #1", rendered)
 
     def test_repl_btw_parsing_preserves_prompt_text(self):
