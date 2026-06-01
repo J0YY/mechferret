@@ -1108,6 +1108,30 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("partial answer before completion", rendered)
         self.assertIn("long prompt", rendered)
 
+    def test_repl_queue_show_keeps_captured_output_after_completion(self):
+        from mechferret import repl
+
+        def fake_chat(agent, session, text, *, background=False):
+            repl._print_background("tool output before final")
+            return "final answer"
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-captured-output.json"))
+            try:
+                job = runner.submit("prompt with tools")
+                self.assertTrue(runner.wait_idle(timeout=2))
+                repl._queue_show(runner, [str(job.id)])
+            finally:
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("job #1", rendered)
+        self.assertIn("captured output:", rendered)
+        self.assertIn("tool output before final", rendered)
+        self.assertIn("reply:", rendered)
+        self.assertIn("final answer", rendered)
+
     def test_repl_queue_tail_follows_live_background_output_until_done(self):
         from mechferret import repl
 

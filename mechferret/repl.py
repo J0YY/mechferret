@@ -1747,8 +1747,9 @@ def _queue_show(runner: ChatJobRunner, args: list[str]) -> None:
         print(_indent(job.error))
     print(_c("  prompt:", "1"))
     print(_render_reply(_display_job_text(job)))
-    if job.output and not job.reply:
-        print(_c("  live output:", "1"))
+    if job.output:
+        label = "captured output:" if job.reply or job.status in TERMINAL_JOB_STATUSES else "live output:"
+        print(_c(f"  {label}", "1"))
         print(_render_reply("\n".join(job.output[-80:])))
     if job.reply:
         print(_c("  reply:", "1"))
