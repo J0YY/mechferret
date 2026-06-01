@@ -560,6 +560,9 @@ class AgentStackTest(unittest.TestCase):
             runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-prompt.json"))
             try:
                 self.assertEqual(repl._input_prompt(runner), "❯ ")
+                runner.pause()
+                self.assertIn("paused", repl._input_prompt(runner))
+                runner.resume()
                 active = runner.submit("active prompt")
                 deadline = time.monotonic() + 2
                 while runner.active() is None and time.monotonic() < deadline:
@@ -580,6 +583,21 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("run#1", prompt)
         self.assertIn("btw:1", prompt)
         self.assertIn("q:1", prompt)
+
+    def test_repl_input_prompt_shows_saved_queue_state(self):
+        from mechferret import repl
+
+        queue_path = Path("queue-prompt-saved.json")
+        repl._save_queue_jobs(queue_path, [repl.PromptJob(id=7, text="saved prompt")])
+
+        with redirect_stdout(StringIO()):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: None, queue_path=queue_path)
+            try:
+                prompt = repl._input_prompt(runner)
+            finally:
+                runner.stop(wait=True)
+
+        self.assertIn("saved:1", prompt)
 
     def test_repl_queue_view_does_not_duplicate_live_queued_jobs_as_saved(self):
         from mechferret import repl

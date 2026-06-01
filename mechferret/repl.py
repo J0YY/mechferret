@@ -775,10 +775,12 @@ def _input_prompt(runner: ChatJobRunner) -> str:
     active = runner.active()
     side_active = len(runner.side_active())
     queued = len(runner.queued())
-    if active is None and not side_active and not queued:
+    saved = len(runner.saved_only())
+    paused = runner.paused()
+    if active is None and not side_active and not queued and not saved and not paused:
         return "❯ "
     parts: list[str] = []
-    if runner.paused():
+    if paused:
         parts.append("paused")
     if active is not None:
         parts.append(f"run#{active.id}")
@@ -786,6 +788,8 @@ def _input_prompt(runner: ChatJobRunner) -> str:
         parts.append(f"btw:{side_active}")
     if queued:
         parts.append(f"q:{queued}")
+    if saved:
+        parts.append(f"saved:{saved}")
     return f"[{' '.join(parts)}] ❯ "
 
 
