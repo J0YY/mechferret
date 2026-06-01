@@ -58,6 +58,24 @@ def _option_disqualifying_tests():
     ]
 
 
+def _option_comparison_matrix():
+    return [
+        {"axis": "exact_phrase", "covered": True, "evidence_count": 1, "next_action": "Compare exact phrase."},
+        {"axis": "claim_collision", "covered": True, "evidence_count": 1, "next_action": "Compare claim."},
+        {"axis": "recency", "covered": True, "evidence_count": 1, "next_action": "Compare recent work."},
+        {"axis": "method", "covered": True, "evidence_count": 1, "next_action": "Compare method."},
+        {"axis": "mechanism", "covered": True, "evidence_count": 1, "next_action": "Compare mechanism."},
+        {"axis": "architecture", "covered": True, "evidence_count": 1, "next_action": "Compare architecture."},
+        {"axis": "frontier_architecture", "covered": True, "evidence_count": 1, "next_action": "Compare frontier architecture."},
+        {"axis": "evaluation", "covered": False, "evidence_count": 0, "next_action": "Add benchmark."},
+        {"axis": "implementation", "covered": True, "evidence_count": 1, "next_action": "Compare implementation."},
+        {"axis": "replication", "covered": True, "evidence_count": 1, "next_action": "Compare replication."},
+        {"axis": "peer_review", "covered": True, "evidence_count": 1, "next_action": "Compare peer review."},
+        {"axis": "failure_modes", "covered": True, "evidence_count": 1, "next_action": "Compare failures."},
+        {"axis": "protocol", "covered": True, "evidence_count": 1, "next_action": "Compare protocol."},
+    ]
+
+
 def _option_search_audit():
     arxiv_focuses = [
         "core_relevance",
@@ -240,10 +258,7 @@ def _validated_option(title: str = "Novelty audit") -> dict:
             "missing_checks": [],
             "next_actions": ["Write the delta."],
         },
-        "comparison_matrix": [
-            {"axis": "method", "covered": True, "evidence_count": 1, "next_action": "Compare method."},
-            {"axis": "evaluation", "covered": False, "evidence_count": 0, "next_action": "Add benchmark."},
-        ],
+        "comparison_matrix": _option_comparison_matrix(),
         "novelty_threat_model": _option_threat_model(),
         "disqualifying_overlap_tests": _option_disqualifying_tests(),
         "search_audit": _option_search_audit(),
@@ -902,6 +917,15 @@ class AgentToolTest(unittest.TestCase):
         self.assertFalse(bad_comparison["ok"])
         self.assertEqual(bad_comparison["expected"], "objects with comparison_matrix from verify_novelty assessment")
 
+        shallow_matrix = _validated_option("Thin comparison matrix")
+        shallow_matrix["comparison_matrix"] = [
+            {"axis": "method", "covered": True, "evidence_count": 1, "next_action": "Compare method."},
+            {"axis": "evaluation", "covered": True, "evidence_count": 1, "next_action": "Compare evaluation."},
+        ]
+        bad_shallow_matrix = json.loads(tools.run_tool("present_options", {"options": [shallow_matrix]}))
+        self.assertFalse(bad_shallow_matrix["ok"])
+        self.assertEqual(bad_shallow_matrix["expected"], "objects with comparison_matrix from verify_novelty assessment")
+
         bad_threat_model = json.loads(
             tools.run_tool(
                 "present_options",
@@ -921,10 +945,7 @@ class AgentToolTest(unittest.TestCase):
                                 "missing_checks": ["focus_breadth"],
                                 "next_actions": ["Run follow-up searches."],
                             },
-                            "comparison_matrix": [
-                                {"axis": "method", "covered": True, "evidence_count": 1, "next_action": "Compare method."},
-                                {"axis": "evaluation", "covered": False, "evidence_count": 0, "next_action": "Add benchmark."},
-                            ],
+                            "comparison_matrix": _option_comparison_matrix(),
                             "recent_pressure": {
                                 "status": "recent_prior_present",
                                 "recent_window": "2024-2026",
@@ -973,10 +994,7 @@ class AgentToolTest(unittest.TestCase):
                                 "missing_checks": ["focus_breadth"],
                                 "next_actions": ["Run follow-up searches."],
                             },
-                            "comparison_matrix": [
-                                {"axis": "method", "covered": True, "evidence_count": 1, "next_action": "Compare method."},
-                                {"axis": "evaluation", "covered": False, "evidence_count": 0, "next_action": "Add benchmark."},
-                            ],
+                            "comparison_matrix": _option_comparison_matrix(),
                             "novelty_threat_model": _option_threat_model(),
                             "recent_pressure": {
                                 "status": "recent_prior_present",
@@ -1031,10 +1049,7 @@ class AgentToolTest(unittest.TestCase):
                                 "missing_checks": ["focus_breadth"],
                                 "next_actions": ["Run follow-up searches."],
                             },
-                            "comparison_matrix": [
-                                {"axis": "method", "covered": True, "evidence_count": 1, "next_action": "Compare method."},
-                                {"axis": "evaluation", "covered": False, "evidence_count": 0, "next_action": "Add benchmark."},
-                            ],
+                            "comparison_matrix": _option_comparison_matrix(),
                             "novelty_threat_model": _option_threat_model(),
                             "disqualifying_overlap_tests": _option_disqualifying_tests(),
                             "recent_pressure": {
@@ -1074,10 +1089,7 @@ class AgentToolTest(unittest.TestCase):
                                 "missing_checks": ["deep_query_plan"],
                                 "next_actions": ["Run follow-up searches."],
                             },
-                            "comparison_matrix": [
-                                {"axis": "method", "covered": True, "evidence_count": 1, "next_action": "Compare method."},
-                                {"axis": "evaluation", "covered": False, "evidence_count": 0, "next_action": "Add benchmark."},
-                            ],
+                            "comparison_matrix": _option_comparison_matrix(),
                             "novelty_threat_model": _option_threat_model(),
                             "disqualifying_overlap_tests": _option_disqualifying_tests(),
                             "search_audit": shallow_search_audit,
@@ -1119,10 +1131,7 @@ class AgentToolTest(unittest.TestCase):
                                 "missing_checks": ["focus_breadth"],
                                 "next_actions": ["Run focused follow-up searches."],
                             },
-                            "comparison_matrix": [
-                                {"axis": "method", "covered": True, "evidence_count": 1, "next_action": "Compare method."},
-                                {"axis": "evaluation", "covered": False, "evidence_count": 0, "next_action": "Add benchmark."},
-                            ],
+                            "comparison_matrix": _option_comparison_matrix(),
                             "novelty_threat_model": _option_threat_model(),
                             "disqualifying_overlap_tests": _option_disqualifying_tests(),
                             "search_audit": unfocused_search_audit,
@@ -1165,10 +1174,7 @@ class AgentToolTest(unittest.TestCase):
                                 "missing_checks": ["search_completed"],
                                 "next_actions": ["Retry failed retrieval passes."],
                             },
-                            "comparison_matrix": [
-                                {"axis": "method", "covered": True, "evidence_count": 1, "next_action": "Compare method."},
-                                {"axis": "evaluation", "covered": False, "evidence_count": 0, "next_action": "Add benchmark."},
-                            ],
+                            "comparison_matrix": _option_comparison_matrix(),
                             "novelty_threat_model": _option_threat_model(),
                             "disqualifying_overlap_tests": _option_disqualifying_tests(),
                             "search_audit": failed_search_audit,
@@ -1338,6 +1344,8 @@ class AgentToolTest(unittest.TestCase):
                 {"options": [_validated_option("Run audit"), _validated_option("Run audit 2")]},
             )
         )
+        if ok.get("tool_output_truncated"):
+            ok = json.loads(Path(ok["full_output_path"]).read_text(encoding="utf-8"))
         self.assertEqual(ok["options"], ["Run audit", "Run audit 2"])
         self.assertEqual(ok["option_details"][0]["novelty_risk"], "medium_prior_art_risk")
         self.assertIn("Closest Paper", ok["option_details"][0]["citations"][0])
@@ -1345,8 +1353,9 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(ok["option_details"][0]["claim_readiness"]["status"], "delta_review_required")
         self.assertFalse(ok["option_details"][0]["claim_readiness"]["can_claim_high_novelty"])
         self.assertIn("causal ablation", ok["option_details"][0]["required_delta"])
-        self.assertEqual(ok["option_details"][0]["comparison_matrix"][0]["axis"], "method")
-        self.assertFalse(ok["option_details"][0]["comparison_matrix"][1]["covered"])
+        matrix_by_axis = {row["axis"]: row for row in ok["option_details"][0]["comparison_matrix"]}
+        self.assertIn("method", matrix_by_axis)
+        self.assertFalse(matrix_by_axis["evaluation"]["covered"])
         self.assertEqual(ok["option_details"][0]["novelty_threat_model"][0]["threat"], "exact_phrase_overlap")
         self.assertEqual(ok["option_details"][0]["novelty_threat_model"][1]["representative_prior"]["source_type"], "paper")
         self.assertEqual(ok["option_details"][0]["disqualifying_overlap_tests"][1]["test"], "claim_collision")
@@ -2708,12 +2717,12 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(selected["user_selected"], "Novelty audit")
         self.assertEqual(selected["selected_option"]["title"], "Novelty audit")
         self.assertEqual(selected["selected_option"]["recent_pressure"]["status"], "recent_prior_present")
-        self.assertEqual(selected["selected_option"]["comparison_matrix"][1]["axis"], "evaluation")
+        self.assertTrue(any(row["axis"] == "evaluation" for row in selected["selected_option"]["comparison_matrix"]))
         self.assertEqual(selected["selected_option"]["novelty_threat_model"][1]["threat"], "claim_collision")
         self.assertEqual(selected["selected_option"]["disqualifying_overlap_tests"][0]["test"], "exact_phrase_overlap")
         self.assertEqual(selected["selected_option"]["search_audit"]["pass_count"], 27)
         self.assertIn("causal ablation", picked[0][0]["required_delta"])
-        self.assertEqual(picked[0][0]["comparison_matrix"][1]["axis"], "evaluation")
+        self.assertTrue(any(row["axis"] == "evaluation" for row in picked[0][0]["comparison_matrix"]))
         self.assertEqual(picked[0][0]["novelty_threat_model"][1]["risk"], "needs_delta_review")
         self.assertFalse(picked[0][0]["disqualifying_overlap_tests"][1]["passed"])
         self.assertEqual(picked[0][0]["search_audit"]["duplicate_only_search_passes"], 0)

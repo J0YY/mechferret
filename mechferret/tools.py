@@ -85,6 +85,21 @@ NOVELTY_REQUIRED_SOURCE_AXES = {
     "model_hubs",
     "lab_reports",
 }
+NOVELTY_REQUIRED_COMPARISON_AXES = {
+    "architecture",
+    "claim_collision",
+    "evaluation",
+    "exact_phrase",
+    "failure_modes",
+    "frontier_architecture",
+    "implementation",
+    "mechanism",
+    "method",
+    "peer_review",
+    "protocol",
+    "recency",
+    "replication",
+}
 NOVELTY_WEB_SOURCE_TYPES = {
     "paper",
     "benchmark",
@@ -2763,7 +2778,7 @@ def _valid_option_comparison_matrix(value: Any) -> bool:
     if not rows:
         return False
     axes = {row["axis"] for row in rows}
-    return bool({"method", "evaluation"} & axes) and all("covered" in row for row in rows)
+    return NOVELTY_REQUIRED_COMPARISON_AXES <= axes and all("covered" in row for row in rows)
 
 
 def _option_comparison_matrix(value: Any) -> list[dict[str, Any]]:
@@ -2789,7 +2804,7 @@ def _option_comparison_matrix(value: Any) -> list[dict[str, Any]]:
             if title or url:
                 row["representative_prior"] = " ".join(part for part in (title, url) if part)
         rows.append(row)
-    return rows[:9]
+    return rows[:16]
 
 
 def _valid_option_threat_model(value: Any) -> bool:

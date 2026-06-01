@@ -821,6 +821,17 @@ class Agent:
                 validation_payload = json.loads(validation)
             except json.JSONDecodeError:
                 validation_payload = {}
+            if (
+                isinstance(validation_payload, dict)
+                and validation_payload.get("tool_output_truncated") is True
+                and isinstance(validation_payload.get("full_output_path"), str)
+            ):
+                try:
+                    loaded = json.loads(Path(validation_payload["full_output_path"]).read_text(encoding="utf-8"))
+                    if isinstance(loaded, dict):
+                        validation_payload = loaded
+                except (OSError, json.JSONDecodeError):
+                    pass
             if isinstance(validation_payload, dict) and validation_payload.get("ok") is False:
                 return validation
             options = validation_payload.get("option_details") if isinstance(validation_payload, dict) else None
