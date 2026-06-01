@@ -1126,11 +1126,8 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(bad_no_web_unique["expected"], "objects with search_audit from verify_novelty assessment")
 
         missing_source_axis_search_audit = _option_search_audit()
-        missing_source_axis_search_audit["source_axis_coverage"] = {
-            key: (False if key == "model_hubs" else value)
-            for key, value in missing_source_axis_search_audit["source_axis_coverage"].items()
-        }
-        missing_source_axis_search_audit["missing_source_axis_coverage"] = ["model_hubs"]
+        missing_source_axis_search_audit["source_type_counts"].pop("model_hub", None)
+        missing_source_axis_search_audit["source_domain_counts"].pop("huggingface.co", None)
         missing_source_axis = _validated_option("Missing source axis evidence")
         missing_source_axis["search_audit"] = missing_source_axis_search_audit
         bad_missing_source_axis = json.loads(
@@ -1141,6 +1138,24 @@ class AgentToolTest(unittest.TestCase):
         )
         self.assertFalse(bad_missing_source_axis["ok"])
         self.assertEqual(bad_missing_source_axis["expected"], "objects with search_audit from verify_novelty assessment")
+
+        forged_source_axis_search_audit = _option_search_audit()
+        forged_source_axis_search_audit["source_type_counts"] = {"paper": 20}
+        forged_source_axis_search_audit["source_domain_counts"] = {"arxiv.org": 20}
+        forged_source_axis_search_audit["source_axis_coverage"] = {
+            key: True for key in forged_source_axis_search_audit["source_axis_coverage"]
+        }
+        forged_source_axis_search_audit["missing_source_axis_coverage"] = []
+        forged_source_axis = _validated_option("Forged source axis evidence")
+        forged_source_axis["search_audit"] = forged_source_axis_search_audit
+        bad_forged_source_axis = json.loads(
+            tools.run_tool(
+                "present_options",
+                {"options": [forged_source_axis]},
+            )
+        )
+        self.assertFalse(bad_forged_source_axis["ok"])
+        self.assertEqual(bad_forged_source_axis["expected"], "objects with search_audit from verify_novelty assessment")
 
         missing_recent = _validated_option("No recent evidence")
         missing_recent["recent_pressure"] = {

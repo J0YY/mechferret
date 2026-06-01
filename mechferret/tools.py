@@ -2957,14 +2957,18 @@ def _option_search_audit(value: Any) -> dict[str, Any]:
             for key, flag in focus_coverage.items()
             if isinstance(key, str) and type(flag) is bool
         }
-    source_axis_coverage = value.get("source_axis_coverage")
-    if isinstance(source_axis_coverage, dict):
-        audit["source_axis_coverage"] = {
-            str(key): bool(flag)
-            for key, flag in source_axis_coverage.items()
-            if isinstance(key, str) and type(flag) is bool
-        }
-    missing_source_axis_coverage = _option_strings(value.get("missing_source_axis_coverage", []))
+    source_type_counts = _option_count_map(value.get("source_type_counts"))
+    source_domain_counts = _option_count_map(value.get("source_domain_counts"), normalize_key=True)
+    if source_type_counts:
+        audit["source_type_counts"] = source_type_counts
+    if source_domain_counts:
+        audit["source_domain_counts"] = source_domain_counts
+    source_axis_coverage = _novelty_source_axis_coverage_from_counts(source_type_counts, source_domain_counts)
+    audit["source_axis_coverage"] = source_axis_coverage
+    missing_source_axis_coverage = [
+        source_axis for source_axis in sorted(NOVELTY_REQUIRED_SOURCE_AXES)
+        if not source_axis_coverage.get(source_axis)
+    ]
     if missing_source_axis_coverage:
         audit["missing_source_axis_coverage"] = missing_source_axis_coverage[:16]
     missing_focus_coverage = _option_strings(value.get("missing_focus_coverage", []))
@@ -3002,6 +3006,21 @@ def _option_search_focus_rows(value: Any) -> list[dict[str, str]]:
         if source and focus:
             rows.append({"source": source, "focus": focus})
     return rows
+
+
+def _option_count_map(value: Any, *, normalize_key: bool = False) -> dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    counts: dict[str, int] = {}
+    for key, raw_count in value.items():
+        name = str(key).strip()
+        if normalize_key:
+            name = name.lower()
+        count = _safe_int(raw_count)
+        if not name or count <= 0:
+            continue
+        counts[name] = count
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0]) if normalize_key else item[0]))
 
 
 def _option_search_focus_summary(value: Any) -> list[dict[str, Any]]:
