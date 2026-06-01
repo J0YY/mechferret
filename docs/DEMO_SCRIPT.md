@@ -56,12 +56,13 @@ cat runs/demo/trace.jsonl       # per-phase spans (mirror to Raindrop Workshop)
 
 ```bash
 python3 -m mechferret /skills                       # reusable playbooks
-python3 -m mechferret discover --skill find-induction-heads --out runs/induction
+python3 -m mechferret discover --skill find-induction-heads --model <model> --out runs/induction
 ```
 
 "Different skill, different task — same loop finds an **induction head** and its
 upstream **previous-token head**. The budget (`hooks.py`) is the only stop
-condition; no human approves each step."
+condition; no human approves each step. The model under study is explicit, not
+silently chosen by MechFerret."
 
 ## 5. Scale to real models on Modal
 
