@@ -2088,6 +2088,60 @@ class AgentToolTest(unittest.TestCase):
                     if v is not None:
                         os.environ[k] = v
 
+    def test_active_provider_uses_env_only_when_config_absent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "missing.json"
+            old = os.environ.get("MECHFERRET_CONFIG")
+            old_openai_key = os.environ.get("OPENAI_API_KEY")
+            old_openai_model = os.environ.get("MECHFERRET_OPENAI_MODEL")
+            os.environ["MECHFERRET_CONFIG"] = str(cfg)
+            os.environ["OPENAI_API_KEY"] = "env-key"
+            os.environ["MECHFERRET_OPENAI_MODEL"] = "env-model"
+            try:
+                self.assertEqual(agent.active_provider(), ("openai", "env-model", "env-key"))
+            finally:
+                if old is None:
+                    os.environ.pop("MECHFERRET_CONFIG", None)
+                else:
+                    os.environ["MECHFERRET_CONFIG"] = old
+                if old_openai_key is None:
+                    os.environ.pop("OPENAI_API_KEY", None)
+                else:
+                    os.environ["OPENAI_API_KEY"] = old_openai_key
+                if old_openai_model is None:
+                    os.environ.pop("MECHFERRET_OPENAI_MODEL", None)
+                else:
+                    os.environ["MECHFERRET_OPENAI_MODEL"] = old_openai_model
+
+    def test_active_provider_respects_saved_local_default_with_env_present(self):
+        from mechferret.config import MechFerretConfig, save_config
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "config.json"
+            old = os.environ.get("MECHFERRET_CONFIG")
+            old_openai_key = os.environ.get("OPENAI_API_KEY")
+            old_openai_model = os.environ.get("MECHFERRET_OPENAI_MODEL")
+            os.environ["MECHFERRET_CONFIG"] = str(cfg)
+            os.environ["OPENAI_API_KEY"] = "env-key"
+            os.environ["MECHFERRET_OPENAI_MODEL"] = "env-model"
+            try:
+                save_config(MechFerretConfig(default_provider="local"), cfg)
+                self.assertEqual(agent.active_provider(), ("", "", ""))
+                self.assertFalse(agent.is_configured())
+            finally:
+                if old is None:
+                    os.environ.pop("MECHFERRET_CONFIG", None)
+                else:
+                    os.environ["MECHFERRET_CONFIG"] = old
+                if old_openai_key is None:
+                    os.environ.pop("OPENAI_API_KEY", None)
+                else:
+                    os.environ["OPENAI_API_KEY"] = old_openai_key
+                if old_openai_model is None:
+                    os.environ.pop("MECHFERRET_OPENAI_MODEL", None)
+                else:
+                    os.environ["MECHFERRET_OPENAI_MODEL"] = old_openai_model
+
     def test_active_provider_requires_explicit_chat_model(self):
         from mechferret.config import MechFerretConfig, ProviderSettings, save_config
 

@@ -237,7 +237,7 @@ def build_parser() -> argparse.ArgumentParser:
     login.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
 
     api = sub.add_parser("api", aliases=["/api"], help="Show or change provider configuration.")
-    api.add_argument("--provider", choices=sorted(PROVIDERS) + ["local"], help="Set default provider.")
+    api.add_argument("--provider", choices=sorted(PROVIDERS) + ["local"], help="Set default provider; local disables chat provider autoselection.")
     api.add_argument("--api-key", help="Store or replace the key for --provider.")
     api.add_argument("--model", help="Store or replace the configured chat model for --provider.")
     api.add_argument("--show", action="store_true", help="Show configured provider status.")

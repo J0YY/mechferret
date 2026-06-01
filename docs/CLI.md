@@ -956,7 +956,7 @@ usage: mechferret api [-h] [--provider {anthropic,openai,local}]
 Options:
 
 - `-h`, `--help`: show this help message and exit
-- `--provider`: choices: `anthropic`, `openai`, `local`; Set default provider.
+- `--provider`: choices: `anthropic`, `openai`, `local`; Set default provider; local disables chat provider autoselection.
 - `--api-key`: Store or replace the key for --provider.
 - `--model`: Store or replace the configured chat model for --provider.
 - `--show`: Show configured provider status.

@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import permissions, sessions
-from .config import configured_api_key, configured_model, load_config
+from .config import configured_api_key, configured_model, default_config_path, load_config
 from .costs import CostTracker
 from .tracing import TraceRecorder
 from .tools import all_specs, run_tool as _run_tool, tool_meta
@@ -171,8 +171,11 @@ def _recall_mechanisms(limit: int = 8) -> str:
 def active_provider() -> tuple[str, str, str]:
     """Return (provider, model, api_key); provider is '' if nothing is configured."""
 
-    config = load_config()
+    config_path = default_config_path()
+    config = load_config(config_path)
     provider = config.default_provider
+    if provider == "local" and config_path.exists():
+        return "", "", ""
     if provider in {"anthropic", "openai"}:
         key = configured_api_key(provider, config)
         model = configured_model(provider, config)
