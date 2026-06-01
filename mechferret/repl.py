@@ -35,6 +35,7 @@ WIDTH = 78
 PURPLE = "38;5;141"  # soft violet
 PURPLE_B = "1;38;5;141"
 TERMINAL_JOB_STATUSES = {"done", "error", "canceled"}
+SAVED_JOB_STATUSES = {"queued", "running", "done", "error"}
 BTW_PROMPT_PREFIX = (
     "Side request entered with /btw while another prompt was running. "
     "Answer it as a compact aside unless it changes the active work:\n\n"
@@ -233,6 +234,12 @@ class ChatJobRunner:
         restored_jobs, remaining_jobs = _pop_saved_queue_jobs(saved_jobs, target)
         if not restored_jobs:
             return []
+        restorable_jobs = [job for job in restored_jobs if job.status in {"queued", "running"}]
+        remaining_jobs = [*remaining_jobs, *(job for job in restored_jobs if job not in restorable_jobs)]
+        if not restorable_jobs:
+            self._save_with_saved_jobs(remaining_jobs)
+            return []
+        restored_jobs = restorable_jobs
         restored_ids = {job.id for job in restored_jobs}
         self._preserved_saved_ids.difference_update(restored_ids)
         self._preserved_saved_ids.update(job.id for job in remaining_jobs)
@@ -255,11 +262,26 @@ class ChatJobRunner:
     def clear_saved(self) -> int:
         with self._lock:
             live_by_id = {job.id: job for job in self._jobs}
-            live_pending = [job for job in self._jobs if job.status in {"queued", "running"}]
+            live_pending = [
+                job for job in self._jobs
+                if job.status in {"queued", "running"} or (job.kind == "btw" and job.status in {"done", "error"} and not job.applied)
+            ]
         saved = [job for job in self.saved() if not _queue_file_entry_matches_live_job(job, live_by_id)]
         self._preserved_saved_ids.clear()
         _save_queue_jobs(self._queue_path, live_pending)
         return len(saved)
+
+    def _save_with_saved_jobs(self, saved_jobs: list[PromptJob]) -> int:
+        with self._lock:
+            live_by_id = {job.id: job for job in self._jobs}
+            pending = [
+                job for job in self._jobs
+                if job.status == "queued"
+                or job.status == "running"
+                or (job.kind == "btw" and job.status in {"done", "error"} and not job.applied)
+            ]
+        pending.extend(job for job in saved_jobs if not _queue_file_entry_matches_live_job(job, live_by_id))
+        return _save_queue_jobs(self._queue_path, pending)
 
     def pause(self) -> bool:
         with self._lock:
@@ -454,20 +476,37 @@ class ChatJobRunner:
                 job = max(ready or side_jobs, key=_job_order_key) if side_jobs else None
             else:
                 job = self._find_live_job_locked(target)
-            if job is None:
-                return None, "missing"
-            if job.kind != "btw":
-                return job, "kind"
-            if job.status != "done":
-                return job, job.status
-            if not job.reply:
-                return job, "no_reply"
-            if job.applied:
-                return job, "already"
-            _append_side_result_to_main_context(self.agent, job)
-            job.applied = True
-            self.session.step = f"applied side #{job.id}"
-            return job, "applied"
+            if job is not None:
+                if job.kind != "btw":
+                    return job, "kind"
+                if job.status != "done":
+                    return job, job.status
+                if not job.reply:
+                    return job, "no_reply"
+                if job.applied:
+                    return job, "already"
+                _append_side_result_to_main_context(self.agent, job)
+                job.applied = True
+                self.session.step = f"applied side #{job.id}"
+                return job, "applied"
+        saved_jobs = self.saved()
+        saved_job = _find_saved_queue_job(saved_jobs, normalized)
+        if saved_job is None:
+            return None, "missing"
+        if saved_job.kind != "btw":
+            return saved_job, "kind"
+        if saved_job.status != "done":
+            return saved_job, saved_job.status
+        if not saved_job.reply:
+            return saved_job, "no_reply"
+        if saved_job.applied:
+            return saved_job, "already"
+        _append_side_result_to_main_context(self.agent, saved_job)
+        saved_job.applied = True
+        self._preserved_saved_ids.discard(saved_job.id)
+        self._save_with_saved_jobs([job for job in saved_jobs if job is not saved_job])
+        self.session.step = f"applied saved side #{saved_job.id}"
+        return saved_job, "applied_saved"
 
     def apply_all_side_results(self) -> tuple[list[PromptJob], str]:
         with self._lock:
@@ -477,13 +516,30 @@ class ChatJobRunner:
                 (job for job in self._jobs if job.kind == "btw" and job.status == "done" and job.reply and not job.applied),
                 key=_job_order_key,
             )
-            if not ready:
-                return [], "missing"
             for job in ready:
                 _append_side_result_to_main_context(self.agent, job)
                 job.applied = True
-            self.session.step = f"applied {len(ready)} side replies"
-            return ready, "applied"
+        saved_jobs = self.saved()
+        live_ready_by_id = {job.id: job for job in ready}
+        saved_ready = [
+            job for job in saved_jobs
+            if job.kind == "btw"
+            and job.status == "done"
+            and job.reply
+            and not job.applied
+            and not _queue_file_entry_matches_live_job(job, live_ready_by_id)
+        ]
+        for job in saved_ready:
+            _append_side_result_to_main_context(self.agent, job)
+            job.applied = True
+            self._preserved_saved_ids.discard(job.id)
+        if saved_ready:
+            self._save_with_saved_jobs([job for job in saved_jobs if job not in saved_ready])
+        all_ready = [*ready, *saved_ready]
+        if not all_ready:
+            return [], "missing"
+        self.session.step = f"applied {len(all_ready)} side replies"
+        return all_ready, "applied"
 
     def is_busy(self) -> bool:
         with self._lock:
@@ -535,6 +591,10 @@ class ChatJobRunner:
         with self._lock:
             live_by_id = {job.id: job for job in self._jobs}
             pending = [job for job in self._jobs if job.status == "queued"]
+            pending.extend(
+                job for job in self._jobs
+                if job.kind == "btw" and job.status in {"done", "error"} and not job.applied
+            )
             if include_active and self._active is not None and self._active.status == "running":
                 pending = [self._active, *pending]
             if include_active:
@@ -635,6 +695,12 @@ def _job_to_dict(job: PromptJob) -> dict[str, Any]:
     }
     if job.output:
         row["output"] = job.output[-80:]
+    if job.reply:
+        row["reply"] = job.reply
+    if job.error:
+        row["error"] = job.error
+    if job.applied:
+        row["applied"] = True
     return row
 
 
@@ -659,12 +725,27 @@ def _load_saved_queue(path: Path = QUEUE_FILE) -> list[PromptJob]:
         if not isinstance(text, str) or not text.strip():
             continue
         kind = row.get("kind") if isinstance(row.get("kind"), str) else "prompt"
-        status = row.get("status") if row.get("status") in {"queued", "running"} else "queued"
+        status = row.get("status") if row.get("status") in SAVED_JOB_STATUSES else "queued"
+        if kind != "btw" and status in {"done", "error"}:
+            status = "queued"
         created_at = row.get("created_at") if isinstance(row.get("created_at"), (int, float)) else time.time()
         raw_id = row.get("id")
         job_id = int(raw_id) if isinstance(raw_id, int) and raw_id > 0 else len(jobs) + 1
         output = [str(item) for item in row.get("output", []) if isinstance(item, str) and item.strip()]
-        job = PromptJob(id=job_id, text=text, kind=kind, status=status, created_at=float(created_at), output=output[-80:])
+        reply = row.get("reply") if isinstance(row.get("reply"), str) else None
+        error = row.get("error") if isinstance(row.get("error"), str) else ""
+        applied = row.get("applied") if type(row.get("applied")) is bool else False
+        job = PromptJob(
+            id=job_id,
+            text=text,
+            kind=kind,
+            status=status,
+            reply=reply,
+            error=error,
+            applied=applied,
+            created_at=float(created_at),
+            output=output[-80:],
+        )
         _trim_job_output(job)
         jobs.append(job)
     return jobs
@@ -1592,8 +1673,9 @@ def _queue_apply(runner: ChatJobRunner, args: list[str]) -> None:
         print(_c("  no ready side replies to apply", "2"))
         return
     job, status = runner.apply_side_result(target)
-    if status == "applied" and job is not None:
-        print(_c(f"  applied side #{job.id} to the main conversation", "32"))
+    if status in {"applied", "applied_saved"} and job is not None:
+        saved_label = " saved" if status == "applied_saved" else ""
+        print(_c(f"  applied{saved_label} side #{job.id} to the main conversation", "32"))
         return
     if status == "busy":
         print(_c("  wait for the active prompt before applying side replies", "33"))

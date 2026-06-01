@@ -1141,6 +1141,53 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("side #1 is already applied", rendered)
         self.assertIn("applied to main conversation", rendered)
 
+    def test_repl_persists_unapplied_btw_reply_for_later_apply(self):
+        from mechferret import repl
+
+        class MainAgent:
+            provider = "anthropic"
+
+            def __init__(self) -> None:
+                self.messages = []
+
+        queue_path = Path("btw-apply-saved.json")
+
+        def fake_chat(agent, session, text, *, background=False):
+            return "saved side answer"
+
+        with redirect_stdout(StringIO()):
+            runner = repl.ChatJobRunner(MainAgent(), repl.Session(), chat_fn=fake_chat, queue_path=queue_path)
+            try:
+                side = runner.submit_side(repl._btw_prompt("saved side question"))
+                self.assertTrue(runner.wait_idle(timeout=2))
+                saved = runner.saved()
+            finally:
+                runner.stop(wait=True)
+
+        self.assertEqual([job.id for job in saved], [side.id])
+        self.assertEqual(saved[0].status, "done")
+        self.assertEqual(saved[0].reply, "saved side answer")
+
+        agent = MainAgent()
+        out = StringIO()
+        with redirect_stdout(out):
+            restored_runner = repl.ChatJobRunner(agent, repl.Session(), chat_fn=fake_chat, queue_path=queue_path)
+            try:
+                repl._queue_show(restored_runner, ["side"])
+                repl._queue_apply(restored_runner, ["side"])
+                self.assertEqual(restored_runner.saved(), [])
+            finally:
+                restored_runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("job #1 saved", rendered)
+        self.assertIn("saved side question", rendered)
+        self.assertIn("saved side answer", rendered)
+        self.assertIn("applied saved side #1 to the main conversation", rendered)
+        self.assertEqual([message["role"] for message in agent.messages], ["user", "assistant"])
+        self.assertIn("saved side question", str(agent.messages[0]["content"]))
+        self.assertEqual(agent.messages[1]["content"], "saved side answer")
+
     def test_repl_queue_apply_waits_for_main_prompt_to_finish(self):
         from mechferret import repl
 
@@ -1605,6 +1652,40 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("waiting for job #9", rendered)
         self.assertIn("job #9 done", rendered)
 
+    def test_repl_restore_saved_queue_leaves_ready_btw_replies_saved(self):
+        from mechferret import repl
+
+        queue_path = Path("queue-restore-ready-btw.json")
+        ready = repl.PromptJob(
+            id=4,
+            text=repl._btw_prompt("ready side"),
+            kind="btw",
+            status="done",
+            reply="ready answer",
+            created_at=100.0,
+        )
+        pending = repl.PromptJob(id=5, text="pending prompt", created_at=200.0)
+        repl._save_queue_jobs(queue_path, [ready, pending])
+
+        calls = []
+        with redirect_stdout(StringIO()):
+            def fake_chat(_agent, _session, text, **_kwargs):
+                calls.append(text)
+                return text
+
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=queue_path)
+            try:
+                restored = runner.restore_saved("all")
+                self.assertTrue(runner.wait_idle(timeout=2))
+                saved = runner.saved()
+            finally:
+                runner.stop(wait=True)
+
+        self.assertEqual([job.text for job in restored], ["pending prompt"])
+        self.assertEqual(calls, ["pending prompt"])
+        self.assertEqual([job.id for job in saved], [ready.id])
+        self.assertEqual(saved[0].reply, "ready answer")
+
     def test_repl_queue_wait_allows_running_work_while_paused_without_queued_jobs(self):
         from mechferret import repl
 
@@ -1691,7 +1772,10 @@ class AgentStackTest(unittest.TestCase):
             finally:
                 runner.stop(wait=True)
 
-        self.assertEqual([job.id for job in repl._load_saved_queue(queue_path)], [main_running.id, side_old.id])
+        saved = repl._load_saved_queue(queue_path)
+        self.assertEqual([job.id for job in saved], [9, side_new.id, main_running.id, side_old.id])
+        self.assertEqual([job.status for job in saved[:2]], ["done", "done"])
+        self.assertTrue(all(job.reply for job in saved[:2]))
         rendered = out.getvalue()
         self.assertIn("job #8 saved", rendered)
         self.assertIn("new side prompt", rendered)
@@ -2776,7 +2860,9 @@ class AgentStackTest(unittest.TestCase):
 
         self.assertTrue(finished.is_set())
         self.assertEqual(side.status, "done")
-        self.assertEqual(runner.saved(), [])
+        saved = runner.saved()
+        self.assertEqual([job.id for job in saved], [side.id])
+        self.assertEqual(saved[0].reply, repl._btw_prompt("side shutdown"))
 
     def test_repl_busy_guard_blocks_agent_state_mutations(self):
         from mechferret import repl
