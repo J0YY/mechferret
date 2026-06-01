@@ -771,6 +771,24 @@ def _print_status_and_bar(agent, session, runner: ChatJobRunner | None = None) -
     print("  " + _c(" · ", "2").join(tldr))
 
 
+def _input_prompt(runner: ChatJobRunner) -> str:
+    active = runner.active()
+    side_active = len(runner.side_active())
+    queued = len(runner.queued())
+    if active is None and not side_active and not queued:
+        return "❯ "
+    parts: list[str] = []
+    if runner.paused():
+        parts.append("paused")
+    if active is not None:
+        parts.append(f"run#{active.id}")
+    if side_active:
+        parts.append(f"btw:{side_active}")
+    if queued:
+        parts.append(f"q:{queued}")
+    return f"[{' '.join(parts)}] ❯ "
+
+
 def _ferret_walk() -> None:
     """A tiny ferret scampers across the screen before the welcome box appears."""
 
@@ -880,8 +898,7 @@ def run_repl() -> None:
     while True:
         _print_status_and_bar(agent, session, runner)
         try:
-            prompt = "queued ❯ " if runner.is_busy() else "❯ "
-            line = input(_c(prompt, "1;36")).strip()
+            line = input(_c(_input_prompt(runner), "1;36")).strip()
         except (EOFError, KeyboardInterrupt):
             # Ctrl-C / Ctrl-D at the prompt quits.
             print()
