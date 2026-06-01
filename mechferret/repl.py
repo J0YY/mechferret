@@ -539,19 +539,27 @@ def run_repl() -> None:
             _open_report(session)
             continue
         if bare in {"login", "connect"}:
+            if not _guard_agent_idle(runner, f"/{bare}"):
+                continue
             if onboard():
                 agent.reload()
             continue
         if bare == "model" and head.startswith("/"):
+            if not _guard_agent_idle(runner, "/model"):
+                continue
             _set_model(agent, tokens[1:])
             continue
         if bare == "plan":
+            if not _guard_agent_idle(runner, "/plan"):
+                continue
             agent.permission_mode = "auto" if agent.permission_mode == "plan" else "plan"
             on = agent.permission_mode == "plan"
             print(_c(f"  plan mode {'ON — write/exec/GPU tools will ask before running' if on else 'OFF'}", "33"))
             continue
         if bare == "goal":
             if len(tokens) > 1:
+                if not _guard_agent_idle(runner, "/goal"):
+                    continue
                 _goal_loop(agent, session, " ".join(tokens[1:]))
             elif session.goal:
                 print(_c(f"  🎯 current goal: {session.goal}", PURPLE))
@@ -602,6 +610,8 @@ def run_repl() -> None:
                 print(_c(f"    {model}: ${slot['usd']:.4f}  ({int(slot['input'])} in / {int(slot['output'])} out)", "2"))
             continue
         if bare == "compact":
+            if not _guard_agent_idle(runner, "/compact"):
+                continue
             summary = agent.compact()
             if summary == "nothing to compact":
                 print(_c("  " + summary, "2"))
@@ -610,6 +620,8 @@ def run_repl() -> None:
                 print(_indent(_c(summary[:800], "2")))
             continue
         if bare == "resume":
+            if not _guard_agent_idle(runner, "/resume"):
+                continue
             _resume(agent, tokens[1:])
             continue
         if bare == "memory" and len(tokens) == 1:
@@ -625,9 +637,13 @@ def run_repl() -> None:
             _init_project()
             continue
         if bare == "export":
+            if not _guard_agent_idle(runner, "/export"):
+                continue
             _export(agent, tokens[1:])
             continue
         if bare == "review":
+            if not _guard_agent_idle(runner, "/review"):
+                continue
             import subprocess
 
             diff = subprocess.run(["git", "diff", "HEAD"], capture_output=True, text=True).stdout
@@ -693,6 +709,15 @@ def _print_queue(runner: ChatJobRunner) -> None:
         status = job.status
         detail = f" ({job.error})" if job.error else ""
         print(_c(f"  {status:8} #{job.id} {job.kind}{detail}", "31" if job.error else "2"))
+
+
+def _guard_agent_idle(runner: ChatJobRunner, action: str) -> bool:
+    if not runner.is_busy():
+        return True
+    print(_c(f"  {action} waits for the active prompt so conversation state stays consistent.", "33"))
+    print(_c("  use /btw for side prompts, /queue to inspect, or /cancel <id|all> for queued work.", "2"))
+    _print_queue(runner)
+    return False
 
 
 class _BackgroundPrinter:

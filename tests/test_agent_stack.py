@@ -560,6 +560,37 @@ class AgentStackTest(unittest.TestCase):
 
         self.assertEqual(started, ["active prompt"])
 
+    def test_repl_busy_guard_blocks_agent_state_mutations(self):
+        from mechferret import repl
+
+        queue_path = Path("busy-guard-queue.json")
+        release = threading.Event()
+
+        def fake_chat(agent, session, text, *, background=False):
+            self.assertTrue(release.wait(timeout=2))
+            return text
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=queue_path)
+            try:
+                runner.submit("active prompt")
+                deadline = time.monotonic() + 2
+                while runner.active() is None and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertFalse(repl._guard_agent_idle(runner, "/model"))
+                release.set()
+                self.assertTrue(runner.wait_idle(timeout=2))
+                self.assertTrue(repl._guard_agent_idle(runner, "/model"))
+            finally:
+                release.set()
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("/model waits for the active prompt", rendered)
+        self.assertIn("use /btw", rendered)
+        self.assertIn("running #1", rendered)
+
     def test_repl_btw_parsing_preserves_prompt_text(self):
         from mechferret import repl
 
