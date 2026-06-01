@@ -1026,6 +1026,20 @@ def tool_run_discovery(args: dict[str, Any]) -> str:
     allow_seed_corpus, invalid = _bool_arg(args, "allow_seed_corpus", seed_corpus)
     if invalid:
         return json.dumps(invalid)
+    if not isinstance(args.get("backend"), str) or not args.get("backend", "").strip():
+        return json.dumps({
+            "ok": False,
+            "tool": "run_discovery",
+            "error": "run_discovery needs an explicit backend; pass backend=auto, synthetic, transformer_lens, tl, or real.",
+            "argument": "backend",
+            "expected": "explicit backend: auto, synthetic, transformer_lens, tl, or real",
+            "failed_checks": ["backend_required"],
+            "next_actions": [
+                "Pass backend=synthetic only for an intentional smoke/demo run.",
+                "Pass backend=transformer_lens or backend=real for real model measurements.",
+                "Pass backend=auto only when automatic real-backend detection is intentional.",
+            ],
+        })
     budget_requested = any(args.get(name) not in (None, "") for name in ("max_rounds", "max_experiments", "max_gpu_seconds"))
     budget = Budget(max_rounds=max_rounds, max_experiments=max_experiments, max_gpu_seconds=max_gpu_seconds) if budget_requested else None
     try:
@@ -3680,7 +3694,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
          "no_memory": {"type": "boolean"},
          "allow_seed_corpus": {"type": "boolean", "description": "Opt in to the packaged demo corpus when no explicit sources, memory, or provider research are available."},
      }, ["question"])},
-    {"name": "run_discovery", "description": "Run the autonomous interpretability discovery loop to find/confirm mechanisms (heads/circuits) for a behaviour.",
+    {"name": "run_discovery", "description": "Run the autonomous interpretability discovery loop to find/confirm mechanisms (heads/circuits) for a behaviour. The backend must be explicit so synthetic smoke data is never selected by omission.",
      "parameters": _obj({
          "question": {"type": "string"},
          "skill": {"type": "string", "description": "Skill name from `mechferret skills`, or a path to a skill JSON."},
@@ -3701,7 +3715,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
          "allow_mismatch": {"type": "boolean"},
          "seed_corpus": {"type": "boolean", "description": "Alias for allow_seed_corpus."},
          "allow_seed_corpus": {"type": "boolean", "description": "Opt in to the packaged demo corpus when no explicit sources, memory, or provider research are available."},
-     }, [])},
+     }, ["backend"])},
     {"name": "list_skills", "description": "List available interpretability playbooks/skills.", "parameters": _obj({}, [])},
     {"name": "environment_status", "description": "Report skills, Modal status, and cluster configuration.", "parameters": _obj({}, [])},
     {"name": "project_status", "description": "Summarize project setup, selected run, audit/verify state, generated artifacts, memory counts, and concrete next actions.",

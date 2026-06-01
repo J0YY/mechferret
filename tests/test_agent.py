@@ -1152,6 +1152,27 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("model_required", payload["failed_checks"])
         self.assertTrue(any("model" in action.lower() for action in payload["next_actions"]))
 
+    def test_run_discovery_tool_requires_explicit_backend(self):
+        from mechferret import tools
+
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = json.loads(
+                tools.run_tool(
+                    "run_discovery",
+                    {
+                        "skill": "ioi-circuit",
+                        "model": "gpt2",
+                        "out_dir": str(Path(tmp) / "run"),
+                        "db_path": str(Path(tmp) / "memory.sqlite"),
+                        "include_memory": False,
+                    },
+                )
+            )
+        self.assertFalse(payload["ok"])
+        self.assertIn("explicit backend", payload["error"])
+        self.assertIn("backend_required", payload["failed_checks"])
+        self.assertTrue(any("synthetic" in action.lower() for action in payload["next_actions"]))
+
     def test_run_discovery_requires_explicit_task_for_vague_prompt(self):
         from mechferret import tools
 
