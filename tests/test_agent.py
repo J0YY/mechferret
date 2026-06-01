@@ -249,10 +249,14 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("model-family discoveries", novelty_description)
         options_description = next(tool for tool in tools.TOOL_SPECS if tool["name"] == "present_options")["description"]
         self.assertIn("frontier_architecture coverage", options_description)
+        self.assertIn("evidence_focus_coverage", options_description)
         option_schema = option_list_schema["items"]
         self.assertIn("novelty_threat_model", option_schema["required"])
         self.assertIn("disqualifying_overlap_tests", option_schema["required"])
         self.assertIn("search_audit", option_schema["required"])
+        search_audit_props = option_schema["properties"]["search_audit"]["properties"]
+        self.assertIn("evidence_focus_coverage", search_audit_props)
+        self.assertIn("missing_evidence_focus_coverage", search_audit_props)
 
     def test_resolve_artifact_tool_returns_json(self):
         from mechferret import tools
@@ -1239,6 +1243,8 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("novelty_threat_model", prompt)
         self.assertIn("disqualifying_overlap_tests", prompt)
         self.assertIn("search_audit", prompt)
+        self.assertIn("evidence_focus_coverage", prompt)
+        self.assertIn("missing_evidence_focus_coverage", prompt)
         self.assertIn("recent_pressure", prompt)
         self.assertIn("frontier_architecture_covered", prompt)
         self.assertIn("frontier architecture", prompt)

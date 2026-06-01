@@ -56,7 +56,10 @@ Workflow when the user wants to plan research:
    assessment.closest_prior_art, assessment.claim_readiness, and
    assessment.coverage.frontier_architecture_covered,
    assessment.coverage.frontier_architecture_focuses, and
-   assessment.search_audit fields; do not summarize novelty from memory.
+   assessment.search_audit fields, especially
+   assessment.search_audit.evidence_focus_coverage and
+   assessment.search_audit.missing_evidence_focus_coverage; do not summarize
+   novelty from memory.
 3. Call present_options with 2-5 concrete directions (each with a one-line
    summary, a fuller detail paragraph, key citations, novelty_risk,
    novelty_verdict, closest_prior_art, claim_readiness, comparison_matrix,
@@ -64,8 +67,9 @@ Workflow when the user wants to plan research:
    recent_pressure, and required_delta) so the user can browse and pick. Do NOT
    write the options out as prose. Only present directions whose novelty audit
    found recent prior evidence and unique retrieved evidence from both arXiv and
-   web/project/code sources, including explicit recent frontier architecture or
-   model-family coverage.
+   web/project/code sources, including evidence-backed method, mechanism,
+   evaluation, implementation, replication, exact-phrase, claim-collision,
+   architecture, frontier architecture, and model-family coverage.
 
 OUTPUT RULES (important):
 - Plain text only. No markdown: no #, *, **, backticks, tables, or '-' bullets.
