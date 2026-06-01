@@ -1564,6 +1564,56 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(picked[0][0]["comparison_matrix"][1]["axis"], "evaluation")
         self.assertEqual(picked[0][0]["recent_pressure"]["status"], "recent_prior_present")
 
+    def test_agent_dispatch_preserves_deferred_option_selection_payload(self):
+        a = agent.Agent()
+        a.on_options = lambda options: {
+            "ok": False,
+            "user_selected": "none",
+            "selection_deferred": True,
+            "failed_checks": ["interactive_selection_unavailable"],
+            "option_details": options,
+        }
+        a.provider, a.model, a._key = "anthropic", "claude-sonnet-4-6", "x"
+        args = {
+            "options": [
+                {
+                    "title": "Novelty audit",
+                    "summary": "Check the delta",
+                    "detail": "Use retrieved evidence before choosing.",
+                    "citations": ["Closest Paper https://arxiv.org/abs/2501.0001"],
+                    "novelty_risk": "medium_prior_art_risk",
+                    "novelty_verdict": "Related work exists.",
+                    "closest_prior_art": ["Closest Paper https://arxiv.org/abs/2501.0001"],
+                    "claim_readiness": {
+                        "status": "delta_review_required",
+                        "can_claim_high_novelty": False,
+                        "missing_checks": [],
+                        "next_actions": ["Write the delta."],
+                    },
+                    "comparison_matrix": [
+                        {"axis": "method", "covered": True, "evidence_count": 1, "next_action": "Compare method."},
+                        {"axis": "evaluation", "covered": False, "evidence_count": 0, "next_action": "Add benchmark."},
+                    ],
+                    "recent_pressure": {
+                        "status": "recent_prior_present",
+                        "recent_window": "2024-2026",
+                        "recent_evidence_count": 1,
+                        "latest_year": 2025,
+                        "recent_prior_titles": ["Closest Paper"],
+                    },
+                    "required_delta": "Show a causal ablation.",
+                }
+            ]
+        }
+
+        selected = json.loads(a._dispatch("present_options", args))
+
+        self.assertFalse(selected["ok"])
+        self.assertTrue(selected["selection_deferred"])
+        self.assertEqual(selected["failed_checks"], ["interactive_selection_unavailable"])
+        self.assertEqual(selected["option_details"][0]["title"], "Novelty audit")
+        self.assertNotIn("selected_option", selected)
+
     def test_large_output_persisted(self):
         from mechferret import tools
 

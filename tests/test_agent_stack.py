@@ -2753,6 +2753,23 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("compact aside", prompt)
         self.assertTrue(prompt.endswith("ask a clarifying question"))
 
+    def test_repl_background_option_selection_is_deferred_with_details(self):
+        from mechferret import repl
+
+        payload = repl._deferred_option_selection([
+            {
+                "title": "Novelty audit",
+                "comparison_matrix": [{"axis": "method", "covered": True}],
+                "recent_pressure": {"status": "recent_prior_present"},
+            }
+        ])
+
+        self.assertFalse(payload["ok"])
+        self.assertTrue(payload["selection_deferred"])
+        self.assertEqual(payload["failed_checks"], ["interactive_selection_unavailable"])
+        self.assertEqual(payload["options"], ["Novelty audit"])
+        self.assertEqual(payload["option_details"][0]["comparison_matrix"][0]["axis"], "method")
+
     def test_cli_command_index_primary_names_route_from_repl(self):
         from mechferret import commands
         from mechferret.cli import _command_index_payload, build_parser

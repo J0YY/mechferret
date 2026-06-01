@@ -296,6 +296,20 @@ def _extract_provider_text(content: Any) -> str:
     return "\n".join(part.strip() for part in parts if part.strip())
 
 
+def _option_selection_payload(options: list[Any], choice: Any) -> dict[str, Any]:
+    if isinstance(choice, dict):
+        payload = dict(choice)
+        selected_choice = payload.get("user_selected", payload.get("selection", "none"))
+        payload["user_selected"] = selected_choice
+    else:
+        payload = {"user_selected": choice}
+        selected_choice = choice
+    selected = _selected_option_detail(options, selected_choice)
+    if selected:
+        payload["selected_option"] = selected
+    return payload
+
+
 def _selected_option_detail(options: list[Any], choice: Any) -> dict[str, Any]:
     selected = _text(choice).strip()
     if not selected or selected == "none":
@@ -417,7 +431,7 @@ class Agent:
         self.on_tool = on_tool or (lambda name, args: None)
         self.on_text: Callable[[str], None] = lambda text: None  # incremental assistant text
         self.confirm: Callable[[str, dict, str], bool] | None = None
-        self.on_options: Callable[[list], str] | None = None  # interactive option picker
+        self.on_options: Callable[[list], Any] | None = None  # interactive option picker
         self.permission_mode = "auto"  # auto | plan
         self.messages: list[dict[str, Any]] = []  # provider-native message history
         self.cost = CostTracker()
@@ -619,11 +633,7 @@ class Agent:
             if self.on_options:
                 choice = self.on_options(options)
                 self.tracer.event("user_selected", choice=str(choice)[:120])
-                payload: dict[str, Any] = {"user_selected": choice}
-                selected = _selected_option_detail(options, choice)
-                if selected:
-                    payload["selected_option"] = selected
-                return json.dumps(payload)
+                return json.dumps(_option_selection_payload(options, choice))
             return validation
 
         meta = tool_meta(name)

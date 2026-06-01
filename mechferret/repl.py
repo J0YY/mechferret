@@ -1259,6 +1259,21 @@ def _btw_prompt(text: str) -> str:
     return BTW_PROMPT_PREFIX + text
 
 
+def _deferred_option_selection(options: list[Any]) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "user_selected": "none",
+        "selection_deferred": True,
+        "failed_checks": ["interactive_selection_unavailable"],
+        "options": [str(option.get("title", "")).strip() for option in options if isinstance(option, dict)],
+        "option_details": options,
+        "next_actions": [
+            "Do not pick a direction automatically.",
+            "Tell the user that this queued/background job reached an interactive choice and should be resumed with a foreground selection or an explicit follow-up prompt.",
+        ],
+    }
+
+
 def _print_queue(runner: ChatJobRunner) -> None:
     active = runner.active()
     side_active = runner.side_active()
@@ -1615,7 +1630,7 @@ def _chat(agent, session, text: str, *, background: bool = False) -> str | None:
 
         if background:
             spinner.log(_c("  skipped interactive option picker in queued mode", "33"))
-            return "none"
+            return _deferred_option_selection(options)
         with spinner.pause():
             choice = select_rich(_c("  Pick a direction  (↑/↓ move · → expand · enter select · esc skip)", "1"), options)
         spinner.log(_c(f"  ✓ selected: {choice}", "32") if choice != "none" else _c("  (skipped)", "2"))
