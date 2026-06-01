@@ -37,6 +37,8 @@ NOVELTY_WEB_RESULT_LIMIT = 24
 NOVELTY_WEB_MAX_QUERY_PASSES = 24
 NOVELTY_WEB_FETCH_LIMIT = 12
 NOVELTY_WEB_FETCH_CHARS = 2400
+NOVELTY_MIN_OPTION_ARXIV_PASSES = 10
+NOVELTY_MIN_OPTION_WEB_PASSES = 8
 NOVELTY_RISKS = {
     "high_prior_art_risk",
     "medium_prior_art_risk",
@@ -2538,13 +2540,36 @@ def _option_disqualifying_tests(value: Any) -> list[dict[str, Any]]:
 def _valid_option_search_audit(value: Any) -> bool:
     if not isinstance(value, dict):
         return False
-    required_keys = {"pass_count", "failed_passes", "empty_search_passes", "duplicate_only_search_passes"}
+    required_keys = {
+        "pass_count",
+        "failed_passes",
+        "empty_search_passes",
+        "empty_arxiv_passes",
+        "empty_web_passes",
+        "duplicate_only_search_passes",
+        "focus_summary",
+    }
     if not required_keys <= set(value):
         return False
     audit = _option_search_audit(value)
     if not audit:
         return False
-    return audit.get("pass_count", 0) > 0 and "failed_passes" in audit and "empty_search_passes" in audit
+    focus_summary = audit.get("focus_summary")
+    if not isinstance(focus_summary, list) or not focus_summary:
+        return False
+    arxiv_passes = _option_search_source_passes(focus_summary, "arxiv")
+    web_passes = _option_search_source_passes(focus_summary, "web")
+    if audit.get("failed_passes", 0) != 0 or audit.get("failed_focuses"):
+        return False
+    if audit.get("pass_count", 0) < NOVELTY_MIN_OPTION_ARXIV_PASSES + NOVELTY_MIN_OPTION_WEB_PASSES:
+        return False
+    if arxiv_passes < NOVELTY_MIN_OPTION_ARXIV_PASSES or web_passes < NOVELTY_MIN_OPTION_WEB_PASSES:
+        return False
+    if _option_search_source_requested_max(focus_summary, "arxiv") < NOVELTY_QUERY_RESULT_LIMIT:
+        return False
+    if _option_search_source_requested_max(focus_summary, "web") < NOVELTY_WEB_RESULT_LIMIT:
+        return False
+    return True
 
 
 def _option_search_audit(value: Any) -> dict[str, Any]:
@@ -2606,7 +2631,15 @@ def _option_search_focus_summary(value: Any) -> list[dict[str, Any]]:
                 "requested_results_max": _safe_int(item.get("requested_results_max")),
             }
         )
-    return rows[:12]
+    return rows
+
+
+def _option_search_source_passes(rows: list[dict[str, Any]], source: str) -> int:
+    return sum(_safe_int(row.get("passes")) for row in rows if row.get("source") == source)
+
+
+def _option_search_source_requested_max(rows: list[dict[str, Any]], source: str) -> int:
+    return max((_safe_int(row.get("requested_results_max")) for row in rows if row.get("source") == source), default=0)
 
 
 def _option_prior(value: Any) -> dict[str, Any]:
@@ -3541,7 +3574,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
              "empty_focuses": {"type": "array", "items": {"type": "object"}},
              "failed_focuses": {"type": "array", "items": {"type": "object"}},
              "focus_summary": {"type": "array", "items": {"type": "object"}},
-         }, "description": "assessment.search_audit from verify_novelty; include pass_count, failed_passes, empty_search_passes, duplicate_only_search_passes, and focus_summary."},
+         }, "description": "assessment.search_audit from verify_novelty; include pass_count, failed_passes, empty_search_passes, duplicate_only_search_passes, and focus_summary. The audit must prove at least 10 arXiv passes at 50 results, 8 web passes at 24 results, and zero failed retrieval passes."},
          "recent_pressure": {"type": "object", "properties": {
              "status": {"type": "string"},
              "recent_window": {"type": "string"},

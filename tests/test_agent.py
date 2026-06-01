@@ -53,6 +53,30 @@ def _option_disqualifying_tests():
 
 
 def _option_search_audit():
+    focus_summary = [
+        {
+            "source": "arxiv",
+            "focus": f"arxiv_focus_{i}",
+            "passes": 1,
+            "failed_passes": 0,
+            "retrieved": 50,
+            "unique_added": 4 if i == 0 else 0,
+            "requested_results_max": 50,
+        }
+        for i in range(10)
+    ]
+    focus_summary.extend(
+        {
+            "source": "web",
+            "focus": f"web_focus_{i}",
+            "passes": 1,
+            "failed_passes": 0,
+            "retrieved": 24,
+            "unique_added": 3 if i == 0 else 0,
+            "requested_results_max": 24,
+        }
+        for i in range(8)
+    )
     return {
         "pass_count": 18,
         "failed_passes": 0,
@@ -65,26 +89,7 @@ def _option_search_audit():
             {"source": "web", "focus": "web_peer_review"},
         ],
         "failed_focuses": [],
-        "focus_summary": [
-            {
-                "source": "arxiv",
-                "focus": "recent_discovery",
-                "passes": 1,
-                "failed_passes": 0,
-                "retrieved": 50,
-                "unique_added": 4,
-                "requested_results_max": 50,
-            },
-            {
-                "source": "web",
-                "focus": "web_recent_discovery",
-                "passes": 1,
-                "failed_passes": 0,
-                "retrieved": 24,
-                "unique_added": 3,
-                "requested_results_max": 24,
-            },
-        ],
+        "focus_summary": focus_summary,
     }
 
 
@@ -833,6 +838,92 @@ class AgentToolTest(unittest.TestCase):
         self.assertFalse(bad_search_audit["ok"])
         self.assertEqual(bad_search_audit["expected"], "objects with search_audit from verify_novelty assessment")
 
+        shallow_search_audit = _option_search_audit()
+        shallow_search_audit["pass_count"] = 4
+        shallow_search_audit["focus_summary"] = shallow_search_audit["focus_summary"][:4]
+        bad_shallow_search = json.loads(
+            tools.run_tool(
+                "present_options",
+                {
+                    "options": [
+                        {
+                            "title": "Thin option",
+                            "summary": "shallow search audit",
+                            "detail": "A direction with too few search passes should be rejected.",
+                            "citations": ["https://arxiv.org/abs/2501.0001"],
+                            "novelty_risk": "medium_prior_art_risk",
+                            "novelty_verdict": "Related work exists.",
+                            "closest_prior_art": [],
+                            "claim_readiness": {
+                                "status": "not_ready_needs_more_evidence",
+                                "can_claim_high_novelty": False,
+                                "missing_checks": ["deep_query_plan"],
+                                "next_actions": ["Run follow-up searches."],
+                            },
+                            "comparison_matrix": [
+                                {"axis": "method", "covered": True, "evidence_count": 1, "next_action": "Compare method."},
+                                {"axis": "evaluation", "covered": False, "evidence_count": 0, "next_action": "Add benchmark."},
+                            ],
+                            "novelty_threat_model": _option_threat_model(),
+                            "disqualifying_overlap_tests": _option_disqualifying_tests(),
+                            "search_audit": shallow_search_audit,
+                            "recent_pressure": {
+                                "status": "recent_prior_present",
+                                "recent_window": "2024-2026",
+                                "recent_evidence_count": 1,
+                            },
+                            "required_delta": ["Show a measurable delta."],
+                        }
+                    ]
+                },
+            )
+        )
+        self.assertFalse(bad_shallow_search["ok"])
+        self.assertEqual(bad_shallow_search["expected"], "objects with search_audit from verify_novelty assessment")
+
+        failed_search_audit = _option_search_audit()
+        failed_search_audit["failed_passes"] = 1
+        failed_search_audit["failed_focuses"] = [{"source": "web", "focus": "web_claim_collision"}]
+        bad_failed_search = json.loads(
+            tools.run_tool(
+                "present_options",
+                {
+                    "options": [
+                        {
+                            "title": "Thin option",
+                            "summary": "failed search audit",
+                            "detail": "A direction with failed retrieval passes should be rejected.",
+                            "citations": ["https://arxiv.org/abs/2501.0001"],
+                            "novelty_risk": "unknown_search_incomplete",
+                            "novelty_verdict": "Search incomplete.",
+                            "closest_prior_art": [],
+                            "claim_readiness": {
+                                "status": "not_ready_search_incomplete",
+                                "can_claim_high_novelty": False,
+                                "missing_checks": ["search_completed"],
+                                "next_actions": ["Retry failed retrieval passes."],
+                            },
+                            "comparison_matrix": [
+                                {"axis": "method", "covered": True, "evidence_count": 1, "next_action": "Compare method."},
+                                {"axis": "evaluation", "covered": False, "evidence_count": 0, "next_action": "Add benchmark."},
+                            ],
+                            "novelty_threat_model": _option_threat_model(),
+                            "disqualifying_overlap_tests": _option_disqualifying_tests(),
+                            "search_audit": failed_search_audit,
+                            "recent_pressure": {
+                                "status": "recent_prior_present",
+                                "recent_window": "2024-2026",
+                                "recent_evidence_count": 1,
+                            },
+                            "required_delta": ["Show a measurable delta."],
+                        }
+                    ]
+                },
+            )
+        )
+        self.assertFalse(bad_failed_search["ok"])
+        self.assertEqual(bad_failed_search["expected"], "objects with search_audit from verify_novelty assessment")
+
         ok = json.loads(
             tools.run_tool(
                 "present_options",
@@ -963,6 +1054,7 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("comparison_matrix", prompt)
         self.assertIn("novelty_threat_model", prompt)
         self.assertIn("disqualifying_overlap_tests", prompt)
+        self.assertIn("search_audit", prompt)
         self.assertIn("recent_pressure", prompt)
 
     def test_assistant_text_sanitizes_stale_benchmark_scaffolds(self):

@@ -53,8 +53,8 @@ Workflow when the user wants to plan research:
 1. Gather evidence with retrieval tools (arxiv_search, web_search, web_fetch).
 2. For each candidate direction, call verify_novelty to check whether prior
    papers already did it. Read its assessment.risk, assessment.verdict,
-   assessment.closest_prior_art, and assessment.claim_readiness fields; do not
-   summarize novelty from memory.
+   assessment.closest_prior_art, assessment.claim_readiness, and
+   assessment.search_audit fields; do not summarize novelty from memory.
 3. Call present_options with 2-5 concrete directions (each with a one-line
    summary, a fuller detail paragraph, key citations, novelty_risk,
    novelty_verdict, closest_prior_art, claim_readiness, comparison_matrix,
