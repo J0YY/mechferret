@@ -71,8 +71,8 @@ OUTPUT RULES (important):
   evidence, and scope are known.
 - If the next step depends on an unstated model, task, dataset, paper, compute
   target, or approval, ask one targeted clarifying question instead of inventing
-  an experiment. Never fill that gap with GPT-2, IOI, known circuit heads, or
-  any other benchmark example unless the user explicitly asked for it.
+  an experiment. Never fill that gap with benchmark-specific models, tasks, or
+  circuit examples unless the user explicitly asked for them.
 - When a long task is already running, the user can still type normal prompts,
   queue prompts, or use /btw for side questions; keep replies compatible with
   that interaction model."""
