@@ -31,6 +31,9 @@ class CoordinatorHooksTest(unittest.TestCase):
         self.assertEqual(Coordinator(4).map("not callable", [1, 2, 3]), [])
         self.assertEqual(Coordinator(4).map(lambda x: x * 2, (1, 2)), [2, 4])
         self.assertEqual(default_workers([]), 1)
+        self.assertEqual(default_workers(""), 1)
+        self.assertEqual(default_workers("unknown"), 1)
+        self.assertEqual(default_workers("synthetic"), 1)
         self.assertEqual(default_workers(b"modal"), 8)
 
     def test_budget_guard_admits_and_exhausts(self):

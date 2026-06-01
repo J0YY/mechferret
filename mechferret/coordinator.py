@@ -69,6 +69,7 @@ class Coordinator:
 
 
 def default_workers(backend: str) -> int:
-    """Network/GPU backends benefit from fan-out; local fallback stays serial."""
+    """Network/GPU backends benefit from fan-out; unproven local paths stay serial."""
 
-    return 1 if (_text(backend).strip().lower() or "synthetic") in {"synthetic", "auto"} else 8
+    backend_name = _text(backend).strip().lower()
+    return 1 if backend_name in {"", "unknown", "synthetic", "auto"} else 8
