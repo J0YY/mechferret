@@ -851,6 +851,50 @@ class AgentStackTest(unittest.TestCase):
 
         self.assertIn("btw-ready:1", out.getvalue())
 
+    def test_repl_input_prompt_and_status_show_deferred_choices(self):
+        from mechferret import repl
+
+        class Agent:
+            configured = False
+            model = "offline"
+            permission_mode = "auto"
+            class Cost:
+                usd = 0
+            cost = Cost()
+
+        live = repl.PromptJob(
+            id=5,
+            text="pick a live direction",
+            status="done",
+            reply="selection deferred",
+            deferred_options=[{"title": "Live option"}],
+        )
+        saved = repl.PromptJob(
+            id=9,
+            text="pick a saved direction",
+            status="done",
+            reply="selection deferred",
+            deferred_options=[{"title": "Saved option"}],
+        )
+        queue_path = Path("queue-prompt-deferred-choice.json")
+        repl._save_queue_jobs(queue_path, [saved])
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: None, queue_path=queue_path)
+            try:
+                runner._jobs.append(live)
+                prompt = repl._input_prompt(runner)
+                repl._print_status_and_bar(Agent(), repl.Session(), runner)
+            finally:
+                runner.stop(wait=True)
+
+        self.assertIn("choice-ready:1", prompt)
+        self.assertIn("choice-saved:1", prompt)
+        rendered = out.getvalue()
+        self.assertIn("choice-ready:1", rendered)
+        self.assertIn("choice-saved:1", rendered)
+
     def test_repl_queue_view_shows_ready_side_replies(self):
         from mechferret import repl
 

@@ -1024,6 +1024,10 @@ def _restorable_saved_jobs(jobs: list[PromptJob]) -> list[PromptJob]:
     return [job for job in jobs if job.status in {"queued", "running"}]
 
 
+def _deferred_choice_jobs(jobs: list[PromptJob]) -> list[PromptJob]:
+    return [job for job in jobs if job.deferred_options and not job.deferred_selection]
+
+
 def _print_status_and_bar(agent, session, runner: ChatJobRunner | None = None) -> None:
     mode = getattr(agent, "permission_mode", "auto")
     bits = [_c(agent.model, PURPLE) if agent.configured else _c("offline", "2")]
@@ -1034,10 +1038,12 @@ def _print_status_and_bar(agent, session, runner: ChatJobRunner | None = None) -
         active = runner.active()
         side_active = len(runner.side_active())
         side_ready = len(runner.side_ready())
+        deferred_live = len(_deferred_choice_jobs(runner.recent()))
         queued = len(runner.queued())
         saved_jobs = runner.saved_only()
         saved = len(saved_jobs)
         saved_side_ready = len(_ready_saved_side_jobs(saved_jobs))
+        deferred_saved = len(_deferred_choice_jobs(saved_jobs))
         if runner.paused():
             bits.append(_c("paused", "33"))
         if active is not None:
@@ -1048,6 +1054,10 @@ def _print_status_and_bar(agent, session, runner: ChatJobRunner | None = None) -
             bits.append(_c(f"btw-ready:{side_ready}", "33"))
         if saved_side_ready:
             bits.append(_c(f"btw-saved-ready:{saved_side_ready}", "33"))
+        if deferred_live:
+            bits.append(_c(f"choice-ready:{deferred_live}", "33"))
+        if deferred_saved:
+            bits.append(_c(f"choice-saved:{deferred_saved}", "33"))
         if queued:
             bits.append(_c(f"queued:{queued}", "33"))
         if saved:
@@ -1066,12 +1076,14 @@ def _input_prompt(runner: ChatJobRunner) -> str:
     active = runner.active()
     side_active = len(runner.side_active())
     side_ready = len(runner.side_ready())
+    deferred_live = len(_deferred_choice_jobs(runner.recent()))
     queued = len(runner.queued())
     saved_jobs = runner.saved_only()
     saved = len(saved_jobs)
     saved_side_ready = len(_ready_saved_side_jobs(saved_jobs))
+    deferred_saved = len(_deferred_choice_jobs(saved_jobs))
     paused = runner.paused()
-    if active is None and not side_active and not side_ready and not queued and not saved and not paused:
+    if active is None and not side_active and not side_ready and not deferred_live and not deferred_saved and not queued and not saved and not paused:
         return "❯ "
     parts: list[str] = []
     if paused:
@@ -1084,6 +1096,10 @@ def _input_prompt(runner: ChatJobRunner) -> str:
         parts.append(f"btw-ready:{side_ready}")
     if saved_side_ready:
         parts.append(f"btw-saved-ready:{saved_side_ready}")
+    if deferred_live:
+        parts.append(f"choice-ready:{deferred_live}")
+    if deferred_saved:
+        parts.append(f"choice-saved:{deferred_saved}")
     if queued:
         parts.append(f"q:{queued}")
     if saved:
