@@ -463,10 +463,11 @@ def _load_saved_queue(path: Path = QUEUE_FILE) -> list[PromptJob]:
         if not isinstance(text, str) or not text.strip():
             continue
         kind = row.get("kind") if isinstance(row.get("kind"), str) else "prompt"
+        status = row.get("status") if row.get("status") in {"queued", "running"} else "queued"
         created_at = row.get("created_at") if isinstance(row.get("created_at"), (int, float)) else time.time()
         raw_id = row.get("id")
         job_id = int(raw_id) if isinstance(raw_id, int) and raw_id > 0 else len(jobs) + 1
-        jobs.append(PromptJob(id=job_id, text=text, kind=kind, created_at=float(created_at)))
+        jobs.append(PromptJob(id=job_id, text=text, kind=kind, status=status, created_at=float(created_at)))
     return jobs
 
 

@@ -733,6 +733,30 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("newer saved prompt", rendered)
         self.assertIn("retried #8 saved as #1", rendered)
 
+    def test_repl_saved_queue_preserves_pending_statuses(self):
+        from mechferret import repl
+
+        queue_path = Path("queue-saved-status.json")
+        repl._save_queue_jobs(queue_path, [
+            repl.PromptJob(id=1, text="active saved prompt", status="running"),
+            repl.PromptJob(id=2, text="queued saved prompt", status="queued"),
+            repl.PromptJob(id=3, text="bad saved prompt", status="done"),
+        ])
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: "reply", queue_path=queue_path)
+            try:
+                saved = runner.saved()
+                self.assertEqual([job.status for job in saved], ["running", "queued", "queued"])
+                repl._queue_show(runner, ["1"])
+            finally:
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("job #1 saved", rendered)
+        self.assertIn("running", rendered)
+
     def test_repl_queue_latest_targets_most_recent_live_job(self):
         from mechferret import repl
 
