@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .controller import MechFerret
+from .controller import RESEARCH_DEFAULT_ROUNDS, MechFerret
 from .evaluators import template_for_venue
 from .models import ResearchRun, utc_now
 
@@ -22,7 +22,7 @@ class GoalLoop:
         urls: list[str] | None = None,
         out_dir: str | Path = "runs/goal",
         max_iterations: int = 5,
-        max_rounds: int = 2,
+        max_rounds: int = RESEARCH_DEFAULT_ROUNDS,
         provider: str = "auto",
         model: str | None = None,
         include_memory: bool = True,

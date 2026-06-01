@@ -2020,6 +2020,7 @@ class AgentToolTest(unittest.TestCase):
             )
             self.assertTrue(payload["ok"])
             self.assertEqual(payload["provenance"]["answer_author"], "local_extractive_synthesizer")
+            self.assertEqual(payload["provenance"]["max_rounds"], 4)
             self.assertFalse(payload["provenance"]["used_packaged_seed_corpus"])
             self.assertTrue(payload["sources"])
             self.assertTrue(payload["evidence"])

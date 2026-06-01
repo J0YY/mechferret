@@ -16,6 +16,8 @@ from .retrieval import BM25Index
 from .sources import example_corpus_path, load_sources
 from .tracing import TraceRecorder
 
+RESEARCH_DEFAULT_ROUNDS = 4
+
 
 def _text(value: Any) -> str:
     if isinstance(value, str):
@@ -194,7 +196,7 @@ class MechFerret:
         source_paths: list[str] | None = None,
         urls: list[str] | None = None,
         out_dir: str | Path = "runs/latest",
-        max_rounds: int = 2,
+        max_rounds: int = RESEARCH_DEFAULT_ROUNDS,
         use_openai: bool = False,
         provider: str = "auto",
         model: str | None = None,
@@ -204,7 +206,7 @@ class MechFerret:
         question = _text(question).strip()
         source_paths = _path_list(source_paths)
         urls = _path_list(urls)
-        max_rounds = _positive_int(max_rounds, 2, upper=50)
+        max_rounds = _positive_int(max_rounds, RESEARCH_DEFAULT_ROUNDS, upper=50)
         use_openai = _bool(use_openai, False)
         include_memory = _bool(include_memory, True)
         allow_seed_corpus = _bool(allow_seed_corpus, False)

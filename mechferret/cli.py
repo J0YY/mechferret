@@ -12,7 +12,7 @@ from typing import Any
 from . import __version__
 from .audit import audit_run_artifact, latest_run_json, print_audit
 from .config import PROVIDERS, configure_provider, configured_api_key, configured_model, default_config_path, load_config, prompt_api_key, save_config
-from .controller import MechFerret
+from .controller import RESEARCH_DEFAULT_ROUNDS, MechFerret
 from .costs import estimate_run_cost
 from .discovery import DiscoveryController
 from .goal_loop import GoalLoop
@@ -211,7 +211,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--url", action="append", default=[], help="URL to fetch as a source.")
     run.add_argument("--out", default="runs/latest", help="Output directory.")
     run.add_argument("--db", default=".mechferret/memory.sqlite", help="SQLite memory path.")
-    run.add_argument("--max-rounds", type=int, default=2, help="Maximum retrieval/synthesis rounds.")
+    run.add_argument("--max-rounds", type=int, default=RESEARCH_DEFAULT_ROUNDS, help="Maximum retrieval/synthesis rounds.")
     run.add_argument("--openai", action="store_true", help="Use OpenAI Responses API web search when available.")
     run.add_argument("--provider", choices=["auto", "local", "openai", "anthropic"], default="auto", help="Provider for model-assisted synthesis.")
     run.add_argument("--model", help="Override the configured provider model.")
@@ -222,7 +222,7 @@ def build_parser() -> argparse.ArgumentParser:
     demo = sub.add_parser("demo", help="Run the built-in hackathon demo corpus.")
     demo.add_argument("--out", default="runs/demo", help="Output directory for demo artifacts.")
     demo.add_argument("--db", default=".mechferret/memory.sqlite", help="SQLite memory path.")
-    demo.add_argument("--max-rounds", type=int, default=2, help="Maximum retrieval/synthesis rounds.")
+    demo.add_argument("--max-rounds", type=int, default=RESEARCH_DEFAULT_ROUNDS, help="Maximum retrieval/synthesis rounds.")
     demo.add_argument("--openai", action="store_true", help="Use OpenAI web search when available.")
     demo.add_argument("--provider", choices=["auto", "local", "openai", "anthropic"], default="local", help="Provider for demo synthesis.")
     demo.add_argument("--model", help="Override the configured provider model.")
@@ -257,7 +257,7 @@ def build_parser() -> argparse.ArgumentParser:
     goal.add_argument("--out", default="runs/goal", help="Output directory.")
     goal.add_argument("--db", default=".mechferret/memory.sqlite", help="SQLite memory path.")
     goal.add_argument("--max-iterations", type=int, default=5, help="Maximum improve/evaluate loop iterations.")
-    goal.add_argument("--max-rounds", type=int, default=2, help="Maximum retrieval/synthesis rounds per iteration.")
+    goal.add_argument("--max-rounds", type=int, default=RESEARCH_DEFAULT_ROUNDS, help="Maximum retrieval/synthesis rounds per iteration.")
     goal.add_argument("--provider", choices=["auto", "local", "openai", "anthropic"], default="auto", help="Provider for model-assisted synthesis.")
     goal.add_argument("--model", help="Override the configured provider model.")
     goal.add_argument("--no-memory", action="store_true", help="Do not recall prior-run memory.")

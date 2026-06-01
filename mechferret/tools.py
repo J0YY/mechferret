@@ -785,7 +785,7 @@ def tool_neuronpedia_search(args: dict[str, Any]) -> str:
 
 def tool_run_research(args: dict[str, Any]) -> str:
     from .audit import audit_run_artifact
-    from .controller import MechFerret
+    from .controller import RESEARCH_DEFAULT_ROUNDS, MechFerret
 
     provider, invalid = _enum_arg(args, "provider", "auto", PROVIDERS)
     if invalid:
@@ -808,7 +808,7 @@ def tool_run_research(args: dict[str, Any]) -> str:
     model, invalid = _optional_string_arg(args, "model")
     if invalid:
         return json.dumps(invalid)
-    max_rounds, invalid = _int_arg(args, "max_rounds", 2, min_value=1)
+    max_rounds, invalid = _int_arg(args, "max_rounds", RESEARCH_DEFAULT_ROUNDS, min_value=1)
     if invalid:
         return json.dumps(invalid)
     no_memory, invalid = _bool_arg(args, "no_memory", False)
@@ -910,6 +910,7 @@ def tool_run_research(args: dict[str, Any]) -> str:
                 "provider_research": run.provenance.get("provider_research", {}),
                 "used_packaged_seed_corpus": run.provenance.get("used_packaged_seed_corpus", False),
                 "source_count": run.provenance.get("source_count", 0),
+                "max_rounds": run.provenance.get("max_rounds", 0),
             },
             "audit": {
                 "passed": audit.get("passed", False),
@@ -3740,7 +3741,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
          }, "description": "assessment.recent_pressure from verify_novelty; include status=recent_prior_present, current recent_window, recent_evidence_count, latest_year, and recent_prior_titles."},
          "required_delta": {"type": "string", "description": "specific deltas from assessment.required_delta; join multiple entries into one concise string"},
      }, "required": ["title", "summary", "detail", "citations", "novelty_risk", "novelty_verdict", "closest_prior_art", "claim_readiness", "comparison_matrix", "novelty_threat_model", "disqualifying_overlap_tests", "search_audit", "recent_pressure", "required_delta"]}}}, ["options"])},
-    {"name": "run_research", "description": "Run the general prompt-to-dossier literature/research pipeline over explicit sources, URLs, memory, or a configured provider.",
+    {"name": "run_research", "description": "Run the general prompt-to-dossier literature/research pipeline over explicit sources, URLs, memory, or a configured provider. Defaults to a four-round retrieval, critique, and gap-expansion pass unless max_rounds is explicitly set.",
      "parameters": _obj({
          "question": {"type": "string"},
          "source_paths": {"type": "array", "items": {"type": "string"}, "description": "Local source files/directories for project-specific evidence."},

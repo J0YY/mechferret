@@ -1008,7 +1008,7 @@ class PipelineTest(unittest.TestCase):
                 include_memory=[],
                 allow_seed_corpus=True,
             )
-            self.assertEqual(run.provenance["max_rounds"], 2)
+            self.assertEqual(run.provenance["max_rounds"], 4)
             self.assertTrue(run.provenance["included_memory"])
             self.assertEqual(run.provenance["provider_requested"], "auto")
             self.assertEqual(run.provenance["requested_urls"], [])
