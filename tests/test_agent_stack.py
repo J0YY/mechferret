@@ -1006,6 +1006,36 @@ class AgentStackTest(unittest.TestCase):
         self.assertNotIn("Side request entered with /btw", rendered)
         self.assertIn("Side request entered with /btw", calls[0])
 
+    def test_repl_queue_show_displays_live_background_output(self):
+        from mechferret import repl
+
+        release = threading.Event()
+        partial_emitted = threading.Event()
+
+        def fake_chat(agent, session, text, *, background=False):
+            repl._print_background("partial answer before completion")
+            partial_emitted.set()
+            self.assertTrue(release.wait(timeout=2))
+            return "final answer"
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-live-output.json"))
+            try:
+                job = runner.submit("long prompt")
+                self.assertTrue(partial_emitted.wait(timeout=2))
+                repl._queue_show(runner, [str(job.id)])
+            finally:
+                release.set()
+                runner.wait_idle(timeout=2)
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("job #1", rendered)
+        self.assertIn("live output:", rendered)
+        self.assertIn("partial answer before completion", rendered)
+        self.assertIn("long prompt", rendered)
+
     def test_repl_btw_runs_while_main_prompt_is_active(self):
         from mechferret import repl
 

@@ -42,6 +42,8 @@ BTW_PROMPT_PREFIX = (
 _QUEUE_FILE_LOCKS_GUARD = threading.Lock()
 _QUEUE_FILE_LOCKS: dict[Path, threading.Lock] = {}
 _OUTPUT_LOCK = threading.RLock()
+_BACKGROUND_JOB = threading.local()
+MAX_JOB_OUTPUT_CHARS = 24000
 
 
 def _c(text: str, code: str) -> str:
@@ -49,6 +51,7 @@ def _c(text: str, code: str) -> str:
 
 
 def _print_background(text: str) -> None:
+    _record_background_output(text)
     with _OUTPUT_LOCK:
         if readline is not None and sys.stdin.isatty() and sys.stdout.isatty():
             sys.stdout.write("\r\033[2K")
@@ -60,6 +63,30 @@ def _print_background(text: str) -> None:
                 pass
             return
         print(text)
+
+
+def _strip_ansi(text: str) -> str:
+    import re
+
+    return re.sub(r"\033\[[0-9;]*m", "", text)
+
+
+def _record_background_output(text: str) -> None:
+    job = getattr(_BACKGROUND_JOB, "job", None)
+    if not isinstance(job, PromptJob):
+        return
+    cleaned = _strip_ansi(str(text)).rstrip()
+    if not cleaned:
+        return
+    job.output.append(cleaned)
+    _trim_job_output(job)
+
+
+def _trim_job_output(job: "PromptJob") -> None:
+    total = sum(len(part) + 1 for part in job.output)
+    while job.output and total > MAX_JOB_OUTPUT_CHARS:
+        removed = job.output.pop(0)
+        total -= len(removed) + 1
 
 
 def _job_order_key(job: "PromptJob") -> tuple[float, int]:
@@ -104,6 +131,7 @@ class PromptJob:
     error: str = ""
     applied: bool = False
     created_at: float = field(default_factory=time.time)
+    output: list[str] = field(default_factory=list)
 
 
 class ChatJobRunner:
@@ -551,6 +579,7 @@ class ChatJobRunner:
                 job.status = "running"
                 self._set_active(job)
                 self.save_pending()
+                _BACKGROUND_JOB.job = job
                 _print_background(_c(f"  ▶ queued #{job.id} {job.kind}: {_short_job_text(_display_job_text(job))}", "2"))
                 reply = self._chat_fn(self.agent, self.session, job.text, background=True)
                 if reply is None:
@@ -567,11 +596,14 @@ class ChatJobRunner:
                     _print_background(_c(f"  error in queued #{job.id}: {exc}", "31"))
                     _print_job_result_hint(job, background=True)
             finally:
+                if getattr(_BACKGROUND_JOB, "job", None) is job:
+                    _BACKGROUND_JOB.job = None
                 self._set_active(None)
                 self._queue.task_done()
 
     def _run_side(self, job: PromptJob) -> None:
         try:
+            _BACKGROUND_JOB.job = job
             _print_background(_c(f"  ▶ side #{job.id}: {_short_job_text(_display_job_text(job))}", "2"))
             side_agent = self._side_agent_factory(self.agent)
             side_session = Session()
@@ -588,16 +620,22 @@ class ChatJobRunner:
             self.save_pending()
             _print_background(_c(f"  error in side #{job.id}: {exc}", "31"))
             _print_job_result_hint(job, background=True)
+        finally:
+            if getattr(_BACKGROUND_JOB, "job", None) is job:
+                _BACKGROUND_JOB.job = None
 
 
 def _job_to_dict(job: PromptJob) -> dict[str, Any]:
-    return {
+    row: dict[str, Any] = {
         "id": job.id,
         "text": job.text,
         "kind": job.kind,
         "status": job.status,
         "created_at": job.created_at,
     }
+    if job.output:
+        row["output"] = job.output[-80:]
+    return row
 
 
 def _queue_file_entry_matches_live_job(job: PromptJob, live_by_id: dict[int, PromptJob]) -> bool:
@@ -625,7 +663,10 @@ def _load_saved_queue(path: Path = QUEUE_FILE) -> list[PromptJob]:
         created_at = row.get("created_at") if isinstance(row.get("created_at"), (int, float)) else time.time()
         raw_id = row.get("id")
         job_id = int(raw_id) if isinstance(raw_id, int) and raw_id > 0 else len(jobs) + 1
-        jobs.append(PromptJob(id=job_id, text=text, kind=kind, status=status, created_at=float(created_at)))
+        output = [str(item) for item in row.get("output", []) if isinstance(item, str) and item.strip()]
+        job = PromptJob(id=job_id, text=text, kind=kind, status=status, created_at=float(created_at), output=output[-80:])
+        _trim_job_output(job)
+        jobs.append(job)
     return jobs
 
 
@@ -1467,6 +1508,9 @@ def _queue_show(runner: ChatJobRunner, args: list[str]) -> None:
         print(_indent(job.error))
     print(_c("  prompt:", "1"))
     print(_render_reply(_display_job_text(job)))
+    if job.output and not job.reply:
+        print(_c("  live output:", "1"))
+        print(_render_reply("\n".join(job.output[-80:])))
     if job.reply:
         print(_c("  reply:", "1"))
         print(_render_reply(job.reply))
