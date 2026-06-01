@@ -149,6 +149,8 @@ def _persisted_json_summary(name: str, payload: Any, path: Path, result: str) ->
         summary = _compact_json_object(payload)
         if isinstance(payload.get("checks"), list) and _preserve_structured_check_rows(name, payload["checks"]):
             summary["checks"] = [_compact_check_row(item) for item in payload["checks"]]
+        if name == "verify_novelty":
+            summary.update(_essential_novelty_summary(payload))
     else:
         summary = {
             "result_type": type(payload).__name__,
@@ -217,6 +219,10 @@ def _essential_novelty_summary(payload: dict[str, Any]) -> dict[str, Any]:
     if "idea" in payload:
         summary["idea"] = _compact_json_value(payload.get("idea"))
     for source_key, count_key in (
+        ("search_plan", "search_plan_count"),
+        ("arxiv_search_plan", "arxiv_search_plan_count"),
+        ("web_search_plan", "web_search_plan_count"),
+        ("search_audit", "search_audit_row_count"),
         ("related_papers", "related_papers_count"),
         ("recent_papers", "recent_papers_count"),
         ("focused_papers", "focused_papers_count"),
@@ -227,6 +233,10 @@ def _essential_novelty_summary(payload: dict[str, Any]) -> dict[str, Any]:
         value = payload.get(source_key)
         if isinstance(value, list):
             summary[count_key] = len(value)
+    for plan_key in ("search_plan", "arxiv_search_plan", "web_search_plan"):
+        plan = payload.get(plan_key)
+        if isinstance(plan, list):
+            summary[f"{plan_key}_limits"] = _compact_novelty_plan_limits(plan)
     assessment = payload.get("assessment")
     if isinstance(assessment, dict):
         compact_assessment: dict[str, Any] = {}
@@ -240,6 +250,7 @@ def _essential_novelty_summary(payload: dict[str, Any]) -> dict[str, Any]:
             "novelty_threat_model",
             "disqualifying_overlap_tests",
             "recent_pressure",
+            "freshness_profile",
             "claim_readiness",
         ):
             if key in assessment:
@@ -256,6 +267,26 @@ def _essential_novelty_summary(payload: dict[str, Any]) -> dict[str, Any]:
     return summary
 
 
+def _compact_novelty_plan_limits(plan: list[Any]) -> dict[str, Any]:
+    rows = [row for row in plan if isinstance(row, dict)]
+    requested: list[int] = []
+    for row in rows:
+        try:
+            parsed = int(row.get("max_results", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        requested.append(parsed)
+    sort_by = sorted({str(row.get("sort_by", "")).strip() for row in rows if row.get("sort_by")})
+    focuses = sorted({str(row.get("focus", "")).strip() for row in rows if row.get("focus")})
+    return {
+        "count": len(rows),
+        "requested_results_min": min(requested, default=0),
+        "requested_results_max": max(requested, default=0),
+        "sort_by": sort_by,
+        "focuses": focuses,
+    }
+
+
 def _compact_novelty_coverage(coverage: dict[str, Any]) -> dict[str, Any]:
     compact: dict[str, Any] = {}
     for key in (
@@ -267,6 +298,10 @@ def _compact_novelty_coverage(coverage: dict[str, Any]) -> dict[str, Any]:
         "retrieved_evidence",
         "retrieved_papers",
         "recent_evidence",
+        "structured_recent_evidence",
+        "text_recent_evidence",
+        "latest_evidence_year",
+        "evidence_years",
         "web_results",
         "web_pages_fetched",
         "web_results_with_page_text",

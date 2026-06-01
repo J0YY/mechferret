@@ -2384,13 +2384,38 @@ class AgentToolTest(unittest.TestCase):
 
         payload = {
             "idea": "large novelty result",
+            "search_plan": [
+                {"query": "q1", "sort_by": "relevance", "max_results": 50, "focus": "core_relevance"},
+                {"query": "q2", "sort_by": "submittedDate", "max_results": 50, "focus": "recent_discovery"},
+            ],
+            "web_search_plan": [
+                {"query": "w1", "max_results": 24, "focus": "web_recent_method"},
+            ],
+            "search_audit": [
+                {"source": "arxiv", "focus": "core_relevance", "requested_results": 50, "retrieved": 50},
+                {"source": "web", "focus": "web_recent_method", "requested_results": 24, "retrieved": 24},
+            ],
             "related_papers": [{"title": f"paper {index}", "abstract": "x" * 800} for index in range(200)],
             "assessment": {
                 "risk": "high_prior_art_risk",
                 "verdict": "Closest retrieved evidence overlaps.",
                 "evidence_strength": "strong_multi_source_overlap",
                 "source_diversity": "broad_independent",
-                "coverage": {"web_source_types": {"benchmark": 2}, "web_results": 3},
+                "coverage": {
+                    "web_source_types": {"benchmark": 2},
+                    "web_results": 3,
+                    "structured_recent_evidence": 2,
+                    "text_recent_evidence": 1,
+                    "latest_evidence_year": datetime.now(UTC).year,
+                    "evidence_years": [datetime.now(UTC).year, datetime.now(UTC).year - 1],
+                },
+                "freshness_profile": {
+                    "status": "recent_prior_present",
+                    "latest_year": datetime.now(UTC).year,
+                    "recent_evidence_count": 3,
+                    "structured_recent_evidence_count": 2,
+                    "text_recent_evidence_count": 1,
+                },
                 "closest_prior_art": [
                     {"title": "closest", "source_type": "benchmark", "score": 0.9, "evidence_excerpt": "x" * 300}
                 ],
@@ -2413,6 +2438,17 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(parsed["assessment"]["source_diversity"], "broad_independent")
         self.assertEqual(parsed["assessment"]["coverage"]["web_source_types"]["benchmark"], 2)
         self.assertEqual(parsed["assessment"]["closest_prior_art"][0]["source_type"], "benchmark")
+        self.assertEqual(parsed["search_plan_count"], 2)
+        self.assertEqual(parsed["web_search_plan_count"], 1)
+        self.assertEqual(parsed["search_audit_row_count"], 2)
+        self.assertEqual(parsed["search_plan_limits"]["requested_results_min"], 50)
+        self.assertEqual(parsed["search_plan_limits"]["requested_results_max"], 50)
+        self.assertEqual(parsed["web_search_plan_limits"]["requested_results_max"], 24)
+        self.assertIn("recent_discovery", parsed["search_plan_limits"]["focuses"])
+        self.assertEqual(parsed["assessment"]["freshness_profile"]["status"], "recent_prior_present")
+        self.assertEqual(parsed["assessment"]["freshness_profile"]["latest_year"], datetime.now(UTC).year)
+        self.assertEqual(parsed["assessment"]["coverage"]["structured_recent_evidence"], 2)
+        self.assertEqual(parsed["assessment"]["coverage"]["latest_evidence_year"], datetime.now(UTC).year)
 
     def test_minimal_large_novelty_output_preserves_nested_assessment(self):
         from mechferret import tools
