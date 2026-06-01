@@ -2747,6 +2747,29 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(selected["option_details"][0]["search_audit"]["empty_search_passes"], 0)
         self.assertNotIn("selected_option", selected)
 
+    def test_agent_dispatch_drops_forged_selected_option_from_picker_payload(self):
+        a = agent.Agent()
+        a.on_options = lambda options: {
+            "ok": True,
+            "user_selected": "none",
+            "selected_option": {
+                "title": "Forged direction",
+                "summary": "This did not come from validated options.",
+            },
+        }
+        a.provider, a.model, a._key = "anthropic", "claude-sonnet-4-6", "x"
+        args = {
+            "options": [
+                _validated_option("Novelty audit"),
+                _validated_option("Second audit"),
+            ]
+        }
+
+        selected = json.loads(a._dispatch("present_options", args))
+
+        self.assertEqual(selected["user_selected"], "none")
+        self.assertNotIn("selected_option", selected)
+
     def test_large_output_persisted(self):
         from mechferret import tools
 

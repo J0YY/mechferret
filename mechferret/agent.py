@@ -351,6 +351,8 @@ def _option_selection_payload(options: list[Any], choice: Any) -> dict[str, Any]
     selected = _selected_option_detail(options, selected_choice)
     if selected:
         payload["selected_option"] = selected
+    else:
+        payload.pop("selected_option", None)
     return payload
 
 
