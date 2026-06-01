@@ -213,6 +213,7 @@ class ChatJobRunner:
     def cancel(self, target: str) -> list[PromptJob]:
         target = target.strip().lower()
         canceled: list[PromptJob] = []
+        live_matched = False
         with self._lock:
             if target == "all":
                 for job in self._jobs:
@@ -222,9 +223,23 @@ class ChatJobRunner:
                     canceled.append(job)
             else:
                 job = self._find_live_job_locked(target)
+                live_matched = job is not None
                 if job is not None and job.status == "queued":
                     job.status = "canceled"
                     canceled.append(job)
+            live_ids = {job.id for job in self._jobs}
+            pending = [job for job in self._jobs if job.status == "queued"]
+        saved_canceled: list[PromptJob] = []
+        remaining_saved = self.saved()
+        if target == "all" or not live_matched:
+            saved_canceled, remaining_saved = _pop_saved_queue_jobs(remaining_saved, target)
+            if saved_canceled:
+                for job in saved_canceled:
+                    job.status = "canceled"
+                self._preserved_saved_ids.difference_update(job.id for job in saved_canceled)
+                pending.extend(job for job in remaining_saved if job.id not in live_ids)
+                _save_queue_jobs(self._queue_path, pending)
+                return [*canceled, *saved_canceled]
         if canceled:
             self.save_pending()
         return canceled
@@ -477,6 +492,23 @@ def _load_saved_queue(path: Path = QUEUE_FILE) -> list[PromptJob]:
         job_id = int(raw_id) if isinstance(raw_id, int) and raw_id > 0 else len(jobs) + 1
         jobs.append(PromptJob(id=job_id, text=text, kind=kind, status=status, created_at=float(created_at)))
     return jobs
+
+
+def _pop_saved_queue_jobs(jobs: list[PromptJob], target: str) -> tuple[list[PromptJob], list[PromptJob]]:
+    target = target.strip().lower().lstrip("#")
+    if not jobs:
+        return [], []
+    if target == "all":
+        return list(jobs), []
+    if target in {"latest", "last"}:
+        match = max(jobs, key=_job_order_key)
+    elif target == "next":
+        match = jobs[0]
+    else:
+        match = next((job for job in jobs if str(job.id) == target), None)
+    if match is None:
+        return [], list(jobs)
+    return [match], [job for job in jobs if job.id != match.id]
 
 
 def _queue_file_lock(path: Path) -> threading.Lock:

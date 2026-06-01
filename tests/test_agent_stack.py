@@ -760,6 +760,29 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("job #1 saved", rendered)
         self.assertIn("running", rendered)
 
+    def test_repl_queue_cancel_removes_saved_aliases(self):
+        from mechferret import repl
+
+        queue_path = Path("queue-saved-cancel.json")
+        old = repl.PromptJob(id=3, text="older saved prompt", created_at=100.0)
+        new = repl.PromptJob(id=8, text="newer saved prompt", created_at=200.0)
+        repl._save_queue_jobs(queue_path, [old, new])
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: "reply", queue_path=queue_path)
+            try:
+                repl._queue_cancel(runner, ["next"])
+                self.assertEqual([job.id for job in runner.saved()], [new.id])
+                repl._queue_cancel(runner, ["latest"])
+                self.assertEqual(runner.saved(), [])
+            finally:
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("canceled #3", rendered)
+        self.assertIn("canceled #8", rendered)
+
     def test_repl_queue_latest_targets_most_recent_live_job(self):
         from mechferret import repl
 
