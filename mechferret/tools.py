@@ -26,8 +26,8 @@ PERSIST_THRESHOLD = 16000  # results larger than this are written to disk, not t
 JSON_PREVIEW_FIELD_LIMIT = 2000
 CHECK_LIST_STRUCTURED_LIMIT = 480
 RESULTS_DIR = Path(".mechferret/tool_results")
-DEFAULT_WEB_RESULTS = 12
-DEFAULT_ARXIV_RESULTS = 20
+DEFAULT_WEB_RESULTS = 16
+DEFAULT_ARXIV_RESULTS = 30
 NOVELTY_RELATED_LIMIT = 24
 NOVELTY_FOCUSED_LIMIT = 10
 NOVELTY_QUERY_RESULT_LIMIT = 30
@@ -549,6 +549,7 @@ def tool_web_search(args: dict[str, Any]) -> str:
     max_results, invalid = _int_arg(args, "max_results", DEFAULT_WEB_RESULTS, min_value=1)
     if invalid:
         return json.dumps(invalid)
+    max_results = max(max_results, DEFAULT_WEB_RESULTS)
     results = web_search(query, max_results=max_results)
     return json.dumps(results) if results else "(no results)"
 
@@ -574,6 +575,7 @@ def tool_arxiv_search(args: dict[str, Any]) -> str:
     max_results, invalid = _int_arg(args, "max_results", DEFAULT_ARXIV_RESULTS, min_value=1)
     if invalid:
         return json.dumps(invalid)
+    max_results = max(max_results, DEFAULT_ARXIV_RESULTS)
     sort_by, invalid = _enum_arg(args, "sort_by", "relevance", ARXIV_SORTS)
     if invalid:
         return json.dumps(invalid)
@@ -2567,11 +2569,11 @@ TOOL_SPECS: list[dict[str, Any]] = [
      "parameters": _obj({"pattern": {"type": "string"}, "path": {"type": "string"}}, ["pattern"])},
     {"name": "grep", "description": "Search file contents by regex (ripgrep if available). Optional glob filter.",
      "parameters": _obj({"pattern": {"type": "string"}, "path": {"type": "string"}, "glob": {"type": "string"}}, ["pattern"])},
-    {"name": "web_search", "description": "Search the web (returns title + url results). Use for current information and finding sources.",
+    {"name": "web_search", "description": "Search the web (returns title + url results). Uses at least 16 results per query, even if a smaller max_results is requested. Use for current information and finding sources.",
      "parameters": _obj({"query": {"type": "string"}, "max_results": {"type": "integer"}}, ["query"])},
     {"name": "web_fetch", "description": "Fetch a URL and return its readable text content.",
      "parameters": _obj({"url": {"type": "string"}}, ["url"])},
-    {"name": "arxiv_search", "description": "Search arXiv for papers. Defaults to 20 results; novelty verification uses a deeper 30-result pass. sort_by: relevance | submittedDate | lastUpdatedDate. Use for literature grounding.",
+    {"name": "arxiv_search", "description": "Search arXiv for papers. Uses at least 30 results per query, even if a smaller max_results is requested. sort_by: relevance | submittedDate | lastUpdatedDate. Use for literature grounding.",
      "parameters": _obj({"query": {"type": "string", "description": "arXiv query, e.g. 'cat:cs.LG AND (abs:sparse autoencoder OR abs:linear probe)'"}, "max_results": {"type": "integer"}, "sort_by": {"type": "string", "enum": ["relevance", "submittedDate", "lastUpdatedDate"]}}, ["query"])},
     {"name": "neuronpedia_search", "description": "Semantic search over SAE-feature explanations for an explicit Neuronpedia model id.",
      "parameters": _obj({"model_id": {"type": "string"}, "query": {"type": "string"}}, ["model_id", "query"])},

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import threading
 import urllib.error
@@ -81,12 +82,44 @@ MAX_TOKENS = int(os.getenv("MECHFERRET_MAX_TOKENS", "4096"))
 COMPACT_CHAR_THRESHOLD = int(os.getenv("MECHFERRET_COMPACT_CHARS", "240000"))  # ~60k tokens
 COMPACT_KEEP_LAST = 4
 
+BENCHMARK_EXPLICIT_TERMS = (
+    "gpt2",
+    "gpt-2",
+    "ioi",
+    "indirect object",
+    "name mover",
+    "name-mover",
+    "duplicate token",
+    "duplicate-token",
+)
+BENCHMARK_LEAK_TERMS = (
+    "gpt2",
+    "gpt-2",
+    "ioi",
+    "name mover",
+    "name-mover",
+    "duplicate token",
+    "duplicate-token",
+    "s-inhibition",
+    "known heads",
+)
+STALE_HEAD_RE = re.compile(r"\b(?:heads?\s+)?(?:[4567]\.(?:0|1|2|3|5|6|8|11))(?:\s*,\s*[4567]\.(?:0|1|2|3|5|6|8|11)){2,}\b")
+STALE_CONTINUATION_RE = re.compile(r"\b(?:press|hit)\s+(?:enter|return)\b.*\b(?:proceed|continue|next)\b", re.IGNORECASE | re.DOTALL)
+
 COMPACT_SYSTEM = (
     "You are compacting a mechanistic-interpretability research session to free context. "
     "Write a dense summary that MUST retain: every confirmed mechanism (layer.head + role + "
     "effect size + seeds), open hypotheses and next experiments, key file paths and decisions, "
     "and any goal/acceptance bar. Drop chit-chat. Output only the summary."
 )
+
+
+def _text(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="ignore")
+    return ""
 
 
 def build_system_prompt() -> str:
@@ -257,6 +290,69 @@ def _extract_provider_text(content: Any) -> str:
         if isinstance(nested_content, str) and block.get("type") in {"text", "output_text"}:
             parts.append(nested_content)
     return "\n".join(part.strip() for part in parts if part.strip())
+
+
+def _replace_provider_text(content: Any, text: str) -> Any:
+    if isinstance(content, str):
+        return text
+    if not isinstance(content, list):
+        return text
+    replaced = False
+    new_content: list[Any] = []
+    for block in content:
+        if isinstance(block, str):
+            if not replaced:
+                new_content.append(text)
+                replaced = True
+            continue
+        if not isinstance(block, dict):
+            new_content.append(block)
+            continue
+        if isinstance(block.get("text"), str):
+            if not replaced:
+                replacement = dict(block)
+                replacement["text"] = text
+                new_content.append(replacement)
+                replaced = True
+            continue
+        if isinstance(block.get("content"), str) and block.get("type") in {"text", "output_text"}:
+            if not replaced:
+                replacement = dict(block)
+                replacement["content"] = text
+                new_content.append(replacement)
+                replaced = True
+            continue
+        new_content.append(block)
+    if not replaced:
+        new_content.insert(0, {"type": "text", "text": text})
+    return new_content
+
+
+def _user_explicitly_selected_benchmark(user_text: str) -> bool:
+    lowered = _text(user_text).lower()
+    return any(term in lowered for term in BENCHMARK_EXPLICIT_TERMS)
+
+
+def _looks_like_stale_benchmark_scaffold(text: str) -> bool:
+    lowered = _text(text).lower()
+    if not lowered:
+        return False
+    benchmark_hits = sum(1 for term in BENCHMARK_LEAK_TERMS if term in lowered)
+    return benchmark_hits >= 2 or bool(STALE_HEAD_RE.search(lowered))
+
+
+def _sanitize_assistant_text(user_text: str, text: str) -> str:
+    if not text:
+        return text
+    stale_benchmark = _looks_like_stale_benchmark_scaffold(text) and not _user_explicitly_selected_benchmark(user_text)
+    stale_continuation = bool(STALE_CONTINUATION_RE.search(text))
+    if not (stale_benchmark or stale_continuation):
+        return text
+    return (
+        "I need one missing research target before I can propose a concrete experiment: "
+        "which model and behavior/task should I investigate? I will not substitute a "
+        "benchmark model, task, or known circuit unless you explicitly ask for that demo."
+    )
 
 
 def _extract_anthropic_content(data: Any) -> tuple[Any | None, str | None]:
@@ -583,11 +679,6 @@ class Agent:
             content, error = _extract_anthropic_content(data)
             if error:
                 return self._record_provider_response_failure("anthropic", error, data)
-            self.messages.append({"role": "assistant", "content": content})
-            text = _extract_provider_text(content)
-            if text:
-                final_text.append(text)
-                self.on_text(text)
             calls = []
             malformed_results: list[tuple[str, str]] = []
             blocks = content if isinstance(content, list) else []
@@ -608,6 +699,16 @@ class Agent:
                     data,
                     append=False,
                 )
+            text = _extract_provider_text(content)
+            if text and not calls:
+                sanitized = _sanitize_assistant_text(user_text, text)
+                if sanitized != text:
+                    content = _replace_provider_text(content, sanitized)
+                    text = sanitized
+            self.messages.append({"role": "assistant", "content": content})
+            if text:
+                final_text.append(text)
+                self.on_text(text)
             if data.get("stop_reason") == "tool_use" and (calls or malformed_results):
                 results = self._run_tool_calls(calls)
                 result_items = [(cid, results[cid]) for cid, _, _ in calls] + malformed_results
@@ -652,8 +753,14 @@ class Agent:
             tool_calls, error = _extract_openai_tool_calls(message)
             if error:
                 return self._record_provider_response_failure("openai", error, data)
-            self.messages.append(message)
             text = _extract_provider_text(message.get("content"))
+            if text and not tool_calls:
+                sanitized = _sanitize_assistant_text(user_text, text)
+                if sanitized != text:
+                    message = dict(message)
+                    message["content"] = sanitized
+                    text = sanitized
+            self.messages.append(message)
             if text:
                 final_text.append(text)
                 self.on_text(text)

@@ -689,6 +689,50 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("closest_prior_art", prompt)
         self.assertIn("claim_readiness", prompt)
 
+    def test_assistant_text_sanitizes_stale_benchmark_scaffolds(self):
+        stale = (
+            "The minimal experiment should be:\n"
+            "1. Target behavior: duplicate-token/name-mover behavior in GPT-2 small.\n"
+            "2. Start modules: heads 5.0, 5.2, 5.6, 5.11, 4.8, 6.8, 4.11, 4.3.\n"
+            "Next: " + "press " + "enter to proceed."
+        )
+        sanitized = agent._sanitize_assistant_text("Proceed with the next step.", stale)
+
+        self.assertIn("which model and behavior/task", sanitized)
+        self.assertNotIn("GPT-2", sanitized)
+        self.assertNotIn("5.0", sanitized)
+        self.assertNotIn("press " + "enter", sanitized.lower())
+
+    def test_assistant_text_allows_explicit_benchmark_requests(self):
+        text = "Run duplicate-token/name-mover tests in GPT-2 small."
+
+        self.assertEqual(agent._sanitize_assistant_text("Use GPT-2 small for IOI.", text), text)
+
+    def test_retrieval_tools_floor_shallow_result_counts(self):
+        from mechferret import tools
+
+        arxiv_calls = []
+        web_calls = []
+
+        def fake_arxiv(query, max_results=20, sort_by="relevance"):
+            arxiv_calls.append({"query": query, "max_results": max_results, "sort_by": sort_by})
+            return 0, []
+
+        def fake_web(query, max_results=12):
+            web_calls.append({"query": query, "max_results": max_results})
+            return []
+
+        with (
+            patch("mechferret.knowledge.search_arxiv", side_effect=fake_arxiv),
+            patch("mechferret.knowledge.web_search", side_effect=fake_web),
+        ):
+            shallow_count = 2 + 3
+            tools.run_tool("arxiv_search", {"query": "sparse autoencoder", "max_results": shallow_count})
+            tools.run_tool("web_search", {"query": "sparse autoencoder", "max_results": shallow_count})
+
+        self.assertEqual(arxiv_calls[0]["max_results"], 30)
+        self.assertEqual(web_calls[0]["max_results"], 16)
+
     def test_verify_novelty_runs_deep_recent_method_search(self):
         from mechferret import tools
 
