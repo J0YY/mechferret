@@ -484,7 +484,7 @@ Options:
 - `--skill`: Named skill/playbook (see `mechferret /skills`) or a path to a skill JSON.
 - `--task`: choices: `ioi`, `induction`, `greater_than`, `factual_recall`; Interpretability task.
 - `--model`: Model to investigate; required unless --skill declares one.
-- `--backend`: choices: `auto`, `synthetic`, `transformer_lens`; Experiment backend for interpretability probes.
+- `--backend`: choices: `auto`, `synthetic`, `transformer_lens`; Experiment backend for interpretability probes; required so synthetic smoke data is explicit.
 - `--source`: Prior-art documents to ground hypotheses.
 - `--url`: URL to fetch as prior art.
 - `--out`: Output directory for discovery artifacts.

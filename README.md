@@ -593,9 +593,9 @@ Useful demo flow:
 Run the local discovery check:
 
 ```bash
-mechferret discover --skill <skill> --model <model> --out runs/demo
-mechferret discover --skill <skill> --model <model> --out runs/demo --json
-mechferret discover --skill <skill> --model <model> --seed-corpus --out runs/demo-with-prior
+mechferret discover --skill <skill> --model <model> --backend synthetic --out runs/demo
+mechferret discover --skill <skill> --model <model> --backend synthetic --out runs/demo --json
+mechferret discover --skill <skill> --model <model> --backend synthetic --seed-corpus --out runs/demo-with-prior
 open runs/demo/report.html
 ```
 

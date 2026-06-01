@@ -29,7 +29,7 @@ ACTION_BY_CHECK = {
     "citations_per_claim": "Attach citations to unsupported claims or remove claims that cannot be grounded.",
     "plan_coverage": "Run the missing plan steps or narrow the research question.",
     "contradiction_pressure_bounded": "Resolve or explicitly discuss the strongest contradiction pairs.",
-    "has_confirmed_mechanism": "Run `/discover --skill <skill> --model <model>` or another task-specific workflow until one mechanism is confirmed.",
+    "has_confirmed_mechanism": "Run `/discover --skill <skill> --model <model> --backend transformer_lens` or another task-specific workflow until one mechanism is confirmed.",
     "every_experiment_has_control": "Add matched controls for every experiment before treating effects as evidence.",
     "significant_effects_reproduce": "Re-run significant effects across seeds and require reproducibility before promotion.",
     "discoveries_are_triangulated": "Triangulate each discovery with at least two independent probes.",
@@ -92,7 +92,7 @@ def audit_run_artifact(path: str | Path | None = None, *, runs_root: str | Path 
             "passed": False,
             "checks": checks,
             "failed_checks": _failed_check_names(checks),
-            "next_actions": ["Run `mechferret demo` or `mechferret discover --skill <skill> --model <model>` to create a dossier."],
+            "next_actions": ["Run `mechferret demo` or `mechferret discover --skill <skill> --model <model> --backend synthetic` to create a smoke-test dossier."],
             "readiness_score": 0,
         }
     run = load_run_artifact(target)

@@ -273,7 +273,7 @@ def build_parser() -> argparse.ArgumentParser:
     discover.add_argument("--skill", help="Named skill/playbook (see `mechferret /skills`) or a path to a skill JSON.")
     discover.add_argument("--task", choices=["ioi", "induction", "greater_than", "factual_recall"], help="Interpretability task.")
     discover.add_argument("--model", help="Model to investigate; required unless --skill declares one.")
-    discover.add_argument("--backend", choices=["auto", "synthetic", "transformer_lens"], default="auto", help="Experiment backend for interpretability probes.")
+    discover.add_argument("--backend", choices=["auto", "synthetic", "transformer_lens"], help="Experiment backend for interpretability probes; required so synthetic smoke data is explicit.")
     discover.add_argument("--source", action="append", default=[], help="Prior-art documents to ground hypotheses.")
     discover.add_argument("--url", action="append", default=[], help="URL to fetch as prior art.")
     discover.add_argument("--out", default="runs/discovery", help="Output directory for discovery artifacts.")
@@ -1083,6 +1083,13 @@ def handle_discover(args) -> None:
     skill = args.skill
     if not skill and not args.question and not args.task:
         exc = ValueError("discovery needs a question, --task, or --skill; no demo skill is selected implicitly.")
+        if args.json:
+            print(json.dumps(_error_payload("discover", exc, out_dir=args.out), indent=2, sort_keys=True))
+            raise SystemExit(2) from None
+        print(f"Discovery not started: {exc}", file=sys.stderr)
+        raise SystemExit(2) from None
+    if not args.backend:
+        exc = ValueError("discovery needs an explicit backend; pass --backend synthetic, transformer_lens, or auto.")
         if args.json:
             print(json.dumps(_error_payload("discover", exc, out_dir=args.out), indent=2, sort_keys=True))
             raise SystemExit(2) from None
@@ -3345,6 +3352,8 @@ def _command_error_failed_checks(command: str, error: str) -> list[str]:
         checks: list[str] = []
         if "explicit model" in lowered or "model is required" in lowered:
             checks.append("model_required")
+        if "explicit backend" in lowered or "backend is required" in lowered:
+            checks.append("backend_required")
         if "could not infer" in lowered or "explicit task" in lowered or "question, --task, or --skill" in lowered:
             checks.append("task_required")
         if "not aligned" in lowered or "mismatch" in lowered or "unsupported term" in lowered:
@@ -3359,6 +3368,8 @@ def _command_error_next_actions(command: str, error: str) -> list[str]:
         actions: list[str] = []
         if "explicit model" in lowered or "model is required" in lowered:
             actions.append("Pass --model <model> or use a skill file that declares a model.")
+        if "explicit backend" in lowered or "backend is required" in lowered:
+            actions.append("Pass --backend synthetic only for an intentional smoke/demo run, or --backend transformer_lens for real model measurements.")
         if "could not infer" in lowered or "explicit task" in lowered or "question, --task, or --skill" in lowered:
             actions.append("Pass --task ioi|induction|greater_than|factual_recall, use --skill, or run literature mode first.")
         if "not aligned" in lowered or "mismatch" in lowered or "unsupported term" in lowered:

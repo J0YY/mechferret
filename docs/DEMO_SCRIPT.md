@@ -16,8 +16,8 @@ mechferret          # bare command = interactive prompt, like `claude`
 ## 1. Run the headline discovery
 
 ```bash
-mechferret discover --skill <skill> --model <model> --out runs/demo
-mechferret discover --skill <skill> --model <model> --out runs/demo --json
+mechferret discover --skill <skill> --model <model> --backend synthetic --out runs/demo
+mechferret discover --skill <skill> --model <model> --backend synthetic --out runs/demo --json
 open runs/demo/report.html
 ```
 
@@ -56,7 +56,7 @@ cat runs/demo/trace.jsonl       # per-phase spans (mirror to Raindrop Workshop)
 
 ```bash
 python3 -m mechferret /skills                       # reusable playbooks
-python3 -m mechferret discover --skill find-induction-heads --model <model> --out runs/induction
+python3 -m mechferret discover --skill find-induction-heads --model <model> --backend synthetic --out runs/induction
 ```
 
 "Different skill, different task — same loop finds an **induction head** and its

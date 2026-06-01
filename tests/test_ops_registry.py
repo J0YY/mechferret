@@ -4318,6 +4318,39 @@ class OpsRegistryTest(unittest.TestCase):
             self.assertIn("task_required", payload["failed_checks"])
             self.assertTrue(any("--task" in action for action in payload["next_actions"]))
 
+    def test_cli_discover_json_requires_explicit_backend(self):
+        from mechferret.cli import main
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out = StringIO()
+            with self.assertRaises(SystemExit) as ctx:
+                with redirect_stdout(out):
+                    main(
+                        [
+                            "discover",
+                            "--skill",
+                            "ioi-circuit",
+                            "--model",
+                            "gpt2",
+                            "--db",
+                            str(root / "memory.sqlite"),
+                            "--out",
+                            str(root / "discovery"),
+                            "--provider",
+                            "local",
+                            "--no-memory",
+                            "--json",
+                        ]
+                    )
+            self.assertEqual(ctx.exception.code, 2)
+            payload = json.loads(out.getvalue())
+            self.assertFalse(payload["ok"])
+            self.assertEqual(payload["command"], "discover")
+            self.assertIn("explicit backend", payload["error"])
+            self.assertIn("backend_required", payload["failed_checks"])
+            self.assertTrue(any("--backend" in action for action in payload["next_actions"]))
+
     def test_cli_run_json_reports_recovery_for_missing_grounding(self):
         from mechferret.cli import main
 

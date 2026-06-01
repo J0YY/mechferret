@@ -105,6 +105,7 @@ class DocsIntegrityTest(unittest.TestCase):
 
     def test_documented_discovery_examples_do_not_imply_model_defaults(self):
         missing_model = []
+        missing_backend = []
         for source, line_number, command in _documented_mechferret_commands():
             args = _cli_args(command)
             if "discover" not in args:
@@ -113,7 +114,10 @@ class DocsIntegrityTest(unittest.TestCase):
                 continue
             if "--model" not in args:
                 missing_model.append(f"{source}:{line_number}: {command}")
+            if "--backend" not in args:
+                missing_backend.append(f"{source}:{line_number}: {command}")
         self.assertEqual(missing_model, [])
+        self.assertEqual(missing_backend, [])
 
     def test_cli_reference_is_generated_from_parser(self):
         from mechferret.cli import _command_index_payload, _command_markdown, build_parser
