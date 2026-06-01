@@ -860,7 +860,7 @@ def _find_saved_queue_job(jobs: list[PromptJob], target: str) -> PromptJob | Non
         side_jobs = [job for job in jobs if job.kind == "btw"]
         return max(side_jobs, key=_job_order_key) if side_jobs else None
     if target == "next":
-        return jobs[0]
+        return next((job for job in jobs if job.status == "queued"), jobs[0])
     return next((job for job in jobs if str(job.id) == target), None)
 
 

@@ -2139,6 +2139,25 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("job #1 saved", rendered)
         self.assertIn("running", rendered)
 
+    def test_repl_saved_next_prefers_queued_over_running_prompt(self):
+        from mechferret import repl
+
+        queue_path = Path("queue-saved-next-prefers-queued.json")
+        repl._save_queue_jobs(queue_path, [
+            repl.PromptJob(id=1, text="active saved prompt", status="running", created_at=1.0),
+            repl.PromptJob(id=2, text="queued saved prompt", status="queued", created_at=2.0),
+        ])
+
+        with redirect_stdout(StringIO()):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: "reply", queue_path=queue_path)
+            try:
+                restored = runner.restore_saved("next")
+            finally:
+                runner.stop(wait=True)
+
+        self.assertEqual([job.id for job in restored], [2])
+        self.assertEqual([job.text for job in restored], ["queued saved prompt"])
+
     def test_repl_queue_edit_updates_saved_queued_prompts(self):
         from mechferret import repl
 
