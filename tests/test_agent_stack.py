@@ -424,17 +424,17 @@ class AgentStackTest(unittest.TestCase):
         rendered_help = out.getvalue()
         self.assertIn("/btw <text>", rendered_help)
         self.assertIn("/queue", rendered_help)
-        self.assertIn("/queue show <id|latest>", rendered_help)
+        self.assertIn("/queue show <id|latest|active|next>", rendered_help)
         self.assertIn("/queue retry <id|latest>", rendered_help)
-        self.assertIn("/queue edit <id|latest> <text>", rendered_help)
-        self.assertIn("/queue move <id|latest> first|last|before|after", rendered_help)
-        self.assertIn("/queue cancel <id|latest|all>", rendered_help)
+        self.assertIn("/queue edit <id|latest|next> <text>", rendered_help)
+        self.assertIn("/queue move <id|latest|next> first|last|before|after", rendered_help)
+        self.assertIn("/queue cancel <id|latest|next|all>", rendered_help)
         self.assertIn("/queue clear [queued|saved|all]", rendered_help)
         self.assertIn("/queue pause", rendered_help)
         self.assertIn("/queue resume", rendered_help)
         self.assertIn("/queue restore", rendered_help)
         self.assertIn("/queue wait [seconds]", rendered_help)
-        self.assertIn("/queue join <id> [seconds]", rendered_help)
+        self.assertIn("/queue join <id|latest|active|next> [seconds]", rendered_help)
         self.assertIn("/cancel <id|all>", rendered_help)
         self.assertIn("/commands --workflow first_run", rendered_help)
         self.assertIn("show a runnable workflow recipe", rendered_help)
@@ -742,6 +742,52 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("edited #2", rendered)
         self.assertIn("moved #2 first", rendered)
         self.assertIn("canceled #1", rendered)
+
+    def test_repl_queue_active_and_next_targets_resolve_live_jobs(self):
+        from mechferret import repl
+
+        release = threading.Event()
+        started = []
+
+        def fake_chat(agent, session, text, *, background=False):
+            started.append(text)
+            if text == "active prompt":
+                self.assertTrue(release.wait(timeout=2))
+            return text
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-active-next.json"))
+            try:
+                active = runner.submit("active prompt")
+                queued = runner.submit("queued prompt")
+                deadline = time.monotonic() + 2
+                while runner.active() is None and time.monotonic() < deadline:
+                    time.sleep(0.01)
+
+                found_active, saved_active = runner.find_job("active")
+                found_next, saved_next = runner.find_job("next")
+                self.assertIs(found_active, active)
+                self.assertFalse(saved_active)
+                self.assertIs(found_next, queued)
+                self.assertFalse(saved_next)
+
+                repl._queue_show(runner, ["running"])
+                repl._queue_edit(runner, ["next"], "updated queued")
+                self.assertEqual(queued.text, "updated queued")
+                repl._queue_cancel(runner, ["next"])
+                self.assertEqual(queued.status, "canceled")
+            finally:
+                release.set()
+                runner.wait_idle(timeout=2)
+                runner.stop(wait=True)
+
+        self.assertEqual(started, ["active prompt"])
+        rendered = out.getvalue()
+        self.assertIn("job #1", rendered)
+        self.assertIn("active prompt", rendered)
+        self.assertIn("edited #2", rendered)
+        self.assertIn("canceled #2", rendered)
 
     def test_repl_queue_retry_requeues_main_side_and_saved_jobs(self):
         from mechferret import repl

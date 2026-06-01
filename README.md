@@ -336,17 +336,17 @@ You can do things like:
 ```text
 /btw <prompt>   run a compact side question while another reply is running
 /queue          show the active and queued prompts
-/queue show <id|latest>  show a queued job's full prompt, reply, or error
+/queue show <id|latest|active|next>  show a queued job's full prompt, reply, or error
 /queue retry <id|latest> retry a job without retyping its prompt
-/queue edit <id|latest> <prompt> edit a queued prompt before it starts
-/queue move <id|latest> first|last|before|after reorder a queued prompt before it starts
-/queue cancel <id|latest|all> cancel queued prompts from the queue view
+/queue edit <id|latest|next> <prompt> edit a queued prompt before it starts
+/queue move <id|latest|next> first|last|before|after reorder a queued prompt before it starts
+/queue cancel <id|latest|next|all> cancel queued prompts from the queue view
 /queue clear queued|saved|all clear live or saved queue state
 /queue pause   hold queued prompts after the active reply finishes
 /queue resume  resume held queued prompts
 /queue restore  restore saved queued/running prompts from the last session
 /queue wait     wait until active queued and side work finishes
-/queue join <id> wait for one queued or side job to finish
+/queue join <id|latest|active|next> wait for one queued or side job to finish
 /cancel <id>    remove a queued prompt before it starts
 /quickstart     show the recommended demo/OpenVLA/CI command path
 /selftest       run offline readiness checks and optionally verify demo artifacts

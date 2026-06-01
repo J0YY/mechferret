@@ -186,6 +186,10 @@ class ChatJobRunner:
         target = target.strip().lower().lstrip("#")
         if target in {"latest", "last"}:
             return self._jobs[-1] if self._jobs else None
+        if target in {"active", "running"}:
+            return self._active
+        if target == "next":
+            return next((job for job in self._jobs if job.status == "queued"), None)
         return next((job for job in self._jobs if str(job.id) == target), None)
 
     def cancel(self, target: str) -> list[PromptJob]:
@@ -266,11 +270,9 @@ class ChatJobRunner:
         raw_target = target.strip().lower()
         target = raw_target.lstrip("#")
         with self._lock:
-            if target in {"latest", "last"}:
-                return (self._jobs[-1], False) if self._jobs else (None, False)
-            for job in self._jobs:
-                if str(job.id) == target:
-                    return job, False
+            job = self._find_live_job_locked(target)
+            if job is not None:
+                return job, False
         for job in self.saved():
             if str(job.id) == target:
                 return job, True
