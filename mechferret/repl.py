@@ -178,8 +178,8 @@ class ChatJobRunner:
 
     def saved_only(self) -> list[PromptJob]:
         with self._lock:
-            live_ids = {job.id for job in self._jobs}
-        return [job for job in self.saved() if job.id not in live_ids]
+            live_by_id = {job.id: job for job in self._jobs}
+        return [job for job in self.saved() if not _queue_file_entry_matches_live_job(job, live_by_id)]
 
     def restore_saved(self, target: str = "all") -> list[PromptJob]:
         with self._lock:

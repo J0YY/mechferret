@@ -1893,6 +1893,34 @@ class AgentStackTest(unittest.TestCase):
         self.assertEqual([job.text for job in persisted], ["live queued prompt"])
         self.assertIn("cleared 1 saved queued prompt", out.getvalue())
 
+    def test_repl_saved_only_keeps_distinct_saved_id_collisions_visible(self):
+        from mechferret import repl
+
+        queue_path = Path("queue-saved-visible-collision.json")
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: None, queue_path=queue_path)
+            try:
+                runner.pause()
+                live = runner.submit("live queued prompt")
+                repl._save_queue_jobs(queue_path, [
+                    live,
+                    repl.PromptJob(id=live.id, text="different saved prompt"),
+                ])
+                prompt = repl._input_prompt(runner)
+                saved = runner.saved_only()
+                repl._print_queue(runner)
+            finally:
+                runner.resume()
+                runner.stop(wait=True)
+
+        self.assertEqual([job.text for job in saved], ["different saved prompt"])
+        self.assertIn("saved:1", prompt)
+        rendered = out.getvalue()
+        self.assertIn("saved   #1", rendered)
+        self.assertIn("different saved prompt", rendered)
+
     def test_repl_chat_job_runner_saves_and_restores_pending_prompts(self):
         from mechferret import repl
 
