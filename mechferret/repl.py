@@ -182,7 +182,9 @@ class ChatJobRunner:
         return [job for job in self.saved() if job.id not in live_ids]
 
     def restore_saved(self, target: str = "all") -> list[PromptJob]:
-        saved_jobs = self.saved()
+        with self._lock:
+            live_by_id = {job.id: job for job in self._jobs}
+        saved_jobs = [job for job in self.saved() if not _queue_file_entry_matches_live_job(job, live_by_id)]
         if not saved_jobs:
             return []
         restored_jobs, remaining_jobs = _pop_saved_queue_jobs(saved_jobs, target)
@@ -209,9 +211,9 @@ class ChatJobRunner:
 
     def clear_saved(self) -> int:
         with self._lock:
-            live_ids = {job.id for job in self._jobs}
+            live_by_id = {job.id: job for job in self._jobs}
             live_pending = [job for job in self._jobs if job.status in {"queued", "running"}]
-        saved = [job for job in self.saved() if job.id not in live_ids]
+        saved = [job for job in self.saved() if not _queue_file_entry_matches_live_job(job, live_by_id)]
         self._preserved_saved_ids.clear()
         _save_queue_jobs(self._queue_path, live_pending)
         return len(saved)
@@ -555,6 +557,11 @@ def _job_to_dict(job: PromptJob) -> dict[str, Any]:
         "status": job.status,
         "created_at": job.created_at,
     }
+
+
+def _queue_file_entry_matches_live_job(job: PromptJob, live_by_id: dict[int, PromptJob]) -> bool:
+    live = live_by_id.get(job.id)
+    return live is not None and live.text == job.text and live.kind == job.kind
 
 
 def _load_saved_queue(path: Path = QUEUE_FILE) -> list[PromptJob]:

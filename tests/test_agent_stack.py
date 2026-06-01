@@ -1869,6 +1869,30 @@ class AgentStackTest(unittest.TestCase):
         self.assertEqual(persisted[0].text, "live queued prompt")
         self.assertIn("cleared 1 saved queued prompt", out.getvalue())
 
+    def test_repl_queue_clear_saved_counts_id_collisions_as_saved(self):
+        from mechferret import repl
+
+        queue_path = Path("queue-clear-saved-collision.json")
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: None, queue_path=queue_path)
+            try:
+                runner.pause()
+                live = runner.submit("live queued prompt")
+                repl._save_queue_jobs(queue_path, [
+                    live,
+                    repl.PromptJob(id=live.id, text="different saved prompt"),
+                ])
+                repl._queue_clear(runner, ["saved"])
+                persisted = runner.saved()
+            finally:
+                runner.resume()
+                runner.stop(wait=True)
+
+        self.assertEqual([job.text for job in persisted], ["live queued prompt"])
+        self.assertIn("cleared 1 saved queued prompt", out.getvalue())
+
     def test_repl_chat_job_runner_saves_and_restores_pending_prompts(self):
         from mechferret import repl
 
@@ -1910,6 +1934,31 @@ class AgentStackTest(unittest.TestCase):
                     restored_runner.stop(wait=True)
 
         self.assertEqual(sorted(started), ["first", "second", "third"])
+
+    def test_repl_restore_saved_queue_skips_already_live_jobs(self):
+        from mechferret import repl
+
+        queue_path = Path("restore-skips-live.json")
+
+        with redirect_stdout(StringIO()):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: None, queue_path=queue_path)
+            try:
+                runner.pause()
+                live = runner.submit("live queued prompt")
+                repl._save_queue_jobs(queue_path, [
+                    live,
+                    repl.PromptJob(id=9, text="saved prompt"),
+                ])
+                restored = runner.restore_saved("all")
+                queued_texts = [job.text for job in runner.queued()]
+                persisted = runner.saved()
+            finally:
+                runner.resume()
+                runner.stop(wait=True)
+
+        self.assertEqual([job.text for job in restored], ["saved prompt"])
+        self.assertEqual(queued_texts, ["live queued prompt", "saved prompt"])
+        self.assertEqual([job.text for job in persisted], queued_texts)
 
     def test_repl_restore_saved_queue_ids_avoid_live_collisions(self):
         from mechferret import repl
