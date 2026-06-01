@@ -358,11 +358,14 @@ class ChatJobRunner:
 
     def save_pending(self, *, include_active: bool = False) -> int:
         with self._lock:
+            live_ids = {job.id for job in self._jobs}
             pending = [job for job in self._jobs if job.status == "queued"]
             if include_active and self._active is not None and self._active.status == "running":
                 pending = [self._active, *pending]
             if include_active:
                 pending.extend(job for job in self._jobs if job.kind == "btw" and job.status == "running")
+        preserved = [job for job in _load_saved_queue(self._queue_path) if job.id not in live_ids]
+        pending.extend(preserved)
         return _save_queue_jobs(self._queue_path, pending)
 
     def _set_active(self, job: PromptJob | None) -> None:
@@ -1148,7 +1151,7 @@ def _queue_show(runner: ChatJobRunner, args: list[str]) -> None:
 def _queue_retry(runner: ChatJobRunner, args: list[str]) -> None:
     target = args[0] if args else ""
     if not target:
-        print(_c("  usage: /queue retry <job id|latest>", "33"))
+        print(_c("  usage: /queue retry <job id|latest|next>", "33"))
         return
     original, retried, saved = runner.retry(target)
     if original is None:

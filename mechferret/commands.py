@@ -22,7 +22,7 @@ SECTIONS: list[tuple[str, list[Command]]] = [
         Command("/btw <text>", "run a compact side prompt while another reply is running"),
         Command("/queue", "show the active and queued prompts"),
         Command("/queue show <id|latest|active|next>", "show a queued job's full prompt, reply, or error"),
-        Command("/queue retry <id|latest>", "retry a job without retyping its prompt"),
+        Command("/queue retry <id|latest|next>", "retry a job without retyping its prompt"),
         Command("/queue edit <id|latest|next> <text>", "edit a queued prompt before it starts"),
         Command("/queue move <id|latest|next> first|last|before|after", "reorder a queued prompt before it starts"),
         Command("/queue cancel <id|latest|next|all>", "cancel queued prompts from the queue view"),

@@ -425,7 +425,7 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("/btw <text>", rendered_help)
         self.assertIn("/queue", rendered_help)
         self.assertIn("/queue show <id|latest|active|next>", rendered_help)
-        self.assertIn("/queue retry <id|latest>", rendered_help)
+        self.assertIn("/queue retry <id|latest|next>", rendered_help)
         self.assertIn("/queue edit <id|latest|next> <text>", rendered_help)
         self.assertIn("/queue move <id|latest|next> first|last|before|after", rendered_help)
         self.assertIn("/queue cancel <id|latest|next|all>", rendered_help)
@@ -725,6 +725,8 @@ class AgentStackTest(unittest.TestCase):
                 repl._queue_show(runner, ["latest"])
                 repl._queue_retry(runner, ["latest"])
                 self.assertTrue(runner.wait_idle(timeout=2))
+                repl._queue_retry(runner, ["next"])
+                self.assertTrue(runner.wait_idle(timeout=2))
             finally:
                 runner.stop(wait=True)
 
@@ -732,6 +734,7 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("job #8 saved", rendered)
         self.assertIn("newer saved prompt", rendered)
         self.assertIn("retried #8 saved as #1", rendered)
+        self.assertIn("retried #3 saved as #2", rendered)
 
     def test_repl_saved_queue_preserves_pending_statuses(self):
         from mechferret import repl
@@ -807,7 +810,7 @@ class AgentStackTest(unittest.TestCase):
 
         rendered = out.getvalue()
         self.assertIn("/queue show <job id|latest|active|next>", rendered)
-        self.assertIn("/queue retry <job id|latest>", rendered)
+        self.assertIn("/queue retry <job id|latest|next>", rendered)
         self.assertIn("/queue edit <job id|latest|next> <new prompt>", rendered)
         self.assertIn("/queue move <job id|latest|next>", rendered)
         self.assertIn("/queue join <job id|latest|active|next> [seconds]", rendered)
