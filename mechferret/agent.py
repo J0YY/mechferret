@@ -89,6 +89,7 @@ COMPACT_KEEP_LAST = 4
 BENCHMARK_LEAK_TERMS = (
     "gpt2",
     "gpt-2",
+    "gpt 2",
     "ioi",
     "name mover",
     "name-mover",
@@ -97,20 +98,21 @@ BENCHMARK_LEAK_TERMS = (
     "s-inhibition",
     "known heads",
 )
-BENCHMARK_MODEL_LEAK_RE = re.compile(r"\bgpt-?2(?:[-\s]?(?:small|medium))?\b", re.IGNORECASE)
+BENCHMARK_MODEL_PATTERN = r"\bgpt(?:[-\s\u2010-\u2015\u2212]?2)(?:[-\s\u2010-\u2015\u2212]?(?:small|medium))?\b"
+BENCHMARK_MODEL_LEAK_RE = re.compile(BENCHMARK_MODEL_PATTERN, re.IGNORECASE)
 BENCHMARK_MODEL_NEGATION_RE = re.compile(
-    r"\b(?:do\s+not|don't|dont|never|no|not|avoid|stop|without|instead\s+of|rather\s+than)\b.{0,90}\bgpt-?2(?:[-\s]?(?:small|medium))?\b",
+    rf"\b(?:do\s+not|don't|dont|never|no|not|avoid|stop|without|instead\s+of|rather\s+than)\b.{{0,90}}{BENCHMARK_MODEL_PATTERN}",
     re.IGNORECASE | re.DOTALL,
 )
 BENCHMARK_MODEL_COMPLAINT_RE = re.compile(
-    r"(?:\b(?:why|still|seeing|default(?:ing)?|leak(?:ing)?|hard[-\s]?coded|unrequested|suspicious)\b.{0,90}\bgpt-?2(?:[-\s]?(?:small|medium))?\b)"
-    r"|(?:\bgpt-?2(?:[-\s]?(?:small|medium))?\b.{0,90}\b(?:default(?:ing)?|leak(?:ing)?|unrequested|suspicious)\b)",
+    rf"(?:\b(?:why|still|seeing|default(?:ing)?|leak(?:ing)?|hard[-\s]?coded|unrequested|suspicious)\b.{{0,90}}{BENCHMARK_MODEL_PATTERN})"
+    rf"|(?:{BENCHMARK_MODEL_PATTERN}.{{0,90}}\b(?:default(?:ing)?|leak(?:ing)?|unrequested|suspicious)\b)",
     re.IGNORECASE | re.DOTALL,
 )
 BENCHMARK_MODEL_EXPLICIT_RE = re.compile(
-    r"(?:\b(?:--model|model|model\s+under\s+study|target\s+model)\b\s*[:=]?\s*\bgpt-?2(?:[-\s]?(?:small|medium))?\b)"
-    r"|(?:\b(?:use|using|run|test|study|investigate|analy[sz]e|probe|ablate|patch|screen|evaluate|eval|target|choose|select|set)\b.{0,90}\bgpt-?2(?:[-\s]?(?:small|medium))?\b)"
-    r"|(?:\bgpt-?2(?:[-\s]?(?:small|medium))?\b.{0,90}\b(?:for|on|with|ioi|induction|duplicate[-\s]token|name[-\s]mover|experiment|task|study|run|probe|screen)\b)",
+    rf"(?:\b(?:--model|model|model\s+under\s+study|target\s+model)\b\s*[:=]?\s*{BENCHMARK_MODEL_PATTERN})"
+    rf"|(?:\b(?:use|using|run|test|study|investigate|analy[sz]e|probe|ablate|patch|screen|evaluate|eval|target|choose|select|set)\b.{{0,90}}{BENCHMARK_MODEL_PATTERN})"
+    rf"|(?:{BENCHMARK_MODEL_PATTERN}.{{0,90}}\b(?:for|on|with|ioi|induction|duplicate[-\s]token|name[-\s]mover|experiment|task|study|run|probe|screen)\b)",
     re.IGNORECASE | re.DOTALL,
 )
 STALE_HEAD_RE = re.compile(r"\b(?:heads?\s+)?(?:[4567]\.(?:0|1|2|3|5|6|8|11))(?:\s*,\s*[4567]\.(?:0|1|2|3|5|6|8|11)){2,}\b")

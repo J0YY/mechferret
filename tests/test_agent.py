@@ -1242,6 +1242,13 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("which model and behavior/task", sanitized)
         self.assertNotIn("GPT-2", sanitized)
 
+    def test_assistant_text_does_not_treat_spaced_benchmark_complaint_as_selection(self):
+        text = "Run duplicate-token/name-mover tests in GPT 2 small."
+        sanitized = agent._sanitize_assistant_text("Why are we still seeing gpt 2 by default?", text)
+
+        self.assertIn("which model and behavior/task", sanitized)
+        self.assertNotIn("GPT 2", sanitized)
+
     def test_assistant_text_does_not_treat_benchmark_negation_as_selection(self):
         text = "I will use GPT-2 small as the model and run a compact probe first."
         sanitized = agent._sanitize_assistant_text("Do not use gpt2; choose no default model.", text)
@@ -1249,10 +1256,17 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("which model and behavior/task", sanitized)
         self.assertNotIn("GPT-2", sanitized)
 
-    def test_assistant_text_allows_space_separated_explicit_benchmark_request(self):
-        text = "Run duplicate-token/name-mover tests in gpt2 small."
+    def test_assistant_text_does_not_treat_unicode_dash_benchmark_negation_as_selection(self):
+        text = "I will use GPT\u20112 small as the model and run a compact probe first."
+        sanitized = agent._sanitize_assistant_text("Do not use GPT 2; choose no default model.", text)
 
-        self.assertEqual(agent._sanitize_assistant_text("Please run gpt2 small on IOI.", text), text)
+        self.assertIn("which model and behavior/task", sanitized)
+        self.assertNotIn("GPT", sanitized)
+
+    def test_assistant_text_allows_space_separated_explicit_benchmark_request(self):
+        text = "Run duplicate-token/name-mover tests in gpt 2 small."
+
+        self.assertEqual(agent._sanitize_assistant_text("Please run gpt 2 small on IOI.", text), text)
 
     def test_openai_stale_benchmark_text_blocks_same_turn_tool_call(self):
         calls = {"n": 0}
