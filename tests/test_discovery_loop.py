@@ -119,7 +119,8 @@ class SkillTest(unittest.TestCase):
 class HypothesisFlowTest(unittest.TestCase):
     def test_screen_then_promote_confirms_a_head(self):
         engine = InterpEngine("gpt2", "synthetic")
-        gen = HypothesisGenerator("gpt2")
+        backend = engine.backend_for("gpt2", "synthetic")
+        gen = HypothesisGenerator("gpt2", architecture=(backend.n_layers, backend.n_heads, backend.d_model))
         hyps, specs = gen.screen("find ioi", "ioi")
         self.assertGreater(len(specs), 10)
         results = engine.run_specs(specs)
@@ -139,8 +140,20 @@ class HypothesisFlowTest(unittest.TestCase):
         self.assertEqual(gen.model, "")
         self.assertEqual(gen.seeds, [2])
 
+    def test_hypothesis_generation_uses_backend_architecture_for_unknown_models(self):
+        gen = HypothesisGenerator("research/model-x", architecture=(6, 4, 512), seeds=[17, 23, 29])
+        hyps, specs = gen.screen("find ioi", "ioi", max_heads=99)
+
+        self.assertEqual(len(specs), 17)
+        self.assertEqual(hyps[0].target["candidates"], 16)
+        self.assertTrue(all(spec.model == "research/model-x" for spec in specs))
+        screened = [spec for spec in specs if spec.probe == "head_ablation"]
+        self.assertEqual(min(spec.target["layer"] for spec in screened), 2)
+        self.assertEqual(max(spec.target["layer"] for spec in screened), 5)
+        self.assertEqual({tuple(spec.seeds) for spec in specs}, {(17, 23, 29)})
+
     def test_promote_skips_malformed_screen_results(self):
-        gen = HypothesisGenerator("gpt2")
+        gen = HypothesisGenerator("gpt2", architecture=(12, 12, 768))
         good = ExperimentResult(
             id="good",
             spec_id="spec-good",

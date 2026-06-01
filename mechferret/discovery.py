@@ -224,6 +224,22 @@ def _discovery_seed_plan(skill: Skill | None) -> tuple[list[int], str]:
     return runtime_seed_plan(), "run_generated"
 
 
+def _backend_architecture(backend: Any) -> tuple[int, int, int]:
+    values = []
+    for attr in ("n_layers", "n_heads", "d_model"):
+        raw = getattr(backend, attr, None)
+        if type(raw) is bool:
+            raise ValueError(f"backend did not expose a valid {attr} value for hypothesis screening.")
+        try:
+            parsed = int(raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"backend did not expose a valid {attr} value for hypothesis screening.") from exc
+        if parsed <= 0:
+            raise ValueError(f"backend did not expose a valid {attr} value for hypothesis screening.")
+        values.append(parsed)
+    return values[0], values[1], values[2]
+
+
 def request_alignment_issue(
     question: str,
     skill: Skill | None,
@@ -334,7 +350,6 @@ class DiscoveryController:
         memory = ResearchMemory(self.memory_path)
         guard = BudgetGuard(budget=budget)
         engine = InterpEngine(model=model, backend=backend)
-        generator = HypothesisGenerator(model=model, seeds=seeds)
         exp_critic = ExperimentCritic()
 
         try:
@@ -355,6 +370,8 @@ class DiscoveryController:
 
             resolved_backend = engine.backend_for(model, backend)
             backend_name = _text(getattr(resolved_backend, "name", "")).strip() or "synthetic"
+            architecture = _backend_architecture(resolved_backend)
+            generator = HypothesisGenerator(model=model, seeds=seeds, architecture=architecture)
             coordinator = Coordinator(max_workers=default_workers(backend_name))
 
             hypotheses: list[Hypothesis] = []
@@ -499,6 +516,11 @@ class DiscoveryController:
                     "model": model,
                     "backend_requested": backend,
                     "backend_used": backend_name,
+                    "architecture": {
+                        "n_layers": architecture[0],
+                        "n_heads": architecture[1],
+                        "d_model": architecture[2],
+                    },
                     "skill": skill_obj.name if skill_obj else "",
                     "task": task_name,
                     "seeds": seeds,

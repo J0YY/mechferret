@@ -24,7 +24,6 @@ from typing import Any
 
 from ..models import ExperimentResult, ExperimentSpec, Hypothesis
 from ..text import stable_id
-from .synthetic import _shape
 from .tasks import get_task
 
 CONFIRMATORY_PROBES = ("attention_pattern", "direct_logit_attribution", "activation_patching")
@@ -120,6 +119,25 @@ def _seeds(value: Any, *, default: list[int] | None = None) -> list[int]:
     return seeds or list(default or runtime_seed_plan())
 
 
+def _architecture(value: Any) -> tuple[int, int, int] | None:
+    if value is None:
+        return None
+    if not isinstance(value, tuple) or len(value) != 3:
+        return None
+    parsed: list[int] = []
+    for item in value:
+        if type(item) is bool:
+            return None
+        try:
+            number = int(item)
+        except (TypeError, ValueError):
+            return None
+        if number <= 0:
+            return None
+        parsed.append(number)
+    return parsed[0], parsed[1], parsed[2]
+
+
 def _task(name: Any):
     return get_task(_text(name).strip())
 
@@ -162,9 +180,16 @@ def _hypothesis(value: Any) -> Hypothesis | None:
 
 
 class HypothesisGenerator:
-    def __init__(self, model: str | None = None, seeds: tuple[int, ...] | list[int] | None = None) -> None:
+    def __init__(
+        self,
+        model: str | None = None,
+        seeds: tuple[int, ...] | list[int] | None = None,
+        *,
+        architecture: tuple[int, int, int] | None = None,
+    ) -> None:
         self.model = _text(model).strip()
         self.seeds = _seeds(seeds)
+        self.architecture = _architecture(architecture)
 
     # --- round 0: screening ---------------------------------------------------------
 
@@ -177,7 +202,7 @@ class HypothesisGenerator:
     ) -> tuple[list[Hypothesis], list[ExperimentSpec]]:
         max_heads = _positive_int(max_heads, 96)
         source_ids = _strings(source_ids or [])
-        n_layers, n_heads, _ = _shape(self.model)
+        n_layers, n_heads, _ = self._architecture()
         task = _task(task_name)
         start_layer = n_layers // 3  # the upper two-thirds carry task-specific computation
         candidates = [
@@ -246,6 +271,16 @@ class HypothesisGenerator:
         screen_hyp.experiment_ids = [spec.id for spec in specs if spec.hypothesis_id == screen_hyp.id]
         lens_hyp.experiment_ids = [specs[-1].id]
         return [screen_hyp, lens_hyp], specs
+
+    def _architecture(self) -> tuple[int, int, int]:
+        if self.architecture is not None:
+            return self.architecture
+        if not self.model:
+            raise ValueError("model is required; pass --model or use a skill that declares one.")
+        raise ValueError(
+            "model architecture is required for hypothesis screening; resolve a backend first "
+            "or pass architecture=(layers, heads, d_model)."
+        )
 
     # --- round 1+: promote screen hits to targeted hypotheses -----------------------
 
