@@ -318,8 +318,12 @@ class AuditTest(unittest.TestCase):
             with redirect_stdout(out):
                 main(["paper", str(path), "--provider", "local"])
             self.assertTrue((path.parent / "paper" / "main.tex").exists())
-            with redirect_stdout(StringIO()):
-                main(["audit", str(path), "--strict", "--json"])
+            audit_out = StringIO()
+            with redirect_stdout(audit_out):
+                try:
+                    main(["audit", str(path), "--strict", "--json"])
+                except SystemExit as exc:
+                    self.fail(f"audit strict failed with exit {exc.code}: {audit_out.getvalue()}")
 
 
 if __name__ == "__main__":
