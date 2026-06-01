@@ -254,8 +254,11 @@ class ChatJobRunner:
             return list(self._jobs[-limit:])
 
     def find_job(self, target: str) -> tuple[PromptJob | None, bool]:
-        target = target.strip().lstrip("#")
+        raw_target = target.strip().lower()
+        target = raw_target.lstrip("#")
         with self._lock:
+            if target in {"latest", "last"}:
+                return (self._jobs[-1], False) if self._jobs else (None, False)
             for job in self._jobs:
                 if str(job.id) == target:
                     return job, False

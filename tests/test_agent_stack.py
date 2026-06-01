@@ -424,8 +424,8 @@ class AgentStackTest(unittest.TestCase):
         rendered_help = out.getvalue()
         self.assertIn("/btw <text>", rendered_help)
         self.assertIn("/queue", rendered_help)
-        self.assertIn("/queue show <id>", rendered_help)
-        self.assertIn("/queue retry <id>", rendered_help)
+        self.assertIn("/queue show <id|latest>", rendered_help)
+        self.assertIn("/queue retry <id|latest>", rendered_help)
         self.assertIn("/queue edit <id> <text>", rendered_help)
         self.assertIn("/queue move <id> first|last|before|after", rendered_help)
         self.assertIn("/queue cancel <id|all>", rendered_help)
@@ -674,6 +674,38 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("reply for full prompt text", rendered)
         self.assertIn("job #9 saved", rendered)
         self.assertIn("saved prompt", rendered)
+
+    def test_repl_queue_latest_targets_most_recent_live_job(self):
+        from mechferret import repl
+
+        calls = []
+
+        def fake_chat(agent, session, text, *, background=False):
+            calls.append(text)
+            return f"reply for {text}"
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-latest.json"))
+            try:
+                runner.submit("first")
+                latest = runner.submit("second")
+                self.assertTrue(runner.wait_idle(timeout=2))
+
+                found, saved = runner.find_job("latest")
+                self.assertIs(found, latest)
+                self.assertFalse(saved)
+                repl._queue_show(runner, ["latest"])
+                repl._queue_retry(runner, ["last"])
+                self.assertTrue(runner.wait_idle(timeout=2))
+            finally:
+                runner.stop(wait=True)
+
+        self.assertEqual(calls.count("second"), 2)
+        rendered = out.getvalue()
+        self.assertIn("job #2", rendered)
+        self.assertIn("second", rendered)
+        self.assertIn("retried #2 as #3", rendered)
 
     def test_repl_queue_retry_requeues_main_side_and_saved_jobs(self):
         from mechferret import repl
