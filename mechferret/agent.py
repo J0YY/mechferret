@@ -84,14 +84,6 @@ MAX_TOKENS = int(os.getenv("MECHFERRET_MAX_TOKENS", "4096"))
 COMPACT_CHAR_THRESHOLD = int(os.getenv("MECHFERRET_COMPACT_CHARS", "240000"))  # ~60k tokens
 COMPACT_KEEP_LAST = 4
 
-BENCHMARK_MODEL_EXPLICIT_TERMS = (
-    "gpt2",
-    "gpt-2",
-    "gpt2-small",
-    "gpt-2 small",
-    "gpt2-medium",
-    "gpt-2 medium",
-)
 BENCHMARK_LEAK_TERMS = (
     "gpt2",
     "gpt-2",
@@ -104,6 +96,21 @@ BENCHMARK_LEAK_TERMS = (
     "known heads",
 )
 BENCHMARK_MODEL_LEAK_RE = re.compile(r"\bgpt-?2(?:[-\s]?(?:small|medium))?\b", re.IGNORECASE)
+BENCHMARK_MODEL_NEGATION_RE = re.compile(
+    r"\b(?:do\s+not|don't|dont|never|no|not|avoid|stop|without|instead\s+of|rather\s+than)\b.{0,90}\bgpt-?2(?:[-\s]?(?:small|medium))?\b",
+    re.IGNORECASE | re.DOTALL,
+)
+BENCHMARK_MODEL_COMPLAINT_RE = re.compile(
+    r"(?:\b(?:why|still|seeing|default(?:ing)?|leak(?:ing)?|hard[-\s]?coded|unrequested|suspicious)\b.{0,90}\bgpt-?2(?:[-\s]?(?:small|medium))?\b)"
+    r"|(?:\bgpt-?2(?:[-\s]?(?:small|medium))?\b.{0,90}\b(?:default(?:ing)?|leak(?:ing)?|unrequested|suspicious)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+BENCHMARK_MODEL_EXPLICIT_RE = re.compile(
+    r"(?:\b(?:--model|model|model\s+under\s+study|target\s+model)\b\s*[:=]?\s*\bgpt-?2(?:[-\s]?(?:small|medium))?\b)"
+    r"|(?:\b(?:use|using|run|test|study|investigate|analy[sz]e|probe|ablate|patch|screen|evaluate|eval|target|choose|select|set)\b.{0,90}\bgpt-?2(?:[-\s]?(?:small|medium))?\b)"
+    r"|(?:\bgpt-?2(?:[-\s]?(?:small|medium))?\b.{0,90}\b(?:for|on|with|ioi|induction|duplicate[-\s]token|name[-\s]mover|experiment|task|study|run|probe|screen)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
 STALE_HEAD_RE = re.compile(r"\b(?:heads?\s+)?(?:[4567]\.(?:0|1|2|3|5|6|8|11))(?:\s*,\s*[4567]\.(?:0|1|2|3|5|6|8|11)){2,}\b")
 STALE_CONTINUATION_RE = re.compile(r"\b(?:press|hit)\s+(?:enter|return)\b.*\b(?:proceed|continue|next)\b", re.IGNORECASE | re.DOTALL)
 
@@ -323,8 +330,12 @@ def _selected_option_detail(options: list[Any], choice: Any) -> dict[str, Any]:
 
 
 def _user_explicitly_selected_benchmark_model(user_text: str) -> bool:
-    lowered = _text(user_text).lower()
-    return any(term in lowered for term in BENCHMARK_MODEL_EXPLICIT_TERMS)
+    text = _text(user_text)
+    if not BENCHMARK_MODEL_LEAK_RE.search(text):
+        return False
+    if BENCHMARK_MODEL_NEGATION_RE.search(text) or BENCHMARK_MODEL_COMPLAINT_RE.search(text):
+        return False
+    return bool(BENCHMARK_MODEL_EXPLICIT_RE.search(text))
 
 
 def _looks_like_unrequested_benchmark_model(text: str) -> bool:
