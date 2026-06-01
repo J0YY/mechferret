@@ -226,6 +226,7 @@ def latex_from_run(run: ResearchRun) -> str:
                     ]
                 ),
             ),
+            _section("Reproducibility and Provenance", _provenance_table(run)),
             _section(
                 "Results",
                 "\n".join(
@@ -303,6 +304,59 @@ def _plan_table(run: ResearchRun) -> str:
     if not rows:
         return "\\noindent No structured plan steps were recorded."
     return _latex_table(["Step", "Intent", "Question", "Status"], rows, widths=["0.08", "0.22", "0.50", "0.14"])
+
+
+def _provenance_table(run: ResearchRun) -> str:
+    provenance = _mapping(_field(run, "provenance", {}))
+    artifacts = _mapping(_field(run, "artifacts", {}))
+    rows: list[list[Any]] = [
+        ["Run mode", _field(run, "mode", "literature")],
+        ["Synthesis author", provenance.get("answer_author", "not recorded")],
+        ["Requested provider", provenance.get("provider_requested") or provenance.get("llm_provider", "")],
+        ["Answer provider/model", _provider_model_label(provenance)],
+        ["Model under study", provenance.get("model") or provenance.get("llm_model", "")],
+        ["Backend requested/used", _backend_label(provenance)],
+        ["Research rounds", provenance.get("max_rounds", "")],
+        ["Source/evidence/claim counts", _count_label(run, provenance)],
+        ["Seed corpus used", _yes_no(provenance.get("used_packaged_seed_corpus"))],
+        ["Run artifact", artifacts.get("json", "")],
+        ["Trace artifact", artifacts.get("trace", "")],
+    ]
+    rows = [[label, value] for label, value in rows if _text(value).strip()]
+    if not rows:
+        return "\\noindent No structured provenance rows were recorded."
+    return "\n".join(
+        [
+            (
+                "\\noindent This section is copied from the run ledger so readers can separate "
+                "evidence-bound scaffold text from model-authored prose and identify any synthetic or local-only execution path."
+            ),
+            _latex_table(["Field", "Recorded value"], rows, widths=["0.26", "0.64"]),
+        ]
+    )
+
+
+def _provider_model_label(provenance: dict[str, Any]) -> str:
+    provider = _text(provenance.get("answer_provider") or provenance.get("provider_requested", "")).strip()
+    model = _text(provenance.get("answer_model") or provenance.get("llm_model", "")).strip()
+    if provider and model:
+        return f"{provider}/{model}"
+    return provider or model
+
+
+def _backend_label(provenance: dict[str, Any]) -> str:
+    requested = _text(provenance.get("backend_requested", "")).strip()
+    used = _text(provenance.get("backend_used", "")).strip()
+    if requested and used:
+        return f"{requested}/{used}"
+    return requested or used
+
+
+def _count_label(run: ResearchRun, provenance: dict[str, Any]) -> str:
+    source_count = provenance.get("source_count", len(_rows(run, "sources")))
+    evidence_count = provenance.get("evidence_count", len(_rows(run, "evidence")))
+    claim_count = provenance.get("claim_count", len(_rows(run, "claims")))
+    return f"sources={_positive_int(source_count, 0)}, evidence={_positive_int(evidence_count, 0)}, claims={_positive_int(claim_count, 0)}"
 
 
 def _discovery_table(discoveries: list[Any]) -> str:
@@ -800,13 +854,15 @@ def _paper_prompt(run: ResearchRun) -> str:
             }
             for e in ran_experiments
         ],
+        "provenance": _mapping(_field(run, "provenance", {})),
     }
     scaffold = latex_from_run(run)
     return (
         "Write the paper prose for this mechanistic-interpretability dossier as complete LaTeX.\n"
         "Keep the same high-level structure as the scaffold: title, abstract, Introduction, Method, "
-        "Results, Experiment Ledger, Evidence Ledger, Limitations, Conclusion.\n"
+        "Reproducibility and Provenance, Results, Experiment Ledger, Evidence Ledger, Limitations, Conclusion.\n"
         "Do not invent experiments, citations, effect sizes, seeds, baselines, or claims. If evidence is weak, say so. "
+        "Preserve the provenance section and clearly identify local-only, synthetic, or provider-authored parts from the run ledger. "
         "Use only article/booktabs/hyperref/array/geometry-compatible LaTeX. Output ONLY the LaTeX source.\n\n"
         "RUN EVIDENCE JSON:\n"
         f"{_json_dumps(evidence, indent=2, sort_keys=True)[:18000]}\n\n"

@@ -187,6 +187,16 @@ class ReportingTest(unittest.TestCase):
             gaps=["Needs stronger baseline_2."],
             answer="a",
             metrics={"readiness_score": 0.8},
+            artifacts={"json": "runs/run_tex/run.json", "trace": "runs/run_tex/trace.jsonl"},
+            provenance={
+                "answer_author": "experiment_ledger_synthesizer",
+                "backend_requested": "synthetic",
+                "backend_used": "synthetic",
+                "max_rounds": 4,
+                "source_count": 0,
+                "evidence_count": 0,
+                "claim_count": 1,
+            },
             experiments=[
                 ExperimentResult(
                     "x1", "s1", "head_ablation", "ran", 1.2, 0.1,
@@ -203,6 +213,13 @@ class ReportingTest(unittest.TestCase):
         self.assertIn("\\section{Results}", tex)
         self.assertIn("\\section{Experiment Ledger}", tex)
         self.assertIn("\\section{Evidence Ledger}", tex)
+        self.assertIn("\\section{Reproducibility and Provenance}", tex)
+        self.assertIn("Synthesis author", tex)
+        self.assertIn("experiment\\_ledger\\_synthesizer", tex)
+        self.assertIn("Backend requested/used", tex)
+        self.assertIn("synthetic/synthetic", tex)
+        self.assertIn("Research rounds", tex)
+        self.assertIn("sources=0, evidence=0, claims=1", tex)
         self.assertIn("layer\\_5", tex)
         self.assertIn("A\\&B", tex)
         self.assertIn("\\section{Limitations}", tex)
