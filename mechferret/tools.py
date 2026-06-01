@@ -30,12 +30,12 @@ DEFAULT_WEB_RESULTS = 12
 DEFAULT_ARXIV_RESULTS = 20
 NOVELTY_RELATED_LIMIT = 24
 NOVELTY_FOCUSED_LIMIT = 10
-NOVELTY_QUERY_RESULT_LIMIT = 20
-NOVELTY_MAX_QUERY_PASSES = 12
+NOVELTY_QUERY_RESULT_LIMIT = 30
+NOVELTY_MAX_QUERY_PASSES = 16
 NOVELTY_CLOSEST_PRIOR_LIMIT = 8
-NOVELTY_WEB_RESULT_LIMIT = 12
-NOVELTY_WEB_MAX_QUERY_PASSES = 5
-NOVELTY_WEB_FETCH_LIMIT = 6
+NOVELTY_WEB_RESULT_LIMIT = 16
+NOVELTY_WEB_MAX_QUERY_PASSES = 10
+NOVELTY_WEB_FETCH_LIMIT = 8
 NOVELTY_WEB_FETCH_CHARS = 1600
 NOVELTY_RISKS = {
     "high_prior_art_risk",
@@ -948,7 +948,7 @@ def tool_verify_novelty(args: dict[str, Any]) -> str:
     seen: set[str] = set()
     related: list[dict[str, Any]] = []
     recent: list[dict[str, Any]] = []
-    architecture: list[dict[str, Any]] = []
+    focused: list[dict[str, Any]] = []
     web_results: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
     for item in plan:
@@ -968,8 +968,8 @@ def tool_verify_novelty(args: dict[str, Any]) -> str:
             related.append(row)
             if sort_by in {"submittedDate", "lastUpdatedDate"} and len(recent) < NOVELTY_FOCUSED_LIMIT:
                 recent.append(row)
-            if "architecture" in item["focus"] and len(architecture) < NOVELTY_FOCUSED_LIMIT:
-                architecture.append(row)
+            if _novelty_focus_is_deep(item["focus"]) and len(focused) < NOVELTY_FOCUSED_LIMIT:
+                focused.append(row)
     for item in web_plan:
         query = item["query"]
         try:
@@ -992,13 +992,14 @@ def tool_verify_novelty(args: dict[str, Any]) -> str:
         "web_search_plan": web_plan,
         "related_papers": related[:NOVELTY_RELATED_LIMIT],
         "recent_papers": recent,
-        "architecture_papers": architecture,
+        "focused_papers": focused,
+        "method_papers": [row for row in focused if "method" in str(row.get("focus", ""))],
         "web_results": web_results[:NOVELTY_RELATED_LIMIT],
-        "assessment": _novelty_assessment(idea, [*related, *web_results], errors),
+        "assessment": _novelty_assessment(idea, [*related, *web_results], errors, arxiv_plan=plan, web_plan=web_plan),
         "errors": errors,
         "novelty_questions": _novelty_questions(idea),
         "guidance": "Do not claim high novelty unless the idea survives relevance, submitted-date, "
-                    "updated-date, method, mechanism, evaluation, implementation, and discovery searches. Compare against the closest "
+                    "updated-date, method, mechanism, evaluation, implementation, replication, failure-mode, and discovery searches. Compare against the closest "
                     "recent papers, name the exact delta, cite likely prior art, and downgrade any "
                     "direction that only renames an existing method.",
     })
@@ -1040,10 +1041,12 @@ def _novelty_search_plan(idea: str, queries: list[str] | None) -> list[dict[str,
     seeds = _unique_strings([*(queries or []), idea])
     terms = _novelty_terms(idea)
     compact = " ".join(terms[:8]) or idea
+    phrases = _novelty_phrases(terms)
     candidates = []
     for query in seeds[:3]:
         candidates.append(_novelty_plan_item(query, "relevance", "provided_relevance"))
         candidates.append(_novelty_plan_item(query, "submittedDate", "provided_recent_submitted"))
+        candidates.append(_novelty_plan_item(query, "lastUpdatedDate", "provided_recent_updated"))
     candidates.extend(
         [
             _novelty_plan_item(compact, "relevance", "core_relevance"),
@@ -1052,8 +1055,15 @@ def _novelty_search_plan(idea: str, queries: list[str] | None) -> list[dict[str,
             _novelty_plan_item(f"{compact} method design", "relevance", "method_relevance"),
             _novelty_plan_item(f"{compact} mechanism ablation causal evidence", "relevance", "mechanism_evidence"),
             _novelty_plan_item(f"{compact} benchmark evaluation negative results", "submittedDate", "recent_evaluation"),
+            _novelty_plan_item(f"{compact} replication reproduction failure analysis", "lastUpdatedDate", "replication_failure_modes"),
+            _novelty_plan_item(f"{compact} dataset task protocol", "relevance", "evaluation_protocol"),
+            _novelty_plan_item(f"{compact} limitations failure modes", "submittedDate", "recent_limitations"),
+            _novelty_plan_item(f"{compact} survey empirical study", "lastUpdatedDate", "recent_survey"),
         ]
     )
+    for phrase in phrases[:3]:
+        candidates.append(_novelty_plan_item(f"{phrase} ablation evaluation", "relevance", "phrase_evaluation"))
+        candidates.append(_novelty_plan_item(f"{phrase} recent benchmark", "submittedDate", "phrase_recent_benchmark"))
     plan: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     for item in candidates:
@@ -1069,6 +1079,7 @@ def _novelty_web_search_plan(idea: str, queries: list[str] | None) -> list[dict[
     seeds = _unique_strings([*(queries or []), idea])
     terms = _novelty_terms(idea)
     compact = " ".join(terms[:8]) or idea
+    phrases = _novelty_phrases(terms)
     candidates = []
     for query in seeds[:2]:
         candidates.append(_novelty_web_plan_item(query, "provided_web_relevance"))
@@ -1078,8 +1089,15 @@ def _novelty_web_search_plan(idea: str, queries: list[str] | None) -> list[dict[
             _novelty_web_plan_item(f"{compact} benchmark evaluation leaderboard", "web_benchmark_evaluation"),
             _novelty_web_plan_item(f"{compact} implementation repository code", "web_code_prior"),
             _novelty_web_plan_item(f"{compact} project page technical report", "web_project_or_report"),
+            _novelty_web_plan_item(f"{compact} replication reproduction results", "web_replication_results"),
+            _novelty_web_plan_item(f"{compact} limitations failure modes", "web_failure_modes"),
+            _novelty_web_plan_item(f"{compact} dataset benchmark protocol", "web_dataset_protocol"),
+            _novelty_web_plan_item(f"{compact} recent survey empirical study", "web_recent_survey"),
         ]
     )
+    for phrase in phrases[:2]:
+        candidates.append(_novelty_web_plan_item(f"{phrase} code benchmark", "web_phrase_code_benchmark"))
+        candidates.append(_novelty_web_plan_item(f"{phrase} technical report", "web_phrase_report"))
     plan: list[dict[str, Any]] = []
     seen: set[str] = set()
     for item in candidates:
@@ -1089,6 +1107,24 @@ def _novelty_web_search_plan(idea: str, queries: list[str] | None) -> list[dict[
         seen.add(key)
         plan.append(item)
     return plan[:NOVELTY_WEB_MAX_QUERY_PASSES]
+
+
+def _novelty_focus_is_deep(focus: Any) -> bool:
+    text = str(focus)
+    return any(
+        key in text
+        for key in (
+            "method",
+            "mechanism",
+            "evaluation",
+            "implementation",
+            "replication",
+            "failure",
+            "protocol",
+            "survey",
+            "benchmark",
+        )
+    )
 
 
 def _novelty_plan_item(query: str, sort_by: str, focus: str) -> dict[str, Any]:
@@ -1133,6 +1169,16 @@ def _novelty_terms(idea: str) -> list[str]:
     return terms
 
 
+def _novelty_phrases(terms: list[str]) -> list[str]:
+    phrases: list[str] = []
+    for width in (2, 3, 4):
+        for index in range(0, max(0, len(terms) - width + 1)):
+            phrase = " ".join(terms[index: index + width])
+            if phrase and phrase not in phrases:
+                phrases.append(phrase)
+    return phrases
+
+
 def _novelty_paper_row(paper: dict[str, Any], *, focus: str) -> dict[str, Any]:
     url = str(paper.get("url", "")).strip()
     return {
@@ -1174,7 +1220,14 @@ def _novelty_paper_key(row: dict[str, Any]) -> str:
     return title or url
 
 
-def _novelty_assessment(idea: str, rows: list[dict[str, Any]], errors: list[dict[str, str]]) -> dict[str, Any]:
+def _novelty_assessment(
+    idea: str,
+    rows: list[dict[str, Any]],
+    errors: list[dict[str, str]],
+    *,
+    arxiv_plan: list[dict[str, Any]] | None = None,
+    web_plan: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     terms = _novelty_terms(idea)
     scored = [_novelty_scored_prior(row, terms) for row in rows]
     scored.sort(key=lambda row: row["score"], reverse=True)
@@ -1184,6 +1237,8 @@ def _novelty_assessment(idea: str, rows: list[dict[str, Any]], errors: list[dict
     web_count = sum(1 for row in rows if row.get("source") == "web")
     web_source_types = _novelty_web_source_type_counts(rows)
     source_profile = _novelty_source_profile(rows)
+    arxiv_plan = arxiv_plan or []
+    web_plan = web_plan or []
     if not rows and errors:
         risk = "unknown_search_incomplete"
         verdict = "Novelty is not assessable because one or more retrieval passes failed."
@@ -1206,6 +1261,13 @@ def _novelty_assessment(idea: str, rows: list[dict[str, Any]], errors: list[dict
         "source_diversity": source_profile["diversity"],
         "closest_prior_art": closest,
         "coverage": {
+            "search_strategy": "deep_recent_method_mechanism_evaluation_implementation_replication",
+            "arxiv_query_count": len(arxiv_plan),
+            "web_query_count": len(web_plan),
+            "arxiv_results_per_query": max((int(row.get("max_results", 0)) for row in arxiv_plan), default=0),
+            "web_results_per_query": max((int(row.get("max_results", 0)) for row in web_plan), default=0),
+            "arxiv_focuses": sorted({str(row.get("focus", "")) for row in arxiv_plan if row.get("focus")}),
+            "web_focuses": sorted({str(row.get("focus", "")) for row in web_plan if row.get("focus")}),
             "retrieved_evidence": len(rows),
             "retrieved_papers": arxiv_count,
             "web_results": web_count,
@@ -1227,7 +1289,7 @@ def _novelty_assessment(idea: str, rows: list[dict[str, Any]], errors: list[dict
         "required_delta": [
             "Name the nearest prior paper and the exact method component that differs.",
             "Show a benchmark, ablation, or causal test where the idea behaves differently.",
-            "Downgrade novelty if the contribution is only a new wording of an existing architecture or probe.",
+            "Downgrade novelty if the contribution is only a new wording of an existing method, probe, or experiment.",
         ],
     }
 
@@ -1450,7 +1512,7 @@ def _novelty_questions(idea: str) -> list[str]:
     terms = ", ".join(_novelty_terms(idea)[:5]) or "the core mechanism"
     return [
         f"Which recent papers already combine {terms}?",
-        "What is the nearest architecture or training-pipeline ancestor, and what exact component changes?",
+        "What is the nearest method or training-pipeline ancestor, and what exact component changes?",
         "Which benchmark, ablation, or negative result would distinguish this from adjacent work?",
         "Does the contribution depend on a new mechanism, a new measurement, or only a new application domain?",
     ]
@@ -2350,11 +2412,11 @@ TOOL_SPECS: list[dict[str, Any]] = [
      "parameters": _obj({"query": {"type": "string"}, "max_results": {"type": "integer"}}, ["query"])},
     {"name": "web_fetch", "description": "Fetch a URL and return its readable text content.",
      "parameters": _obj({"url": {"type": "string"}}, ["url"])},
-    {"name": "arxiv_search", "description": "Search arXiv for papers. Defaults to 20 results. sort_by: relevance | submittedDate | lastUpdatedDate. Use for literature grounding.",
+    {"name": "arxiv_search", "description": "Search arXiv for papers. Defaults to 20 results; novelty verification uses a deeper 30-result pass. sort_by: relevance | submittedDate | lastUpdatedDate. Use for literature grounding.",
      "parameters": _obj({"query": {"type": "string", "description": "arXiv query, e.g. 'cat:cs.LG AND (abs:sparse autoencoder OR abs:linear probe)'"}, "max_results": {"type": "integer"}, "sort_by": {"type": "string", "enum": ["relevance", "submittedDate", "lastUpdatedDate"]}}, ["query"])},
     {"name": "neuronpedia_search", "description": "Semantic search over SAE-feature explanations for an explicit Neuronpedia model id.",
      "parameters": _obj({"model_id": {"type": "string"}, "query": {"type": "string"}}, ["model_id", "query"])},
-    {"name": "verify_novelty", "description": "Deep novelty check for a research idea using multi-pass arXiv and web searches across relevance, recency, method, mechanism, evaluation, implementation, and recent-discovery angles. Call this for each proposed research direction before presenting it.",
+    {"name": "verify_novelty", "description": "Deep novelty check for a research idea using multi-pass arXiv and web searches across relevance, recency, method, mechanism, evaluation, implementation, replication, failure-mode, protocol, and recent-discovery angles. Call this for each proposed research direction before presenting it.",
      "parameters": _obj({"idea": {"type": "string", "description": "the research idea/direction to novelty-check"}, "queries": {"type": "array", "items": {"type": "string"}, "description": "optional arXiv queries to probe for prior work"}}, ["idea"])},
     {"name": "present_options", "description": "Present 2-5 research directions to the user as an interactive, expandable picker and return their choice. Use this instead of writing options as prose. Every option must include detail, citations, novelty_risk, novelty_verdict, closest_prior_art, and required_delta from verify_novelty assessment.",
      "parameters": _obj({"options": {"type": "array", "items": {"type": "object", "properties": {

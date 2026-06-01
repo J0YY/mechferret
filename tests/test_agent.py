@@ -624,7 +624,7 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("novelty_risk", prompt)
         self.assertIn("closest_prior_art", prompt)
 
-    def test_verify_novelty_runs_deep_recent_architecture_search(self):
+    def test_verify_novelty_runs_deep_recent_method_search(self):
         from mechferret import tools
 
         calls = []
@@ -635,10 +635,10 @@ class AgentToolTest(unittest.TestCase):
             calls.append({"query": query, "max_results": max_results, "sort_by": sort_by})
             return 99, [
                 {
-                    "title": "Sparse autoencoder architecture paper",
+                    "title": "Sparse autoencoder method paper",
                     "url": "https://arxiv.org/abs/2501.0001",
                     "published": "2025-01-01T00:00:00Z",
-                    "abstract": "Sparse autoencoder architecture for vision language action policies and mechanism discovery.",
+                    "abstract": "Sparse autoencoder method for vision language action policies and mechanism discovery.",
                     "authors": ["A. Researcher"],
                 }
             ]
@@ -647,14 +647,14 @@ class AgentToolTest(unittest.TestCase):
             web_calls.append({"query": query, "max_results": max_results})
             return [
                 {
-                    "title": "Sparse autoencoder architecture implementation for VLA mechanism discovery",
+                    "title": "Sparse autoencoder method implementation for VLA mechanism discovery",
                     "url": "https://example.org/vla-sae",
-                    "snippet": "Recent benchmark implementation for sparse autoencoder architecture in vision language action policy mechanisms.",
+                    "snippet": "Recent benchmark implementation for sparse autoencoder method in vision language action policy mechanisms.",
                 },
                 {
                     "title": "VLA sparse autoencoder leaderboard",
                     "url": "https://paperswithcode.com/task/vla-sae",
-                    "snippet": "Benchmark leaderboard for sparse autoencoder architecture mechanism discovery.",
+                    "snippet": "Benchmark leaderboard for sparse autoencoder method mechanism discovery.",
                 },
                 {
                     "title": "VLA SAE implementation",
@@ -666,7 +666,7 @@ class AgentToolTest(unittest.TestCase):
         def fake_web_fetch(url, max_chars=1600):
             fetch_calls.append({"url": url, "max_chars": max_chars})
             return (
-                "Fetched page text describing sparse autoencoder architecture for vision language action policies, "
+                "Fetched page text describing sparse autoencoder method for vision language action policies, "
                 "mechanism discovery, benchmark evaluation, and implementation details."
             )
 
@@ -679,25 +679,26 @@ class AgentToolTest(unittest.TestCase):
                 tools.run_tool(
                     "verify_novelty",
                     {
-                        "idea": "sparse autoencoder architecture for vision language action policies",
+                        "idea": "sparse autoencoder method for vision language action policies",
                         "queries": ["VLA sparse autoencoder mechanisms"],
                     },
                 )
             )
 
-        self.assertGreaterEqual(len(calls), 6)
-        self.assertTrue(all(call["max_results"] == 20 for call in calls))
+        self.assertGreaterEqual(len(calls), 10)
+        self.assertTrue(all(call["max_results"] == 30 for call in calls))
         self.assertIn("submittedDate", {call["sort_by"] for call in calls})
         self.assertIn("lastUpdatedDate", {call["sort_by"] for call in calls})
-        self.assertTrue(any("architecture" in call["query"].lower() for call in calls))
+        self.assertTrue(any("method" in call["query"].lower() for call in calls))
         self.assertTrue(any("mechanism" in call["query"].lower() for call in calls))
         self.assertTrue(any("evaluation" in call["query"].lower() for call in calls))
+        self.assertTrue(any("replication" in call["query"].lower() for call in calls))
         self.assertEqual(len(payload["search_plan"]), len(calls))
         self.assertEqual(payload["arxiv_search_plan"], payload["search_plan"])
-        self.assertGreaterEqual(len(web_calls), 3)
-        self.assertTrue(all(call["max_results"] == 12 for call in web_calls))
+        self.assertGreaterEqual(len(web_calls), 8)
+        self.assertTrue(all(call["max_results"] == 16 for call in web_calls))
         self.assertGreaterEqual(len(fetch_calls), 1)
-        self.assertLessEqual(len(fetch_calls), 6)
+        self.assertLessEqual(len(fetch_calls), 8)
         self.assertTrue(all(call["max_chars"] == 1600 for call in fetch_calls))
         self.assertIn("web_search_plan", payload)
         self.assertEqual(payload["web_results"][0]["source"], "web")
@@ -706,7 +707,9 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("benchmark", web_source_types)
         self.assertIn("code_repository", web_source_types)
         self.assertIn("recent_papers", payload)
-        self.assertIn("architecture_papers", payload)
+        self.assertIn("focused_papers", payload)
+        self.assertIn("method_papers", payload)
+        self.assertNotIn("architecture" + "_papers", payload)
         self.assertEqual(payload["assessment"]["risk"], "high_prior_art_risk")
         self.assertTrue(payload["assessment"]["closest_prior_art"])
         self.assertIn("sparse", payload["assessment"]["closest_prior_art"][0]["matched_terms"])
@@ -718,6 +721,12 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn(payload["assessment"]["evidence_strength"], {"strong_multi_source_overlap", "strong_but_narrow_overlap"})
         self.assertEqual(payload["assessment"]["source_diversity"], "broad_independent")
         self.assertIn("recent_window", payload["assessment"]["coverage"])
+        self.assertEqual(payload["assessment"]["coverage"]["arxiv_results_per_query"], 30)
+        self.assertEqual(payload["assessment"]["coverage"]["web_results_per_query"], 16)
+        self.assertGreaterEqual(payload["assessment"]["coverage"]["arxiv_query_count"], 10)
+        self.assertGreaterEqual(payload["assessment"]["coverage"]["web_query_count"], 8)
+        self.assertIn("replication_failure_modes", payload["assessment"]["coverage"]["arxiv_focuses"])
+        self.assertIn("web_replication_results", payload["assessment"]["coverage"]["web_focuses"])
         self.assertGreaterEqual(payload["assessment"]["coverage"]["web_results"], 1)
         self.assertGreaterEqual(payload["assessment"]["coverage"]["web_results_with_snippets"], 1)
         self.assertGreaterEqual(payload["assessment"]["coverage"]["web_pages_fetched"], 1)
