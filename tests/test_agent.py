@@ -1755,6 +1755,42 @@ class AgentToolTest(unittest.TestCase):
                     if v is not None:
                         os.environ[k] = v
 
+    def test_active_provider_requires_explicit_chat_model(self):
+        from mechferret.config import MechFerretConfig, ProviderSettings, save_config
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "config.json"
+            old = os.environ.get("MECHFERRET_CONFIG")
+            old_openai_key = os.environ.get("OPENAI_API_KEY")
+            old_openai_model = os.environ.get("MECHFERRET_OPENAI_MODEL")
+            os.environ["MECHFERRET_CONFIG"] = str(cfg)
+            os.environ["OPENAI_API_KEY"] = "env-key"
+            os.environ.pop("MECHFERRET_OPENAI_MODEL", None)
+            try:
+                save_config(
+                    MechFerretConfig(
+                        default_provider="openai",
+                        providers={"openai": ProviderSettings(api_key="", model="")},
+                    ),
+                    cfg,
+                )
+                self.assertEqual(agent.active_provider(), ("", "", ""))
+                os.environ["MECHFERRET_OPENAI_MODEL"] = "env-model"
+                self.assertEqual(agent.active_provider(), ("openai", "env-model", "env-key"))
+            finally:
+                if old is None:
+                    os.environ.pop("MECHFERRET_CONFIG", None)
+                else:
+                    os.environ["MECHFERRET_CONFIG"] = old
+                if old_openai_key is None:
+                    os.environ.pop("OPENAI_API_KEY", None)
+                else:
+                    os.environ["OPENAI_API_KEY"] = old_openai_key
+                if old_openai_model is None:
+                    os.environ.pop("MECHFERRET_OPENAI_MODEL", None)
+                else:
+                    os.environ["MECHFERRET_OPENAI_MODEL"] = old_openai_model
+
     def test_config_loading_tolerates_malformed_files(self):
         from mechferret.config import (
             MechFerretConfig,
@@ -1795,6 +1831,10 @@ class AgentToolTest(unittest.TestCase):
             self.assertEqual(configured_api_key("local", cfg), "")
             self.assertEqual(configured_model("local", cfg), "local")
             self.assertEqual(configured_model("openai", cfg, "  override-model  "), "override-model")
+            with patch.dict(os.environ, {"MECHFERRET_OPENAI_MODEL": "env-chat-model"}):
+                self.assertEqual(configured_model("openai", MechFerretConfig()), "env-chat-model")
+            with patch.dict(os.environ, {}, clear=True):
+                self.assertEqual(configured_model("openai", MechFerretConfig()), "")
 
             saved = save_config(
                 MechFerretConfig(

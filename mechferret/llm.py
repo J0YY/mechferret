@@ -106,7 +106,7 @@ class OpenAIWebResearch:
 
     @property
     def available(self) -> bool:
-        return bool(configured_api_key("openai", self.config))
+        return bool(configured_api_key("openai", self.config) and self.model)
 
     def search_summary(self, question: str, allowed_domains: list[str] | None = None) -> Source | None:
         question_text = _text(question).strip()
@@ -161,7 +161,7 @@ class AnthropicResearch:
 
     @property
     def available(self) -> bool:
-        return bool(configured_api_key("anthropic", self.config))
+        return bool(configured_api_key("anthropic", self.config) and self.model)
 
     def search_summary(self, question: str, allowed_domains: list[str] | None = None) -> Source | None:
         question_text = _text(question).strip()
@@ -246,6 +246,8 @@ def synthesize_answer_with_provider(
     if not key:
         return "", {"provider": selected, "reason": f"missing {selected} API key"}
     selected_model = configured_model(selected, cfg, _text(model).strip() or None)
+    if not selected_model:
+        return "", {"provider": selected, "reason": f"missing {selected} model"}
     prompt = _answer_prompt(question, claims, evidence, gaps, discoveries or [], experiments or [])
     try:
         if selected == "anthropic":

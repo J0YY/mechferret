@@ -931,7 +931,7 @@ Options:
 
 - `-h`, `--help`: show this help message and exit
 - `--api-key`: API key. If omitted, MechFerret prompts securely.
-- `--model`: Default model for this provider.
+- `--model`: Model to use for this provider.
 - `--no-default`: Store key without making this the default provider.
 - `--json`: Print machine-readable JSON.
 

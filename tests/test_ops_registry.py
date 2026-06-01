@@ -933,9 +933,11 @@ class OpsRegistryTest(unittest.TestCase):
                 with redirect_stdout(update_out):
                     main(["login", "openai", "--api-key", "sk-openai-secret", "--json"])
                 updated = json.loads(update_out.getvalue())
-                self.assertTrue(updated["ok"])
+                self.assertFalse(updated["ok"])
                 self.assertEqual(updated["default_provider"], "openai")
                 self.assertEqual(updated["providers"]["openai"]["key"], "configured")
+                self.assertEqual(updated["providers"]["openai"]["model"], "missing")
+                self.assertIn("mechferret api --provider openai --model <model>", " ".join(updated["next_actions"]))
                 self.assertNotIn("sk-openai-secret", update_out.getvalue())
             finally:
                 if old_config is None:

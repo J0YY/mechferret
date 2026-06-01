@@ -136,12 +136,14 @@ def active_provider() -> tuple[str, str, str]:
     provider = config.default_provider
     if provider in {"anthropic", "openai"}:
         key = configured_api_key(provider, config)
-        if key:
-            return provider, configured_model(provider, config), key
+        model = configured_model(provider, config)
+        if key and model:
+            return provider, model, key
     for candidate in ("anthropic", "openai"):
         key = configured_api_key(candidate, config)
-        if key:
-            return candidate, configured_model(candidate, config), key
+        model = configured_model(candidate, config)
+        if key and model:
+            return candidate, model, key
     return "", "", ""
 
 

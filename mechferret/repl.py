@@ -922,13 +922,9 @@ def onboard() -> bool:
 
     import getpass
 
-    from .config import configure_provider
+    from .config import configure_provider, configured_api_key, configured_model
     from .picker import select
 
-    MODELS = {
-        "anthropic": ["claude-opus-4-8  (highest reasoning)", "claude-sonnet-4-6  (faster)"],
-        "openai": ["gpt-5.5  (highest reasoning)", "gpt-5"],
-    }
     print()
     try:
         choice = select(
@@ -939,15 +935,25 @@ def onboard() -> bool:
         print(_c("  Cancelled. Connect later with /login.", "2"))
         return False
     provider = "anthropic" if choice.startswith("Anthropic") else "openai"
+    existing_model = configured_model(provider)
     try:
-        model_choice = select(_c(f"  Pick a {provider} model", "1"), MODELS[provider])
-    except KeyboardInterrupt:
+        model_prompt = f"  Model for {provider}"
+        if existing_model:
+            model_prompt += f" [{existing_model}]"
+        model = input(_c(model_prompt + ": ", "1")).strip() or existing_model
+    except (EOFError, KeyboardInterrupt):
         print(_c("  Cancelled.", "2"))
         return False
-    model = model_choice.split()[0]
+    if not model:
+        print(_c("  No model entered; cancelled. Set one with /model or MECHFERRET_*_MODEL.", "33"))
+        return False
     env_hint = "ANTHROPIC_API_KEY" if provider == "anthropic" else "OPENAI_API_KEY"
+    existing_key = configured_api_key(provider)
     try:
-        key = getpass.getpass(_c(f"  Paste your {provider} API key ({env_hint}): ", "1")).strip()
+        key_prompt = f"  Paste your {provider} API key ({env_hint})"
+        if existing_key:
+            key_prompt += " or press Enter to keep the configured key"
+        key = getpass.getpass(_c(key_prompt + ": ", "1")).strip() or existing_key
     except (EOFError, KeyboardInterrupt):
         print()
         return False

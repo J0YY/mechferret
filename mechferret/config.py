@@ -107,13 +107,11 @@ def configured_model(provider: str, config: MechFerretConfig | None = None, over
     settings = cfg.providers.get(provider, ProviderSettings())
     if isinstance(settings.model, str) and settings.model:
         return settings.model
-    # Default to the latest, highest-reasoning model for each provider.
-    # Override per-provider with /model, `login --model`, or these env vars.
     if provider == "openai":
-        return os.getenv("MECHFERRET_OPENAI_MODEL", "gpt-5.5")
+        return os.getenv("MECHFERRET_OPENAI_MODEL", "").strip()
     if provider == "anthropic":
-        return os.getenv("MECHFERRET_ANTHROPIC_MODEL", "claude-opus-4-8")
-    return "local"
+        return os.getenv("MECHFERRET_ANTHROPIC_MODEL", "").strip()
+    return ""
 
 
 def prompt_api_key(provider: str) -> str:

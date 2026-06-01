@@ -744,7 +744,10 @@ def _paper_provider(provider: str, model: str | None) -> tuple[str, str, str]:
     key = configured_api_key(selected, config)
     if not key:
         return "", "", ""
-    return selected, configured_model(selected, config, _text(model).strip() or None), key
+    selected_model = configured_model(selected, config, _text(model).strip() or None)
+    if not selected_model:
+        return "", "", ""
+    return selected, selected_model, key
 
 
 def _paper_prompt(run: ResearchRun) -> str:

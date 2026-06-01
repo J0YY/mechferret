@@ -11,7 +11,7 @@ from typing import Any
 
 from . import __version__
 from .audit import audit_run_artifact, latest_run_json, print_audit
-from .config import PROVIDERS, configure_provider, default_config_path, load_config, prompt_api_key, save_config
+from .config import PROVIDERS, configure_provider, configured_model, default_config_path, load_config, prompt_api_key, save_config
 from .controller import MechFerret
 from .costs import estimate_run_cost
 from .discovery import DiscoveryController
@@ -232,7 +232,7 @@ def build_parser() -> argparse.ArgumentParser:
     login = sub.add_parser("login", aliases=["/login"], help="Store an OpenAI or Anthropic API key.")
     login.add_argument("provider", choices=sorted(PROVIDERS), help="Provider to configure.")
     login.add_argument("--api-key", help="API key. If omitted, MechFerret prompts securely.")
-    login.add_argument("--model", help="Default model for this provider.")
+    login.add_argument("--model", help="Model to use for this provider.")
     login.add_argument("--no-default", action="store_true", help="Store key without making this the default provider.")
     login.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
 
@@ -710,6 +710,8 @@ def main(argv: list[str] | None = None) -> None:
             print(json.dumps(_api_payload(load_config(), action="login", path=path, provider=args.provider), indent=2, sort_keys=True))
             return
         print(f"Stored {args.provider} credentials in {path}")
+        if not configured_model(args.provider, load_config()):
+            print(f"Model missing: set one with `mechferret api --provider {args.provider} --model <model>`.")
         print(f"Default provider: {load_config().default_provider}")
     elif args.command in {"api", "/api"}:
         handle_api_command(args)
@@ -3044,7 +3046,7 @@ def handle_api_command(args) -> None:
         for provider in sorted(PROVIDERS):
             settings = config.providers.get(provider)
             key_state = "configured" if settings and settings.api_key else "missing"
-            model = settings.model if settings and settings.model else "default"
+            model = configured_model(provider, config) or "missing"
             print(f"{provider}: key={key_state}, model={model}")
         return
     if args.json:
@@ -3070,7 +3072,7 @@ def _api_payload(config, *, action: str, path: str | Path, provider: str = "") -
         settings = config.providers.get(name)
         providers[name] = {
             "key": "configured" if settings and settings.api_key else "missing",
-            "model": settings.model if settings and settings.model else "default",
+            "model": configured_model(name, config) or "missing",
         }
     payload = {
         "ok": True,
@@ -3090,10 +3092,22 @@ def _api_payload(config, *, action: str, path: str | Path, provider: str = "") -
             f"Configure the default provider with `mechferret login {default_provider} --api-key ${env_name}` "
             "or switch to local with `mechferret api --provider local`."
         )
+    if default_provider in PROVIDERS and providers[default_provider]["key"] != "missing" and providers[default_provider]["model"] == "missing":
+        payload["ok"] = False
+        env_name = f"MECHFERRET_{default_provider.upper()}_MODEL"
+        next_actions.append(
+            f"Set a model for {default_provider} with `mechferret api --provider {default_provider} --model <model>` "
+            f"or export {env_name}."
+        )
     for name in sorted(PROVIDERS):
-        if providers[name]["key"] == "missing" and name != default_provider:
+        if name == default_provider:
+            continue
+        if providers[name]["key"] == "missing":
             env_name = f"{name.upper()}_API_KEY"
             suggested_next_actions.append(f"Configure {name} with `mechferret login {name} --api-key ${env_name}`.")
+        elif providers[name]["model"] == "missing":
+            env_name = f"MECHFERRET_{name.upper()}_MODEL"
+            suggested_next_actions.append(f"Set {name}'s model with `mechferret api --provider {name} --model <model>` or {env_name}.")
     if next_actions:
         payload["next_actions"] = next_actions
     if suggested_next_actions:
