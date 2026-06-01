@@ -1921,6 +1921,29 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("saved   #1", rendered)
         self.assertIn("different saved prompt", rendered)
 
+    def test_repl_save_pending_preserves_distinct_saved_id_collisions(self):
+        from mechferret import repl
+
+        queue_path = Path("queue-save-pending-collision.json")
+
+        with redirect_stdout(StringIO()):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: None, queue_path=queue_path)
+            try:
+                runner.pause()
+                live = runner.submit("live queued prompt")
+                repl._save_queue_jobs(queue_path, [
+                    live,
+                    repl.PromptJob(id=live.id, text="different saved prompt"),
+                ])
+                runner._preserved_saved_ids.add(live.id)
+                runner.save_pending()
+                persisted = runner.saved()
+            finally:
+                runner.resume()
+                runner.stop(wait=True)
+
+        self.assertEqual([job.text for job in persisted], ["live queued prompt", "different saved prompt"])
+
     def test_repl_chat_job_runner_saves_and_restores_pending_prompts(self):
         from mechferret import repl
 

@@ -195,9 +195,9 @@ class ChatJobRunner:
         self._preserved_saved_ids.update(job.id for job in remaining_jobs)
         if remaining_jobs:
             with self._lock:
-                live_ids = {job.id for job in self._jobs}
+                live_by_id = {job.id: job for job in self._jobs}
                 pending = [job for job in self._jobs if job.status == "queued"]
-            pending.extend(job for job in remaining_jobs if job.id not in live_ids)
+            pending.extend(job for job in remaining_jobs if not _queue_file_entry_matches_live_job(job, live_by_id))
             _save_queue_jobs(self._queue_path, pending)
         else:
             self.clear_saved()
@@ -283,7 +283,7 @@ class ChatJobRunner:
                 if job is not None and job.status == "queued":
                     job.status = "canceled"
                     canceled.append(job)
-            live_ids = {job.id for job in self._jobs}
+            live_by_id = {job.id: job for job in self._jobs}
             pending = [job for job in self._jobs if job.status == "queued"]
         saved_canceled: list[PromptJob] = []
         remaining_saved = self.saved()
@@ -293,7 +293,7 @@ class ChatJobRunner:
                 for job in saved_canceled:
                     job.status = "canceled"
                 self._preserved_saved_ids.difference_update(job.id for job in saved_canceled)
-                pending.extend(job for job in remaining_saved if job.id not in live_ids)
+                pending.extend(job for job in remaining_saved if not _queue_file_entry_matches_live_job(job, live_by_id))
                 _save_queue_jobs(self._queue_path, pending)
                 return [*canceled, *saved_canceled]
         if canceled:
@@ -319,9 +319,9 @@ class ChatJobRunner:
                 return saved_job, saved_job.status
             saved_job.text = text
             with self._lock:
-                live_ids = {job.id for job in self._jobs}
+                live_by_id = {job.id: job for job in self._jobs}
                 pending = [job for job in self._jobs if job.status == "queued"]
-            pending.extend(job for job in saved_jobs if job.id not in live_ids)
+            pending.extend(job for job in saved_jobs if not _queue_file_entry_matches_live_job(job, live_by_id))
             self._preserved_saved_ids.add(saved_job.id)
             _save_queue_jobs(self._queue_path, pending)
             return saved_job, "updated"
@@ -361,9 +361,9 @@ class ChatJobRunner:
         queued_iter = iter(queued_saved)
         saved_jobs = [next(queued_iter) if job.status == "queued" else job for job in saved_jobs]
         with self._lock:
-            live_ids = {job.id for job in self._jobs}
+            live_by_id = {job.id: job for job in self._jobs}
             pending = [job for job in self._jobs if job.status == "queued"]
-        pending.extend(job for job in saved_jobs if job.id not in live_ids)
+        pending.extend(job for job in saved_jobs if not _queue_file_entry_matches_live_job(job, live_by_id))
         self._preserved_saved_ids.update(job.id for job in saved_jobs)
         _save_queue_jobs(self._queue_path, pending)
         return saved_job, "moved"
@@ -464,7 +464,7 @@ class ChatJobRunner:
 
     def save_pending(self, *, include_active: bool = False) -> int:
         with self._lock:
-            live_ids = {job.id for job in self._jobs}
+            live_by_id = {job.id: job for job in self._jobs}
             pending = [job for job in self._jobs if job.status == "queued"]
             if include_active and self._active is not None and self._active.status == "running":
                 pending = [self._active, *pending]
@@ -472,7 +472,7 @@ class ChatJobRunner:
                 pending.extend(job for job in self._jobs if job.kind == "btw" and job.status == "running")
         preserved = [
             job for job in _load_saved_queue(self._queue_path)
-            if job.id in self._preserved_saved_ids and job.id not in live_ids
+            if job.id in self._preserved_saved_ids and not _queue_file_entry_matches_live_job(job, live_by_id)
         ]
         pending.extend(preserved)
         return _save_queue_jobs(self._queue_path, pending)
