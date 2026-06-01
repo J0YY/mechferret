@@ -58,7 +58,9 @@ Workflow when the user wants to plan research:
    assessment.coverage.frontier_architecture_focuses, and
    assessment.search_audit fields, especially
    assessment.search_audit.evidence_focus_coverage and
-   assessment.search_audit.missing_evidence_focus_coverage; do not summarize
+   assessment.search_audit.missing_evidence_focus_coverage plus
+   assessment.search_audit.source_axis_coverage and
+   assessment.search_audit.missing_source_axis_coverage; do not summarize
    novelty from memory.
 3. Call present_options with 2-5 concrete directions (each with a one-line
    summary, a fuller detail paragraph, key citations, novelty_risk,
@@ -69,7 +71,9 @@ Workflow when the user wants to plan research:
    found recent prior evidence and unique retrieved evidence from both arXiv and
    web/project/code sources, including evidence-backed method, mechanism,
    evaluation, implementation, replication, exact-phrase, claim-collision,
-   architecture, frontier architecture, and model-family coverage.
+   architecture, frontier architecture, model-family coverage, scholarly-paper,
+   peer-review, benchmark-tracker, code-repository, model-hub, and lab-report
+   coverage.
 
 OUTPUT RULES (important):
 - Plain text only. No markdown: no #, *, **, backticks, tables, or '-' bullets.

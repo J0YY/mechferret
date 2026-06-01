@@ -34,11 +34,11 @@ NOVELTY_QUERY_RESULT_LIMIT = 50
 NOVELTY_MAX_QUERY_PASSES = 36
 NOVELTY_CLOSEST_PRIOR_LIMIT = 8
 NOVELTY_WEB_RESULT_LIMIT = 24
-NOVELTY_WEB_MAX_QUERY_PASSES = 24
+NOVELTY_WEB_MAX_QUERY_PASSES = 32
 NOVELTY_WEB_FETCH_LIMIT = 12
 NOVELTY_WEB_FETCH_CHARS = 2400
-NOVELTY_MIN_OPTION_ARXIV_PASSES = 10
-NOVELTY_MIN_OPTION_WEB_PASSES = 8
+NOVELTY_MIN_OPTION_ARXIV_PASSES = 12
+NOVELTY_MIN_OPTION_WEB_PASSES = 12
 NOVELTY_RISKS = {
     "high_prior_art_risk",
     "medium_prior_art_risk",
@@ -77,11 +77,21 @@ NOVELTY_REQUIRED_OPTION_SEARCH_FOCUS = {
     "claim_collision",
     "peer_review",
 }
+NOVELTY_REQUIRED_SOURCE_AXES = {
+    "scholarly_papers",
+    "peer_review",
+    "benchmark_trackers",
+    "code_repositories",
+    "model_hubs",
+    "lab_reports",
+}
 NOVELTY_WEB_SOURCE_TYPES = {
     "paper",
     "benchmark",
     "code_repository",
+    "model_hub",
     "project_page",
+    "lab_report",
     "documentation",
     "general_web",
 }
@@ -307,6 +317,7 @@ def _compact_novelty_coverage(coverage: dict[str, Any]) -> dict[str, Any]:
         "web_results_with_page_text",
         "unique_source_domains",
         "credible_source_count",
+        "frontier_source_axes_covered",
         "search_audit_rows",
         "empty_search_passes",
         "empty_arxiv_passes",
@@ -324,6 +335,7 @@ def _compact_novelty_coverage(coverage: dict[str, Any]) -> dict[str, Any]:
         "focus_coverage",
         "evidence_focus_coverage",
         "threat_model_coverage",
+        "source_axis_coverage",
         "web_source_types",
         "credible_source_types",
         "arxiv_focuses",
@@ -347,8 +359,12 @@ def _compact_novelty_search_audit_summary(search_audit: dict[str, Any]) -> dict[
         "duplicate_only_search_passes",
         "focus_coverage",
         "evidence_focus_coverage",
+        "source_axis_coverage",
+        "source_type_counts",
+        "source_domain_counts",
         "missing_focus_coverage",
         "missing_evidence_focus_coverage",
+        "missing_source_axis_coverage",
     ):
         if key in search_audit:
             compact[key] = _compact_json_value(search_audit[key])
@@ -1260,6 +1276,8 @@ def tool_verify_novelty(args: dict[str, Any]) -> str:
             audit_row["error"] = str(exc)
             errors.append({"source": "arxiv", "query": query, "error": str(exc)})
         unique_added = 0
+        source_type_counts: dict[str, int] = {}
+        source_domain_counts: dict[str, int] = {}
         for p in papers:
             row = _novelty_paper_row(p, focus=item["focus"])
             key = _novelty_paper_key(row)
@@ -1268,12 +1286,19 @@ def tool_verify_novelty(args: dict[str, Any]) -> str:
             seen.add(key)
             unique_added += 1
             related.append(row)
+            source_type = str(row.get("source_type", "")).strip() or "paper"
+            source_type_counts[source_type] = source_type_counts.get(source_type, 0) + 1
+            domain = str(row.get("source_domain", "")).strip().lower()
+            if domain:
+                source_domain_counts[domain] = source_domain_counts.get(domain, 0) + 1
             if sort_by in {"submittedDate", "lastUpdatedDate"} and len(recent) < NOVELTY_FOCUSED_LIMIT:
                 recent.append(row)
             if _novelty_focus_is_deep(item["focus"]) and len(focused) < NOVELTY_FOCUSED_LIMIT:
                 focused.append(row)
         audit_row["retrieved"] = len(papers)
         audit_row["unique_added"] = unique_added
+        audit_row["source_types"] = dict(sorted(source_type_counts.items()))
+        audit_row["source_domains"] = dict(sorted(source_domain_counts.items(), key=lambda item: (-item[1], item[0]))[:8])
         search_audit.append(audit_row)
     for item in web_plan:
         query = item["query"]
@@ -1294,6 +1319,8 @@ def tool_verify_novelty(args: dict[str, Any]) -> str:
             audit_row["error"] = str(exc)
             errors.append({"source": "web", "query": query, "error": str(exc)})
         unique_added = 0
+        source_type_counts: dict[str, int] = {}
+        source_domain_counts: dict[str, int] = {}
         for result in results:
             row = _novelty_web_row(result, focus=item["focus"])
             key = _novelty_paper_key(row)
@@ -1302,8 +1329,15 @@ def tool_verify_novelty(args: dict[str, Any]) -> str:
             seen.add(key)
             unique_added += 1
             web_results.append(row)
+            source_type = str(row.get("source_type", "")).strip() or "general_web"
+            source_type_counts[source_type] = source_type_counts.get(source_type, 0) + 1
+            domain = str(row.get("source_domain", "")).strip().lower()
+            if domain:
+                source_domain_counts[domain] = source_domain_counts.get(domain, 0) + 1
         audit_row["retrieved"] = len(results)
         audit_row["unique_added"] = unique_added
+        audit_row["source_types"] = dict(sorted(source_type_counts.items()))
+        audit_row["source_domains"] = dict(sorted(source_domain_counts.items(), key=lambda item: (-item[1], item[0]))[:8])
         search_audit.append(audit_row)
     _novelty_enrich_web_results(web_results, web_fetch, errors)
     return json.dumps({
@@ -1331,7 +1365,7 @@ def tool_verify_novelty(args: dict[str, Any]) -> str:
             "Do not claim high novelty unless the idea survives relevance, submitted-date, "
             "updated-date, exact-phrase, claim-collision, recent-discovery, architecture-variant, "
             "frontier-architecture, model-family, method, mechanism, evaluation, implementation, "
-            "replication, failure-mode, and protocol searches. Compare against the closest "
+            "replication, failure-mode, protocol, and source-class searches. Compare against the closest "
             "recent papers, name the exact delta, cite likely prior art, and downgrade any "
             "direction that only renames an existing method."
         ),
@@ -1438,7 +1472,18 @@ def _novelty_web_search_plan(idea: str, queries: list[str] | None) -> list[dict[
             _novelty_web_plan_item(f"{compact} recent paper method", "web_recent_method"),
             _novelty_web_plan_item(f"{compact} benchmark evaluation leaderboard", "web_benchmark_evaluation"),
             _novelty_web_plan_item(f"{compact} implementation repository code", "web_code_prior"),
+            _novelty_web_plan_item(f"site:github.com {compact} implementation repository code", "web_github_code_repository"),
+            _novelty_web_plan_item(f"site:huggingface.co {compact} model card dataset checkpoint", "web_huggingface_model_hub"),
+            _novelty_web_plan_item(f"site:paperswithcode.com {compact} benchmark leaderboard implementation", "web_paperswithcode_benchmark"),
             _novelty_web_plan_item(f"{compact} project page technical report", "web_project_or_report"),
+            _novelty_web_plan_item(
+                f"site:openreview.net {compact} review rebuttal discussion",
+                "web_openreview_peer_review",
+            ),
+            _novelty_web_plan_item(
+                f"{compact} lab technical report frontier model research release",
+                "web_lab_technical_report",
+            ),
             _novelty_web_plan_item(f"{compact} recent discovery technical report", "web_recent_discovery"),
             _novelty_web_plan_item(f"{compact} architecture variant implementation", "web_architecture_variant"),
             _novelty_web_plan_item(
@@ -1663,6 +1708,15 @@ def _novelty_assessment(
     coverage["focus_coverage"] = _novelty_focus_coverage(coverage["arxiv_focuses"], coverage["web_focuses"])
     coverage["evidence_focus_coverage"] = audit_summary.get("evidence_focus_coverage", {})
     coverage["missing_evidence_focus_coverage"] = audit_summary.get("missing_evidence_focus_coverage", [])
+    coverage["source_axis_coverage"] = _novelty_source_axis_coverage(rows)
+    coverage["missing_source_axis_coverage"] = [
+        source_axis for source_axis in sorted(NOVELTY_REQUIRED_SOURCE_AXES)
+        if not coverage["source_axis_coverage"].get(source_axis)
+    ]
+    coverage["frontier_source_axes_covered"] = sum(
+        1 for source_axis in NOVELTY_REQUIRED_SOURCE_AXES
+        if coverage["source_axis_coverage"].get(source_axis)
+    )
     coverage["threat_model_coverage"] = _novelty_threat_model_coverage(coverage["arxiv_focuses"], coverage["web_focuses"])
     comparison_matrix = _novelty_comparison_matrix(scored, coverage)
     threat_model = _novelty_threat_model(scored, coverage)
@@ -1703,6 +1757,8 @@ def _novelty_assessment(
 def _novelty_search_audit_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     normalized = [_compact_novelty_search_audit_row(row) for row in rows]
     focus_summary: dict[tuple[str, str], dict[str, Any]] = {}
+    source_type_counts: dict[str, int] = {}
+    source_domain_counts: dict[str, int] = {}
     for row in normalized:
         source = str(row.get("source", "")).strip() or "unknown"
         focus = str(row.get("focus", "")).strip() or "unknown"
@@ -1727,6 +1783,15 @@ def _novelty_search_audit_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             int(target.get("requested_results_max", 0) or 0),
             int(row.get("requested_results", 0) or 0),
         )
+        if isinstance(row.get("source_types"), dict):
+            for source_type, count in row["source_types"].items():
+                name = str(source_type).strip() or "general_web"
+                source_type_counts[name] = source_type_counts.get(name, 0) + int(count or 0)
+        if isinstance(row.get("source_domains"), dict):
+            for domain, count in row["source_domains"].items():
+                name = str(domain).strip().lower()
+                if name:
+                    source_domain_counts[name] = source_domain_counts.get(name, 0) + int(count or 0)
     focus_rows = sorted(focus_summary.values(), key=lambda row: (row["source"], row["focus"]))
     empty_focuses = [
         {"source": row["source"], "focus": row["focus"]}
@@ -1742,6 +1807,7 @@ def _novelty_search_audit_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     evidence_focus_coverage = _option_search_focus_coverage(
         [row for row in focus_rows if int(row.get("unique_added", 0) or 0) > 0]
     )
+    source_axis_coverage = _novelty_source_axis_coverage_from_counts(source_type_counts, source_domain_counts)
     missing_focus_coverage = [
         focus for focus in sorted(NOVELTY_REQUIRED_OPTION_SEARCH_FOCUS)
         if not focus_coverage.get(focus)
@@ -1749,6 +1815,10 @@ def _novelty_search_audit_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     missing_evidence_focus_coverage = [
         focus for focus in sorted(NOVELTY_REQUIRED_OPTION_SEARCH_FOCUS)
         if not evidence_focus_coverage.get(focus)
+    ]
+    missing_source_axis_coverage = [
+        source_axis for source_axis in sorted(NOVELTY_REQUIRED_SOURCE_AXES)
+        if not source_axis_coverage.get(source_axis)
     ]
     return {
         "pass_count": len(normalized),
@@ -1769,8 +1839,12 @@ def _novelty_search_audit_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "failed_focuses": failed_focuses,
         "focus_coverage": focus_coverage,
         "evidence_focus_coverage": evidence_focus_coverage,
+        "source_axis_coverage": source_axis_coverage,
         "missing_focus_coverage": missing_focus_coverage,
         "missing_evidence_focus_coverage": missing_evidence_focus_coverage,
+        "missing_source_axis_coverage": missing_source_axis_coverage,
+        "source_type_counts": dict(sorted(source_type_counts.items())),
+        "source_domain_counts": dict(sorted(source_domain_counts.items(), key=lambda item: (-item[1], item[0]))[:12]),
         "focus_summary": focus_rows,
         "passes": normalized,
     }
@@ -1778,7 +1852,18 @@ def _novelty_search_audit_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _compact_novelty_search_audit_row(row: dict[str, Any]) -> dict[str, Any]:
     compact: dict[str, Any] = {}
-    for key in ("source", "focus", "query", "sort_by", "requested_results", "retrieved", "unique_added", "failed"):
+    for key in (
+        "source",
+        "focus",
+        "query",
+        "sort_by",
+        "requested_results",
+        "retrieved",
+        "unique_added",
+        "source_types",
+        "source_domains",
+        "failed",
+    ):
         if key in row:
             compact[key] = _compact_json_value(row[key])
     if row.get("error"):
@@ -2074,6 +2159,7 @@ def _novelty_claim_readiness(risk: str, top_score: float, coverage: dict[str, An
         else {}
     )
     threat_coverage = coverage.get("threat_model_coverage") if isinstance(coverage.get("threat_model_coverage"), dict) else {}
+    source_axis_coverage = coverage.get("source_axis_coverage") if isinstance(coverage.get("source_axis_coverage"), dict) else {}
     checks = {
         "deep_query_plan": coverage.get("arxiv_query_count", 0) >= 10
         and coverage.get("web_query_count", 0) >= 8
@@ -2113,6 +2199,10 @@ def _novelty_claim_readiness(risk: str, top_score: float, coverage: dict[str, An
         "recent_prior_art": coverage.get("recent_evidence", 0) >= 1,
         "credible_source_diversity": coverage.get("unique_source_domains", 0) >= 3
         and coverage.get("credible_source_count", 0) >= 2,
+        "frontier_source_mix": all(
+            bool(source_axis_coverage.get(name))
+            for name in NOVELTY_REQUIRED_SOURCE_AXES
+        ),
         "web_page_enrichment": coverage.get("web_results_with_page_text", 0) >= 1,
         "threat_model_depth": all(
             bool(threat_coverage.get(name))
@@ -2161,6 +2251,8 @@ def _novelty_readiness_next_actions(status: str, missing: list[str]) -> list[str
         actions.append("Repeat duplicate-only focus passes until each critical novelty axis has unique retrieved evidence, not just a planned query label.")
     if "retrieved_prior_art" in missing or "credible_source_diversity" in missing:
         actions.append("Collect more independent papers, benchmarks, code, or project reports before selecting this idea.")
+    if "frontier_source_mix" in missing:
+        actions.append("Collect unique evidence from scholarly papers, peer review, benchmark trackers, code repositories, model hubs, and lab technical reports.")
     if "recent_prior_art" in missing:
         actions.append("Add recent submitted-date and updated-date searches for the last two years.")
     if "web_page_enrichment" in missing:
@@ -2220,7 +2312,7 @@ def _novelty_prior_reason(matched: list[str], focus: str, row: dict[str, Any], s
         bits.append("shares idea terms: " + ", ".join(matched[:6]))
     if source == "web":
         bits.append("retrieved from web search")
-    if source_type in {"paper", "benchmark", "code_repository", "project_page", "documentation"}:
+    if source_type in {"paper", "benchmark", "code_repository", "model_hub", "project_page", "lab_report", "documentation"}:
         bits.append(f"source type: {source_type}")
     if "method" in focus:
         bits.append("retrieved by method-focused search")
@@ -2309,6 +2401,12 @@ def _novelty_web_source_type(*, url: Any, domain: Any, title: Any, abstract: Any
         return "paper"
     if any(key in domain_text for key in ("paperswithcode.com", "benchmark", "evals")) or any(key in haystack for key in ("benchmark", "leaderboard", "evaluation suite")):
         return "benchmark"
+    if "huggingface.co" in domain_text or any(key in haystack for key in ("model card", "model hub", "dataset card", "checkpoint")):
+        return "model_hub"
+    if any(key in domain_text for key in ("deepmind.google", "openai.com", "anthropic.com", "research.google", "ai.meta.com", "microsoft.com")) and any(
+        key in haystack for key in ("technical report", "research", "frontier model", "model release", "system card")
+    ):
+        return "lab_report"
     if any(key in domain_text for key in ("github.com", "gitlab.com", "bitbucket.org", "huggingface.co")) or any(key in haystack for key in ("repository", "implementation", "source code")):
         return "code_repository"
     if any(key in domain_text for key in ("readthedocs.io", "docs.", "documentation")) or any(key in haystack for key in ("api reference", "documentation")):
@@ -2323,7 +2421,9 @@ def _novelty_source_type_score(source_type: str) -> float:
         "paper": 0.06,
         "benchmark": 0.05,
         "code_repository": 0.04,
+        "model_hub": 0.035,
         "project_page": 0.035,
+        "lab_report": 0.04,
         "documentation": 0.02,
         "general_web": 0.0,
     }.get(source_type, 0.0)
@@ -2335,11 +2435,50 @@ def _novelty_source_credibility(source_type: str, domain: Any) -> dict[str, Any]
         return {"label": "scholarly", "score": 0.035}
     if source_type == "benchmark" or "paperswithcode.com" in domain_text:
         return {"label": "benchmark", "score": 0.03}
-    if source_type == "code_repository" or any(key in domain_text for key in ("github.com", "gitlab.com", "huggingface.co")):
+    if source_type == "model_hub" or "huggingface.co" in domain_text:
+        return {"label": "model_hub", "score": 0.02}
+    if source_type == "lab_report" or any(key in domain_text for key in ("deepmind.google", "openai.com", "anthropic.com", "research.google", "ai.meta.com")):
+        return {"label": "lab_report", "score": 0.02}
+    if source_type == "code_repository" or any(key in domain_text for key in ("github.com", "gitlab.com")):
         return {"label": "implementation", "score": 0.02}
     if source_type in {"project_page", "documentation"}:
         return {"label": source_type, "score": 0.01}
     return {"label": "generic", "score": 0.0}
+
+
+def _novelty_source_axis_coverage(rows: list[dict[str, Any]]) -> dict[str, bool]:
+    source_type_counts: dict[str, int] = {}
+    source_domain_counts: dict[str, int] = {}
+    for row in rows:
+        source_type = str(row.get("source_type", "general_web")).strip() or "general_web"
+        source_type_counts[source_type] = source_type_counts.get(source_type, 0) + 1
+        domain = str(row.get("source_domain", "")).strip().lower()
+        if domain:
+            source_domain_counts[domain] = source_domain_counts.get(domain, 0) + 1
+    return _novelty_source_axis_coverage_from_counts(source_type_counts, source_domain_counts)
+
+
+def _novelty_source_axis_coverage_from_counts(
+    source_type_counts: dict[str, int],
+    source_domain_counts: dict[str, int],
+) -> dict[str, bool]:
+    source_types = {str(key).lower() for key, value in source_type_counts.items() if int(value or 0) > 0}
+    domains = {str(key).lower() for key, value in source_domain_counts.items() if int(value or 0) > 0}
+    domain_text = " ".join(domains)
+    return {
+        "scholarly_papers": "paper" in source_types or any(
+            key in domain_text
+            for key in ("arxiv.org", "openreview.net", "aclanthology.org", "proceedings.mlr.press", "papers.nips.cc")
+        ),
+        "peer_review": any(key in domain_text for key in ("openreview.net", "aclanthology.org", "proceedings.mlr.press", "papers.nips.cc")),
+        "benchmark_trackers": "benchmark" in source_types or "paperswithcode.com" in domain_text,
+        "code_repositories": "code_repository" in source_types or any(key in domain_text for key in ("github.com", "gitlab.com")),
+        "model_hubs": "model_hub" in source_types or "huggingface.co" in domain_text,
+        "lab_reports": "lab_report" in source_types or any(
+            key in domain_text
+            for key in ("deepmind.google", "openai.com", "anthropic.com", "research.google", "ai.meta.com")
+        ),
+    }
 
 
 def _novelty_web_source_type_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
@@ -2790,6 +2929,11 @@ def _valid_option_search_audit(value: Any) -> bool:
     )
     if not all(evidence_coverage.get(name) for name in NOVELTY_REQUIRED_OPTION_SEARCH_FOCUS):
         return False
+    source_axis_coverage = audit.get("source_axis_coverage")
+    if not isinstance(source_axis_coverage, dict) or not all(
+        bool(source_axis_coverage.get(name)) for name in NOVELTY_REQUIRED_SOURCE_AXES
+    ):
+        return False
     return True
 
 
@@ -2813,6 +2957,16 @@ def _option_search_audit(value: Any) -> dict[str, Any]:
             for key, flag in focus_coverage.items()
             if isinstance(key, str) and type(flag) is bool
         }
+    source_axis_coverage = value.get("source_axis_coverage")
+    if isinstance(source_axis_coverage, dict):
+        audit["source_axis_coverage"] = {
+            str(key): bool(flag)
+            for key, flag in source_axis_coverage.items()
+            if isinstance(key, str) and type(flag) is bool
+        }
+    missing_source_axis_coverage = _option_strings(value.get("missing_source_axis_coverage", []))
+    if missing_source_axis_coverage:
+        audit["missing_source_axis_coverage"] = missing_source_axis_coverage[:16]
     missing_focus_coverage = _option_strings(value.get("missing_focus_coverage", []))
     if missing_focus_coverage:
         audit["missing_focus_coverage"] = missing_focus_coverage[:16]
@@ -3864,9 +4018,9 @@ TOOL_SPECS: list[dict[str, Any]] = [
      "parameters": _obj({"query": {"type": "string", "description": "arXiv query, e.g. 'cat:cs.LG AND (abs:sparse autoencoder OR abs:linear probe)'"}, "max_results": {"type": "integer"}, "sort_by": {"type": "string", "enum": ["relevance", "submittedDate", "lastUpdatedDate"]}}, ["query"])},
     {"name": "neuronpedia_search", "description": "Semantic search over SAE-feature explanations for an explicit Neuronpedia model id.",
      "parameters": _obj({"model_id": {"type": "string"}, "query": {"type": "string"}}, ["model_id", "query"])},
-    {"name": "verify_novelty", "description": "Deep novelty check for a research idea using multi-pass arXiv and web searches across relevance, recency, recent discoveries, architecture variants, recent frontier architectures, model-family discoveries, method, mechanism, evaluation, implementation, replication, failure-mode, and protocol angles. Call this for each proposed research direction before presenting it.",
+    {"name": "verify_novelty", "description": "Deep novelty check for a research idea using multi-pass arXiv and web searches across relevance, recency, recent discoveries, architecture variants, recent frontier architectures, model-family discoveries, method, mechanism, evaluation, implementation, replication, failure-mode, protocol, peer-review, code-repository, model-hub, benchmark-tracker, and lab-report angles. Call this for each proposed research direction before presenting it.",
      "parameters": _obj({"idea": {"type": "string", "description": "the research idea/direction to novelty-check"}, "queries": {"type": "array", "items": {"type": "string"}, "description": "optional arXiv queries to probe for prior work"}}, ["idea"])},
-    {"name": "present_options", "description": "Present 2-5 research directions to the user as an interactive, expandable picker and return their choice. Use this instead of writing options as prose. Every option must include detail, citations, novelty_risk, novelty_verdict, closest_prior_art, claim_readiness, comparison_matrix, novelty_threat_model, disqualifying_overlap_tests, search_audit, recent_pressure, and required_delta from verify_novelty assessment. search_audit must show successful deep arXiv and web retrieval with unique evidence from both sources, evidence_focus_coverage for critical novelty axes, and frontier_architecture coverage; recent_pressure must show recent_prior_present in the current recent window.",
+    {"name": "present_options", "description": "Present 2-5 research directions to the user as an interactive, expandable picker and return their choice. Use this instead of writing options as prose. Every option must include detail, citations, novelty_risk, novelty_verdict, closest_prior_art, claim_readiness, comparison_matrix, novelty_threat_model, disqualifying_overlap_tests, search_audit, recent_pressure, and required_delta from verify_novelty assessment. search_audit must show successful deep arXiv and web retrieval with unique evidence from both sources, evidence_focus_coverage for critical novelty axes, source_axis_coverage for scholarly papers, peer review, benchmarks, code repositories, model hubs, and lab reports, and frontier_architecture coverage; recent_pressure must show recent_prior_present in the current recent window.",
      "parameters": _obj({"options": {"type": "array", "minItems": 2, "maxItems": 5, "items": {"type": "object", "properties": {
          "title": {"type": "string"},
          "summary": {"type": "string", "description": "one line"},
@@ -3912,10 +4066,14 @@ TOOL_SPECS: list[dict[str, Any]] = [
              "failed_focuses": {"type": "array", "items": {"type": "object"}},
              "focus_coverage": {"type": "object"},
              "evidence_focus_coverage": {"type": "object"},
+             "source_axis_coverage": {"type": "object"},
              "missing_focus_coverage": {"type": "array", "items": {"type": "string"}},
              "missing_evidence_focus_coverage": {"type": "array", "items": {"type": "string"}},
+             "missing_source_axis_coverage": {"type": "array", "items": {"type": "string"}},
+             "source_type_counts": {"type": "object"},
+             "source_domain_counts": {"type": "object"},
              "focus_summary": {"type": "array", "items": {"type": "object"}},
-        }, "description": "assessment.search_audit from verify_novelty; include pass_count, failed_passes, empty_search_passes, duplicate_only_search_passes, focus_coverage, evidence_focus_coverage, missing_focus_coverage, missing_evidence_focus_coverage, and focus_summary. The audit must prove at least 10 arXiv passes at 50 results, 8 web passes at 24 results, focused deep-search coverage, unique_added evidence from both arXiv and web, and zero failed retrieval passes."},
+        }, "description": "assessment.search_audit from verify_novelty; include pass_count, failed_passes, empty_search_passes, duplicate_only_search_passes, focus_coverage, evidence_focus_coverage, source_axis_coverage, missing_focus_coverage, missing_evidence_focus_coverage, missing_source_axis_coverage, source_type_counts, source_domain_counts, and focus_summary. The audit must prove at least 12 arXiv passes at 50 results, 12 web passes at 24 results, focused deep-search coverage, source-axis evidence, unique_added evidence from both arXiv and web, and zero failed retrieval passes."},
          "recent_pressure": {"type": "object", "properties": {
              "status": {"type": "string"},
              "recent_window": {"type": "string"},

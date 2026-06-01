@@ -69,16 +69,23 @@ def _option_search_audit():
         "recent_discovery",
         "architecture_variant",
         "frontier_architecture_recent",
+        "frontier_model_family_discovery",
         "replication_failure_modes",
         "evaluation_protocol",
+        "peer_review_critique",
     ]
     web_focuses = [
         "web_recent_method",
         "web_benchmark_evaluation",
         "web_code_prior",
+        "web_github_code_repository",
+        "web_huggingface_model_hub",
+        "web_paperswithcode_benchmark",
         "web_exact_phrase",
         "web_claim_collision",
         "web_peer_review",
+        "web_openreview_peer_review",
+        "web_lab_technical_report",
         "web_architecture_variant",
         "web_frontier_architecture_release",
         "web_replication_results",
@@ -108,7 +115,7 @@ def _option_search_audit():
         for i, focus in enumerate(web_focuses)
     )
     return {
-        "pass_count": 20,
+        "pass_count": 26,
         "failed_passes": 0,
         "empty_search_passes": 2,
         "empty_arxiv_passes": 1,
@@ -146,8 +153,32 @@ def _option_search_audit():
             "claim_collision": True,
             "peer_review": True,
         },
+        "source_axis_coverage": {
+            "scholarly_papers": True,
+            "peer_review": True,
+            "benchmark_trackers": True,
+            "code_repositories": True,
+            "model_hubs": True,
+            "lab_reports": True,
+        },
         "missing_focus_coverage": [],
         "missing_evidence_focus_coverage": [],
+        "missing_source_axis_coverage": [],
+        "source_type_counts": {
+            "paper": 20,
+            "benchmark": 3,
+            "code_repository": 3,
+            "model_hub": 3,
+            "lab_report": 3,
+        },
+        "source_domain_counts": {
+            "arxiv.org": 20,
+            "openreview.net": 3,
+            "paperswithcode.com": 3,
+            "github.com": 3,
+            "huggingface.co": 3,
+            "deepmind.google": 3,
+        },
         "empty_focuses": [
             {"source": "arxiv", "focus": "peer_review_critique"},
             {"source": "web", "focus": "web_peer_review"},
@@ -250,6 +281,7 @@ class AgentToolTest(unittest.TestCase):
         options_description = next(tool for tool in tools.TOOL_SPECS if tool["name"] == "present_options")["description"]
         self.assertIn("frontier_architecture coverage", options_description)
         self.assertIn("evidence_focus_coverage", options_description)
+        self.assertIn("source_axis_coverage", options_description)
         option_schema = option_list_schema["items"]
         self.assertIn("novelty_threat_model", option_schema["required"])
         self.assertIn("disqualifying_overlap_tests", option_schema["required"])
@@ -257,6 +289,8 @@ class AgentToolTest(unittest.TestCase):
         search_audit_props = option_schema["properties"]["search_audit"]["properties"]
         self.assertIn("evidence_focus_coverage", search_audit_props)
         self.assertIn("missing_evidence_focus_coverage", search_audit_props)
+        self.assertIn("source_axis_coverage", search_audit_props)
+        self.assertIn("missing_source_axis_coverage", search_audit_props)
 
     def test_resolve_artifact_tool_returns_json(self):
         from mechferret import tools
@@ -1091,6 +1125,23 @@ class AgentToolTest(unittest.TestCase):
         self.assertFalse(bad_no_web_unique["ok"])
         self.assertEqual(bad_no_web_unique["expected"], "objects with search_audit from verify_novelty assessment")
 
+        missing_source_axis_search_audit = _option_search_audit()
+        missing_source_axis_search_audit["source_axis_coverage"] = {
+            key: (False if key == "model_hubs" else value)
+            for key, value in missing_source_axis_search_audit["source_axis_coverage"].items()
+        }
+        missing_source_axis_search_audit["missing_source_axis_coverage"] = ["model_hubs"]
+        missing_source_axis = _validated_option("Missing source axis evidence")
+        missing_source_axis["search_audit"] = missing_source_axis_search_audit
+        bad_missing_source_axis = json.loads(
+            tools.run_tool(
+                "present_options",
+                {"options": [missing_source_axis]},
+            )
+        )
+        self.assertFalse(bad_missing_source_axis["ok"])
+        self.assertEqual(bad_missing_source_axis["expected"], "objects with search_audit from verify_novelty assessment")
+
         missing_recent = _validated_option("No recent evidence")
         missing_recent["recent_pressure"] = {
             "status": "missing_recent_prior_art",
@@ -1153,7 +1204,7 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(ok["option_details"][0]["novelty_threat_model"][1]["representative_prior"]["source_type"], "paper")
         self.assertEqual(ok["option_details"][0]["disqualifying_overlap_tests"][1]["test"], "claim_collision")
         self.assertFalse(ok["option_details"][0]["disqualifying_overlap_tests"][1]["passed"])
-        self.assertEqual(ok["option_details"][0]["search_audit"]["pass_count"], 20)
+        self.assertEqual(ok["option_details"][0]["search_audit"]["pass_count"], 26)
         self.assertEqual(ok["option_details"][0]["search_audit"]["empty_search_passes"], 2)
         self.assertEqual(ok["option_details"][0]["search_audit"]["focus_summary"][0]["requested_results_max"], 50)
         self.assertTrue(ok["option_details"][0]["search_audit"]["focus_coverage"]["claim_collision"])
@@ -1245,6 +1296,8 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("search_audit", prompt)
         self.assertIn("evidence_focus_coverage", prompt)
         self.assertIn("missing_evidence_focus_coverage", prompt)
+        self.assertIn("source_axis_coverage", prompt)
+        self.assertIn("missing_source_axis_coverage", prompt)
         self.assertIn("recent_pressure", prompt)
         self.assertIn("frontier_architecture_covered", prompt)
         self.assertIn("frontier architecture", prompt)
@@ -1662,6 +1715,47 @@ class AgentToolTest(unittest.TestCase):
         def fake_web_search(query, max_results=12):
             web_calls.append({"query": query, "max_results": max_results})
             index = len(web_calls)
+            lower = query.lower()
+            if "site:openreview.net" in lower:
+                return [
+                    {
+                        "title": f"OpenReview discussion for VLA SAE mechanism discovery {index}",
+                        "url": f"https://openreview.net/forum?id=vla-sae-{index}",
+                        "snippet": f"{current_year} review rebuttal discussing sparse autoencoder method overlap and evidence.",
+                    }
+                ]
+            if "site:github.com" in lower:
+                return [
+                    {
+                        "title": f"VLA SAE GitHub implementation {index}",
+                        "url": f"https://github.com/example/vla-sae-{index}",
+                        "snippet": "Repository with source code for sparse autoencoder probes on action policies.",
+                    }
+                ]
+            if "site:huggingface.co" in lower:
+                return [
+                    {
+                        "title": f"VLA SAE model card checkpoint {index}",
+                        "url": f"https://huggingface.co/example/vla-sae-{index}",
+                        "snippet": f"{current_year} model card dataset card and checkpoint for VLA sparse autoencoder features.",
+                    }
+                ]
+            if "site:paperswithcode.com" in lower:
+                return [
+                    {
+                        "title": f"VLA sparse autoencoder benchmark tracker {index}",
+                        "url": f"https://paperswithcode.com/task/vla-sae-{index}",
+                        "snippet": "Benchmark leaderboard for sparse autoencoder method mechanism discovery.",
+                    }
+                ]
+            if "lab technical report" in lower:
+                return [
+                    {
+                        "title": f"Frontier lab technical report on VLA SAE mechanisms {index}",
+                        "url": f"https://deepmind.google/research/publications/vla-sae-{index}",
+                        "snippet": f"{current_year} technical report for frontier model research release and sparse autoencoder mechanism evaluation.",
+                    }
+                ]
             return [
                 {
                     "title": f"Sparse autoencoder method implementation for VLA mechanism discovery {index}",
@@ -1725,6 +1819,11 @@ class AgentToolTest(unittest.TestCase):
         self.assertTrue(all(call["max_results"] == 24 for call in web_calls))
         self.assertTrue(any('"we propose"' in call["query"].lower() for call in web_calls))
         self.assertTrue(any("openreview review rebuttal" in call["query"].lower() for call in web_calls))
+        self.assertTrue(any("site:openreview.net" in call["query"].lower() for call in web_calls))
+        self.assertTrue(any("site:github.com" in call["query"].lower() for call in web_calls))
+        self.assertTrue(any("site:huggingface.co" in call["query"].lower() for call in web_calls))
+        self.assertTrue(any("site:paperswithcode.com" in call["query"].lower() for call in web_calls))
+        self.assertTrue(any("lab technical report" in call["query"].lower() for call in web_calls))
         self.assertTrue(any("frontier model architecture" in call["query"].lower() for call in web_calls))
         self.assertTrue(any("model family benchmark" in call["query"].lower() for call in web_calls))
         self.assertGreaterEqual(len(fetch_calls), 1)
@@ -1743,8 +1842,11 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(payload["web_results"][0]["source"], "web")
         self.assertEqual(payload["web_results"][0]["source_domain"], "example.org")
         web_source_types = {row["source_type"] for row in payload["web_results"]}
+        self.assertIn("paper", web_source_types)
         self.assertIn("benchmark", web_source_types)
         self.assertIn("code_repository", web_source_types)
+        self.assertIn("model_hub", web_source_types)
+        self.assertIn("lab_report", web_source_types)
         self.assertIn("recent_papers", payload)
         self.assertIn("focused_papers", payload)
         self.assertIn("method_papers", payload)
@@ -1781,6 +1883,11 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("architecture_variant", payload["assessment"]["coverage"]["arxiv_focuses"])
         self.assertIn("frontier_architecture_recent", payload["assessment"]["coverage"]["arxiv_focuses"])
         self.assertIn("frontier_model_family_discovery", payload["assessment"]["coverage"]["arxiv_focuses"])
+        self.assertIn("web_github_code_repository", payload["assessment"]["coverage"]["web_focuses"])
+        self.assertIn("web_huggingface_model_hub", payload["assessment"]["coverage"]["web_focuses"])
+        self.assertIn("web_paperswithcode_benchmark", payload["assessment"]["coverage"]["web_focuses"])
+        self.assertIn("web_openreview_peer_review", payload["assessment"]["coverage"]["web_focuses"])
+        self.assertIn("web_lab_technical_report", payload["assessment"]["coverage"]["web_focuses"])
         self.assertIn("web_recent_discovery", payload["assessment"]["coverage"]["web_focuses"])
         self.assertIn("web_architecture_variant", payload["assessment"]["coverage"]["web_focuses"])
         self.assertIn("web_frontier_architecture_release", payload["assessment"]["coverage"]["web_focuses"])
@@ -1796,10 +1903,21 @@ class AgentToolTest(unittest.TestCase):
         self.assertGreaterEqual(payload["assessment"]["coverage"]["web_results_with_page_text"], 1)
         self.assertGreaterEqual(payload["assessment"]["coverage"]["web_source_types"]["benchmark"], 1)
         self.assertGreaterEqual(payload["assessment"]["coverage"]["web_source_types"]["code_repository"], 1)
+        self.assertGreaterEqual(payload["assessment"]["coverage"]["web_source_types"]["model_hub"], 1)
+        self.assertGreaterEqual(payload["assessment"]["coverage"]["web_source_types"]["lab_report"], 1)
         self.assertGreaterEqual(payload["assessment"]["coverage"]["unique_source_domains"], 3)
         self.assertGreaterEqual(payload["assessment"]["coverage"]["credible_source_count"], 2)
         self.assertIn("benchmark", payload["assessment"]["coverage"]["credible_source_types"])
+        self.assertIn("model_hub", payload["assessment"]["coverage"]["credible_source_types"])
+        self.assertIn("lab_report", payload["assessment"]["coverage"]["credible_source_types"])
         self.assertIn("github.com", payload["assessment"]["coverage"]["source_domain_counts"])
+        self.assertIn("huggingface.co", payload["assessment"]["coverage"]["source_domain_counts"])
+        self.assertIn("openreview.net", payload["assessment"]["coverage"]["source_domain_counts"])
+        self.assertIn("deepmind.google", payload["assessment"]["coverage"]["source_domain_counts"])
+        self.assertEqual(payload["assessment"]["coverage"]["missing_source_axis_coverage"], [])
+        self.assertEqual(payload["assessment"]["coverage"]["frontier_source_axes_covered"], 6)
+        self.assertTrue(payload["assessment"]["coverage"]["source_axis_coverage"]["peer_review"])
+        self.assertTrue(payload["assessment"]["coverage"]["source_axis_coverage"]["model_hubs"])
         self.assertGreaterEqual(payload["assessment"]["coverage"]["retrieved_evidence"], 2)
         self.assertEqual(payload["assessment"]["coverage"]["search_audit_rows"], len(payload["search_audit"]))
         self.assertEqual(payload["assessment"]["coverage"]["duplicate_only_search_passes"], 0)
@@ -1811,6 +1929,8 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(payload["assessment"]["search_audit"]["missing_focus_coverage"], [])
         self.assertTrue(payload["assessment"]["search_audit"]["evidence_focus_coverage"]["claim_collision"])
         self.assertEqual(payload["assessment"]["search_audit"]["missing_evidence_focus_coverage"], [])
+        self.assertTrue(payload["assessment"]["search_audit"]["source_axis_coverage"]["code_repositories"])
+        self.assertEqual(payload["assessment"]["search_audit"]["missing_source_axis_coverage"], [])
         self.assertTrue(payload["assessment"]["coverage"]["evidence_focus_coverage"]["frontier_architecture"])
         self.assertEqual(payload["assessment"]["coverage"]["missing_evidence_focus_coverage"], [])
         focus_audit = {
@@ -1819,6 +1939,8 @@ class AgentToolTest(unittest.TestCase):
         }
         self.assertIn(("arxiv", "recent_discovery"), focus_audit)
         self.assertIn(("web", "web_recent_discovery"), focus_audit)
+        self.assertIn(("web", "web_huggingface_model_hub"), focus_audit)
+        self.assertIn(("web", "web_lab_technical_report"), focus_audit)
         self.assertGreaterEqual(focus_audit[("arxiv", "recent_discovery")]["retrieved"], 1)
         self.assertIn("claim_readiness", payload["assessment"])
         self.assertFalse(payload["assessment"]["claim_readiness"]["can_claim_high_novelty"])
@@ -1841,6 +1963,7 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("disqualifying_overlap_tests", payload["assessment"])
         self.assertTrue(any(row["test"] == "claim_collision" for row in payload["assessment"]["disqualifying_overlap_tests"]))
         self.assertIn("threat_model_depth", payload["assessment"]["claim_readiness"]["checks"])
+        self.assertTrue(payload["assessment"]["claim_readiness"]["checks"]["frontier_source_mix"])
         self.assertGreaterEqual(payload["assessment"]["coverage"]["recent_evidence"], 1)
         self.assertGreaterEqual(payload["assessment"]["coverage"]["structured_recent_evidence"], 1)
         self.assertGreaterEqual(payload["assessment"]["coverage"]["text_recent_evidence"], 1)
@@ -1853,6 +1976,7 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("architecture-variant", payload["guidance"])
         self.assertIn("frontier-architecture", payload["guidance"])
         self.assertIn("model-family", payload["guidance"])
+        self.assertIn("source-class", payload["guidance"])
 
     def test_verify_novelty_search_plan_uses_idea_terms_without_fixed_architectures(self):
         from mechferret import tools
@@ -2440,7 +2564,7 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(selected["selected_option"]["comparison_matrix"][1]["axis"], "evaluation")
         self.assertEqual(selected["selected_option"]["novelty_threat_model"][1]["threat"], "claim_collision")
         self.assertEqual(selected["selected_option"]["disqualifying_overlap_tests"][0]["test"], "exact_phrase_overlap")
-        self.assertEqual(selected["selected_option"]["search_audit"]["pass_count"], 20)
+        self.assertEqual(selected["selected_option"]["search_audit"]["pass_count"], 26)
         self.assertIn("causal ablation", picked[0][0]["required_delta"])
         self.assertEqual(picked[0][0]["comparison_matrix"][1]["axis"], "evaluation")
         self.assertEqual(picked[0][0]["novelty_threat_model"][1]["risk"], "needs_delta_review")
