@@ -632,11 +632,10 @@ class AgentToolTest(unittest.TestCase):
 
         def fake_search(query, max_results=20, sort_by="relevance"):
             calls.append({"query": query, "max_results": max_results, "sort_by": sort_by})
-            index = len(calls)
             return 99, [
                 {
-                    "title": f"{sort_by} sparse autoencoder architecture paper {index}",
-                    "url": f"https://arxiv.org/abs/2501.{index:04d}",
+                    "title": "Sparse autoencoder architecture paper",
+                    "url": "https://arxiv.org/abs/2501.0001",
                     "published": "2025-01-01T00:00:00Z",
                     "abstract": "Sparse autoencoder architecture for vision language action policies and mechanism discovery.",
                     "authors": ["A. Researcher"],
@@ -650,7 +649,17 @@ class AgentToolTest(unittest.TestCase):
                     "title": "Sparse autoencoder architecture implementation for VLA mechanism discovery",
                     "url": "https://example.org/vla-sae",
                     "snippet": "Recent benchmark implementation for sparse autoencoder architecture in vision language action policy mechanisms.",
-                }
+                },
+                {
+                    "title": "VLA sparse autoencoder leaderboard",
+                    "url": "https://paperswithcode.com/task/vla-sae",
+                    "snippet": "Benchmark leaderboard for sparse autoencoder architecture mechanism discovery.",
+                },
+                {
+                    "title": "VLA SAE implementation",
+                    "url": "https://github.com/example/vla-sae",
+                    "snippet": "Repository with source code for sparse autoencoder probes on action policies.",
+                },
             ]
 
         with (
@@ -680,16 +689,22 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("web_search_plan", payload)
         self.assertEqual(payload["web_results"][0]["source"], "web")
         self.assertEqual(payload["web_results"][0]["source_domain"], "example.org")
+        web_source_types = {row["source_type"] for row in payload["web_results"]}
+        self.assertIn("benchmark", web_source_types)
+        self.assertIn("code_repository", web_source_types)
         self.assertIn("recent_papers", payload)
         self.assertIn("architecture_papers", payload)
         self.assertEqual(payload["assessment"]["risk"], "high_prior_art_risk")
         self.assertTrue(payload["assessment"]["closest_prior_art"])
         self.assertIn("sparse", payload["assessment"]["closest_prior_art"][0]["matched_terms"])
+        self.assertIn("source_type", payload["assessment"]["closest_prior_art"][0])
         self.assertIn("source_domain", payload["assessment"]["closest_prior_art"][0])
         self.assertIn("evidence_excerpt", payload["assessment"]["closest_prior_art"][0])
         self.assertIn("recent_window", payload["assessment"]["coverage"])
         self.assertGreaterEqual(payload["assessment"]["coverage"]["web_results"], 1)
         self.assertGreaterEqual(payload["assessment"]["coverage"]["web_results_with_snippets"], 1)
+        self.assertGreaterEqual(payload["assessment"]["coverage"]["web_source_types"]["benchmark"], 1)
+        self.assertGreaterEqual(payload["assessment"]["coverage"]["web_source_types"]["code_repository"], 1)
         self.assertGreaterEqual(payload["assessment"]["coverage"]["retrieved_evidence"], 2)
         self.assertIn("Do not claim high novelty", payload["guidance"])
 
@@ -1149,6 +1164,37 @@ class AgentToolTest(unittest.TestCase):
             self.assertTrue(Path(parsed["full_output_path"]).exists())
             self.assertIn("Read the complete verify_bundle result", parsed["next_actions"][-1])
             self.assertLess(len(out), len(raw))
+
+    def test_large_novelty_output_preserves_assessment_summary(self):
+        from mechferret import tools
+
+        payload = {
+            "idea": "large novelty result",
+            "related_papers": [{"title": f"paper {index}", "abstract": "x" * 800} for index in range(200)],
+            "assessment": {
+                "risk": "high_prior_art_risk",
+                "verdict": "Closest retrieved evidence overlaps.",
+                "coverage": {"web_source_types": {"benchmark": 2}, "web_results": 3},
+                "closest_prior_art": [
+                    {"title": "closest", "source_type": "benchmark", "score": 0.9, "evidence_excerpt": "x" * 300}
+                ],
+                "required_delta": ["Name the difference."],
+            },
+        }
+        raw = json.dumps(payload)
+        with tempfile.TemporaryDirectory() as tmp:
+            original_dir = tools.RESULTS_DIR
+            tools.RESULTS_DIR = Path(tmp)
+            try:
+                out = tools._persist_if_large("verify_novelty", raw)
+            finally:
+                tools.RESULTS_DIR = original_dir
+
+        parsed = json.loads(out)
+        self.assertTrue(parsed["tool_output_truncated"])
+        self.assertEqual(parsed["assessment"]["risk"], "high_prior_art_risk")
+        self.assertEqual(parsed["assessment"]["coverage"]["web_source_types"]["benchmark"], 2)
+        self.assertEqual(parsed["assessment"]["closest_prior_art"][0]["source_type"], "benchmark")
 
     def test_bounded_check_lists_stay_structured_when_compacted(self):
         from mechferret import tools

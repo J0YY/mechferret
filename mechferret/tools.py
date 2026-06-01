@@ -42,6 +42,14 @@ NOVELTY_RISKS = {
     "unresolved_no_close_prior_found",
     "unknown_search_incomplete",
 }
+NOVELTY_WEB_SOURCE_TYPES = {
+    "paper",
+    "benchmark",
+    "code_repository",
+    "project_page",
+    "documentation",
+    "general_web",
+}
 
 
 def _truncate(text: str, limit: int = MAX_OUTPUT) -> str:
@@ -144,6 +152,11 @@ def _persisted_json_summary(name: str, payload: Any, path: Path, result: str) ->
         "before_failed_checks",
         "failed_checks",
         "error",
+        "risk",
+        "verdict",
+        "coverage",
+        "required_delta",
+        "closest_prior_art",
     ):
         if isinstance(payload, dict) and key in payload:
             minimal[key] = payload[key]
@@ -188,9 +201,25 @@ def _compact_json_value(value: Any) -> Any:
             "key_count": len(value),
             "keys": keys,
         }
-        for key in ("ok", "exists", "passed", "state", "path", "run_json", "failed_checks", "repairable"):
+        for key in (
+            "ok",
+            "exists",
+            "passed",
+            "state",
+            "path",
+            "run_json",
+            "failed_checks",
+            "repairable",
+            "risk",
+            "verdict",
+            "coverage",
+            "required_delta",
+            "closest_prior_art",
+        ):
             if key in value and isinstance(value[key], (str, int, float, bool, list, type(None))):
                 summary[key] = value[key]
+            elif key in value and key == "coverage" and isinstance(value[key], dict):
+                summary[key] = _compact_json_value(value[key])
         return summary
     if isinstance(value, str):
         return {
@@ -1101,6 +1130,7 @@ def _novelty_paper_row(paper: dict[str, Any], *, focus: str) -> dict[str, Any]:
     url = str(paper.get("url", "")).strip()
     return {
         "source": "arxiv",
+        "source_type": "paper",
         "title": str(paper.get("title", "")).strip(),
         "url": url,
         "source_domain": _novelty_url_domain(url),
@@ -1114,11 +1144,14 @@ def _novelty_paper_row(paper: dict[str, Any], *, focus: str) -> dict[str, Any]:
 def _novelty_web_row(result: dict[str, Any], *, focus: str) -> dict[str, Any]:
     url = str(result.get("url", "")).strip()
     abstract = result.get("snippet") or result.get("abstract") or result.get("description") or ""
+    domain = str(result.get("source_domain", "")).strip() or _novelty_url_domain(url)
+    source_type = _novelty_web_source_type(url=url, domain=domain, title=result.get("title", ""), abstract=abstract)
     return {
         "source": "web",
+        "source_type": source_type,
         "title": str(result.get("title", "")).strip(),
         "url": url,
-        "source_domain": str(result.get("source_domain", "")).strip() or _novelty_url_domain(url),
+        "source_domain": domain,
         "published": "",
         "abstract": str(abstract).strip()[:700],
         "authors": [],
@@ -1140,6 +1173,7 @@ def _novelty_assessment(idea: str, rows: list[dict[str, Any]], errors: list[dict
     top_score = closest[0]["score"] if closest else 0.0
     arxiv_count = sum(1 for row in rows if row.get("source") == "arxiv")
     web_count = sum(1 for row in rows if row.get("source") == "web")
+    web_source_types = _novelty_web_source_type_counts(rows)
     if not rows and errors:
         risk = "unknown_search_incomplete"
         verdict = "Novelty is not assessable because one or more retrieval passes failed."
@@ -1164,6 +1198,7 @@ def _novelty_assessment(idea: str, rows: list[dict[str, Any]], errors: list[dict
             "retrieved_papers": arxiv_count,
             "web_results": web_count,
             "web_results_with_snippets": sum(1 for row in rows if row.get("source") == "web" and row.get("abstract")),
+            "web_source_types": web_source_types,
             "failed_queries": len(errors),
             "failed_arxiv_queries": sum(1 for error in errors if error.get("source") == "arxiv"),
             "failed_web_queries": sum(1 for error in errors if error.get("source") == "web"),
@@ -1185,27 +1220,33 @@ def _novelty_scored_prior(row: dict[str, Any], terms: list[str]) -> dict[str, An
     focus = str(row.get("focus", ""))
     focus_score = 0.15 if any(key in focus for key in ("architecture", "mechanism", "relevance")) else 0.0
     recent_score = 0.1 if _novelty_is_recent(row.get("published", "")) else 0.0
-    score = min(1.0, round(term_score * 0.75 + focus_score + recent_score, 3))
+    source_type = str(row.get("source_type", "general_web"))
+    source_score = _novelty_source_type_score(source_type)
+    score = min(1.0, round(term_score * 0.7 + focus_score + recent_score + source_score, 3))
     return {
         "source": row.get("source", ""),
+        "source_type": source_type,
         "title": row.get("title", ""),
         "url": row.get("url", ""),
         "source_domain": row.get("source_domain", ""),
         "published": row.get("published", ""),
         "focus": focus,
         "score": score,
+        "source_score": source_score,
         "matched_terms": matched,
         "evidence_excerpt": str(row.get("abstract", ""))[:240],
-        "reason": _novelty_prior_reason(matched, focus, row.get("published", ""), row.get("source", "")),
+        "reason": _novelty_prior_reason(matched, focus, row.get("published", ""), row.get("source", ""), source_type),
     }
 
 
-def _novelty_prior_reason(matched: list[str], focus: str, published: Any, source: Any) -> str:
+def _novelty_prior_reason(matched: list[str], focus: str, published: Any, source: Any, source_type: Any) -> str:
     bits = []
     if matched:
         bits.append("shares idea terms: " + ", ".join(matched[:6]))
     if source == "web":
         bits.append("retrieved from web search")
+    if source_type in {"paper", "benchmark", "code_repository", "project_page", "documentation"}:
+        bits.append(f"source type: {source_type}")
     if "architecture" in focus:
         bits.append("retrieved by architecture-focused search")
     if "mechanism" in focus:
@@ -1233,6 +1274,46 @@ def _novelty_year(value: Any) -> int | None:
 def _novelty_url_domain(url: str) -> str:
     host = urlparse(str(url)).netloc.lower()
     return host[4:] if host.startswith("www.") else host
+
+
+def _novelty_web_source_type(*, url: Any, domain: Any, title: Any, abstract: Any) -> str:
+    url_text = str(url or "").lower()
+    domain_text = str(domain or "").lower()
+    haystack = f"{url_text} {domain_text} {title or ''} {abstract or ''}".lower()
+    if any(key in domain_text for key in ("arxiv.org", "openreview.net", "aclanthology.org", "proceedings.mlr.press", "papers.nips.cc", "semanticscholar.org")):
+        return "paper"
+    if any(key in domain_text for key in ("paperswithcode.com", "benchmark", "evals")) or any(key in haystack for key in ("benchmark", "leaderboard", "evaluation suite")):
+        return "benchmark"
+    if any(key in domain_text for key in ("github.com", "gitlab.com", "bitbucket.org", "huggingface.co")) or any(key in haystack for key in ("repository", "implementation", "source code")):
+        return "code_repository"
+    if any(key in domain_text for key in ("readthedocs.io", "docs.", "documentation")) or any(key in haystack for key in ("api reference", "documentation")):
+        return "documentation"
+    if any(key in haystack for key in ("project page", "demo", "dataset page", "technical report")):
+        return "project_page"
+    return "general_web"
+
+
+def _novelty_source_type_score(source_type: str) -> float:
+    return {
+        "paper": 0.06,
+        "benchmark": 0.05,
+        "code_repository": 0.04,
+        "project_page": 0.035,
+        "documentation": 0.02,
+        "general_web": 0.0,
+    }.get(source_type, 0.0)
+
+
+def _novelty_web_source_type_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts = {source_type: 0 for source_type in sorted(NOVELTY_WEB_SOURCE_TYPES)}
+    for row in rows:
+        if row.get("source") != "web":
+            continue
+        source_type = str(row.get("source_type", "general_web"))
+        if source_type not in counts:
+            source_type = "general_web"
+        counts[source_type] += 1
+    return {key: value for key, value in counts.items() if value}
 
 
 def _novelty_recent_window_label() -> str:
