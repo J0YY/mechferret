@@ -18,7 +18,6 @@ import math
 import statistics
 from typing import Any
 
-from ..defaults import DEFAULT_INTERP_MODEL
 from ..models import ExperimentResult, ExperimentSpec
 from ..text import stable_id
 from .backends import resolve_backend
@@ -88,13 +87,16 @@ def _items(value: Any) -> list[Any]:
 
 
 class InterpEngine:
-    def __init__(self, model: str = DEFAULT_INTERP_MODEL, backend: str = "auto") -> None:
-        self.model = _text(model).strip() or DEFAULT_INTERP_MODEL
+    def __init__(self, model: str | None = None, backend: str = "auto") -> None:
+        self.model = _text(model).strip()
         self.requested_backend = _text(backend).strip() or "auto"
         self._backends: dict[tuple[str, str], object] = {}
 
     def backend_for(self, model: str | None = None, backend: str | None = None):
-        key = (_text(model).strip() or self.model, _text(backend).strip() or self.requested_backend)
+        model_name = _text(model).strip() or self.model
+        if not model_name:
+            raise ValueError("model is required; pass --model or use a skill that declares one.")
+        key = (model_name, _text(backend).strip() or self.requested_backend)
         if key not in self._backends:
             self._backends[key] = resolve_backend(key[0], key[1])
         return self._backends[key]

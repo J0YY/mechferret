@@ -552,6 +552,32 @@ class AgentToolTest(unittest.TestCase):
         ok = json.loads(tools.run_tool("present_options", {"options": [{"title": "Run audit", "summary": "..."}]}))
         self.assertEqual(ok["options"], ["Run audit"])
 
+    def test_run_discovery_requires_explicit_model_without_modelled_skill(self):
+        from mechferret import tools
+
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = json.loads(
+                tools.run_tool(
+                    "run_discovery",
+                    {
+                        "skill": "ioi-circuit",
+                        "backend": "synthetic",
+                        "out_dir": str(Path(tmp) / "run"),
+                        "db_path": str(Path(tmp) / "memory.sqlite"),
+                        "include_memory": False,
+                    },
+                )
+            )
+        self.assertFalse(payload["ok"])
+        self.assertIn("explicit model", payload["error"])
+
+    def test_system_prompt_does_not_inject_memory_by_default(self):
+        with patch.dict(os.environ, {"MECHFERRET_INCLUDE_MEMORY_CONTEXT": ""}):
+            prompt = agent.build_system_prompt()
+
+        self.assertNotIn("Previously confirmed mechanisms", prompt)
+        self.assertNotIn("find the IOI circuit in gpt2", prompt)
+
     def test_verify_novelty_runs_deep_recent_architecture_search(self):
         from mechferret import tools
 
@@ -817,6 +843,7 @@ class AgentToolTest(unittest.TestCase):
                 "run_discovery",
                 {
                     "skill": "ioi-circuit",
+                    "model": "gpt2",
                     "backend": "synthetic",
                     "out_dir": str(run_dir),
                     "db_path": str(Path(tmp) / "memory.sqlite"),

@@ -16,7 +16,6 @@ from __future__ import annotations
 import importlib.util
 import os
 
-from ..defaults import DEFAULT_INTERP_MODEL
 from .synthetic import SyntheticBackend
 from .tasks import get_task
 
@@ -30,26 +29,34 @@ def transformer_lens_available() -> bool:
     )
 
 
-def resolve_backend(model: str, backend: str = "auto"):
+def resolve_backend(model: str | None, backend: str = "auto"):
     """Return a backend instance honouring an explicit request or auto-detection."""
 
+    model_name = _model_name(model)
     choice = (backend or "auto").lower()
     if choice == "synthetic":
-        return SyntheticBackend(model)
+        return SyntheticBackend(model_name)
     if choice in {"transformer_lens", "tl", "real"}:
         if not transformer_lens_available():
             raise RuntimeError(
                 "transformer_lens backend requested but torch/transformer_lens are not installed. "
                 "Install with `pip install -e '.[interp]'` or run with --backend synthetic."
             )
-        return TransformerLensBackend(model)
+        return TransformerLensBackend(model_name)
     # auto / modal-local: prefer real measurement when the deps are present.
     if transformer_lens_available():
         try:
-            return TransformerLensBackend(model)
+            return TransformerLensBackend(model_name)
         except Exception:  # pragma: no cover - fall back if model load fails
-            return SyntheticBackend(model)
-    return SyntheticBackend(model)
+            return SyntheticBackend(model_name)
+    return SyntheticBackend(model_name)
+
+
+def _model_name(model: str | None) -> str:
+    name = (model or "").strip() if isinstance(model, str) else ""
+    if not name:
+        raise ValueError("model is required; pass --model or use a skill that declares one.")
+    return name
 
 
 class TransformerLensBackend:  # pragma: no cover - exercised only with torch installed
@@ -58,11 +65,11 @@ class TransformerLensBackend:  # pragma: no cover - exercised only with torch in
     name = "transformer_lens"
     available = True
 
-    def __init__(self, model: str = DEFAULT_INTERP_MODEL) -> None:
+    def __init__(self, model: str) -> None:
         import torch  # noqa: F401
         from transformer_lens import HookedTransformer
 
-        self.model_name = (model or DEFAULT_INTERP_MODEL).lower()
+        self.model_name = _model_name(model).lower()
         self.model = HookedTransformer.from_pretrained(self.model_name)
         self.model.eval()
         self.n_layers = self.model.cfg.n_layers

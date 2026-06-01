@@ -483,7 +483,7 @@ Options:
 - `-h`, `--help`: show this help message and exit
 - `--skill`: Named skill/playbook (see `mechferret /skills`) or a path to a skill JSON.
 - `--task`: choices: `ioi`, `induction`, `greater_than`, `factual_recall`; Interpretability task.
-- `--model`: Model to investigate (e.g. pythia-160m, gpt2).
+- `--model`: Model to investigate; required unless --skill declares one.
 - `--backend`: choices: `auto`, `synthetic`, `transformer_lens`; Experiment backend for interpretability probes.
 - `--source`: Prior-art documents to ground hypotheses.
 - `--url`: URL to fetch as prior art.
@@ -501,7 +501,7 @@ Options:
 
 Examples:
 
-- `mechferret discover --skill ioi-circuit --backend synthetic --json`
+- `mechferret discover --skill <skill> --model <model> --backend synthetic --json`
 
 ### `sae`
 
@@ -994,7 +994,7 @@ Options:
 Examples:
 
 - `mechferret skills --json`
-- `mechferret skills ioi-circuit`
+- `mechferret skills <skill> --json`
 
 ### `repl`
 
@@ -1121,9 +1121,9 @@ Positionals:
 Options:
 
 - `-h`, `--help`: show this help message and exit
-- `--skill`: Skill to run remotely (e.g. ioi-circuit).
+- `--skill`: Skill to run remotely.
 - `--task`: choices: `ioi`, `induction`, `greater_than`, `factual_recall`; Interpretability task for remote experiments.
-- `--model`: Model to investigate remotely.
+- `--model`: Model to investigate remotely; required unless --skill declares one.
 - `--out`: Output directory for Modal artifacts.
 - `--json`: Print machine-readable JSON.
 
@@ -1154,13 +1154,13 @@ Positionals:
 Options:
 
 - `-h`, `--help`: show this help message and exit
-- `--skill`: Skill to run remotely (e.g. ioi-circuit).
+- `--skill`: Skill to run remotely.
 - `--task`: choices: `ioi`, `induction`, `greater_than`, `factual_recall`; Interpretability task for cluster experiments.
-- `--model`: Model to investigate on the cluster.
+- `--model`: Model to investigate on the cluster; required unless --skill declares one.
 - `--out`: Output directory for cluster artifacts.
 - `--dry-run`: Print the ssh+srun command without executing.
 - `--json`: Print machine-readable JSON.
 
 Examples:
 
-- `mechferret cluster run --skill ioi-circuit --dry-run --json`
+- `mechferret cluster run --skill <skill> --model <model> --dry-run --json`

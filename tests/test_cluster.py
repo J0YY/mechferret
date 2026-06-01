@@ -118,13 +118,13 @@ class ClusterTest(unittest.TestCase):
 
         self.assertIn("cd ''", cmd)
         self.assertIn("python3 -m mechferret", cmd)
-        self.assertIn("--model pythia-160m", cmd)
+        self.assertNotIn("--model", cmd)
         self.assertEqual(inv[1], "")
         self.assertIn("--cpus-per-task 8", inv[2])
         self.assertIn("--mem 32G", inv[2])
 
     def test_dry_run_returns_command_without_executing(self):
-        result = dispatch_discovery_cluster(skill="ioi-circuit", dry_run=True, out_dir=tempfile.mkdtemp())
+        result = dispatch_discovery_cluster(skill="ioi-circuit", model="gpt2", dry_run=True, out_dir=tempfile.mkdtemp())
         self.assertTrue(result["dry_run"])
         self.assertIn("ssh", result["command"])
 
@@ -166,7 +166,7 @@ class ClusterTest(unittest.TestCase):
 
             for var in ("REMOTE_HOST", "REMOTE_PROJECT_DIR"):
                 os.environ.pop(var, None)
-            result = dispatch_discovery_cluster(skill="ioi-circuit", out_dir=Path(tmp) / "run")
+            result = dispatch_discovery_cluster(skill="ioi-circuit", model="gpt2", out_dir=Path(tmp) / "run")
             self.assertEqual(result["backend"], "local")
             self.assertGreaterEqual(len(result["run"]["discoveries"]), 1)
 

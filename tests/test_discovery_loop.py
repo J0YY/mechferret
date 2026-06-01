@@ -5,7 +5,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from mechferret.defaults import DEFAULT_INTERP_MODEL
 from mechferret.discovery import DiscoveryController, request_alignment_issue
 from mechferret.hooks import Budget, BudgetGuard
 from mechferret.coordinator import Coordinator, default_workers
@@ -97,7 +96,7 @@ class SkillTest(unittest.TestCase):
                 self.assertEqual([skill.name for skill in listed], ["good"])
                 skill = skills_mod.load_skill("good")
                 self.assertEqual(skill.task, "ioi")
-                self.assertEqual(skill.model, DEFAULT_INTERP_MODEL)
+                self.assertEqual(skill.model, "")
                 self.assertEqual(skill.max_screen_heads, 96)
                 self.assertEqual(skill.promote_top_k, 5)
                 self.assertEqual(skill.seeds, [0, 2])
@@ -135,14 +134,10 @@ class HypothesisFlowTest(unittest.TestCase):
 
     def test_hypothesis_generation_normalizes_malformed_boundary_values(self):
         gen = HypothesisGenerator(["bad"], seeds=["2", "bad", -1, True, 2])
-        hyps, specs = gen.screen(b"find ioi", [], max_heads="bad", source_ids=[" src ", None, b"bytes"])
-
-        self.assertEqual(gen.model, DEFAULT_INTERP_MODEL)
+        with self.assertRaisesRegex(ValueError, "model is required"):
+            gen.screen(b"find ioi", [], max_heads="bad", source_ids=[" src ", None, b"bytes"])
+        self.assertEqual(gen.model, "")
         self.assertEqual(gen.seeds, [2])
-        self.assertEqual(hyps[0].task, "ioi")
-        self.assertEqual(specs[0].seeds, [2])
-        self.assertEqual(hyps[0].source_ids, ["src", "bytes"])
-        self.assertGreater(len(specs), 1)
 
     def test_promote_skips_malformed_screen_results(self):
         gen = HypothesisGenerator("gpt2")
@@ -289,7 +284,7 @@ class DiscoveryLoopTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             run = DiscoveryController(root / "mem.sqlite").run(
-                skill="ioi-circuit", backend="synthetic", out_dir=root / "run", include_memory=False
+                skill="ioi-circuit", model="gpt2", backend="synthetic", out_dir=root / "run", include_memory=False
             )
             self.assertEqual(run.mode, "discovery")
             self.assertGreaterEqual(len(run.discoveries), 1)
@@ -317,7 +312,7 @@ class DiscoveryLoopTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             DiscoveryController(root / "mem.sqlite").run(
-                skill="ioi-circuit", backend="synthetic", out_dir=root / "run", include_memory=False
+                skill="ioi-circuit", model="gpt2", backend="synthetic", out_dir=root / "run", include_memory=False
             )
             run_json = root / "run" / "run.json"
             payload = json.loads(run_json.read_text(encoding="utf-8"))
@@ -350,6 +345,7 @@ class DiscoveryLoopTest(unittest.TestCase):
             root = Path(tmp)
             run = DiscoveryController(root / "mem.sqlite").run(
                 skill="ioi-circuit",
+                model="gpt2",
                 backend="synthetic",
                 out_dir=root / "run",
                 include_memory=False,
@@ -383,6 +379,7 @@ class DiscoveryLoopTest(unittest.TestCase):
             ):
                 run = DiscoveryController(root / "mem.sqlite").run(
                     skill="ioi-circuit",
+                    model="gpt2",
                     backend="synthetic",
                     out_dir=root / "run",
                     include_memory=False,
@@ -399,6 +396,7 @@ class DiscoveryLoopTest(unittest.TestCase):
             root = Path(tmp)
             run = DiscoveryController(root / "mem.sqlite").run(
                 skill="ioi-circuit",
+                model="gpt2",
                 backend="synthetic",
                 out_dir=root / "run",
                 budget=Budget(max_experiments=20, max_rounds=2),
@@ -412,6 +410,7 @@ class DiscoveryLoopTest(unittest.TestCase):
             run = DiscoveryController(root / "mem.sqlite").run(
                 question=b"Find IOI heads",
                 skill="ioi-circuit",
+                model="gpt2",
                 backend=[],
                 out_dir=root / "run",
                 source_paths=None,
@@ -438,6 +437,7 @@ class DiscoveryLoopTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "not aligned"):
                 DiscoveryController(root / "mem.sqlite").run(
                     "Find SAEs for OpenVLA",
+                    model="gpt2",
                     backend="synthetic",
                     out_dir=root / "run",
                     include_memory=False,
@@ -448,6 +448,7 @@ class DiscoveryLoopTest(unittest.TestCase):
             root = Path(tmp)
             run = DiscoveryController(root / "mem.sqlite").run(
                 "Find SAEs for OpenVLA",
+                model="gpt2",
                 task="ioi",
                 backend="synthetic",
                 out_dir=root / "run",
@@ -652,6 +653,7 @@ class DiscoveryLoopTest(unittest.TestCase):
             ):
                 run = DiscoveryController(root / "mem.sqlite").run(
                     "Find IOI heads",
+                    model="gpt2",
                     task="ioi",
                     backend="synthetic",
                     out_dir=root / "run",

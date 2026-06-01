@@ -549,7 +549,7 @@ def plan_markdown(project_root: str | Path = PROJECT_ROOT, manifest: str | Path 
     next_actions = "\n".join(f"- {action}" for action in st["next_actions"])
     return f"""# OpenVLA SAE Workflow
 
-This is the supported path for prompts like "find SAEs for OpenVLA". It does not pretend this is a GPT-2 head-circuit discovery task; it prepares the activation-cache, SAE-training, and causal-evaluation workflow that the project needs.
+This is the supported path for prompts like "find SAEs for OpenVLA". It does not pretend this is a text-only head-circuit discovery task; it prepares the activation-cache, SAE-training, and causal-evaluation workflow that the project needs.
 
 ## Project Files
 {checks}

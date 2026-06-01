@@ -1,11 +1,12 @@
 """Conversational research agent.
 
-The REPL pipes your prompts to a model (Claude or GPT). The model holds the
+The REPL pipes your prompts to a model. The model holds the
 conversation and decides when to reach for MechFerret's *architecture/agent*
 parts — the research pipeline, the discovery loop, the skills, the environment
 — which are exposed to it as tools. So "hello" just gets a reply; "ground this
-idea in sources" makes the model call ``run_research``, while "find the IOI
-circuit in gpt2" makes it call ``run_discovery`` and narrate the result.
+idea in sources" makes the model call ``run_research``, while an explicit
+model-and-task experiment request makes it call ``run_discovery`` and narrate
+the result.
 
 Provider calls go over stdlib ``urllib`` (no SDK needs installing into the pipx
 venv). Anthropic and OpenAI tool-use are both supported.
@@ -37,7 +38,10 @@ the general prompt-to-dossier research pipeline, run the interpretability
 discovery loop, and list skills. Use them — don't guess.
 Use run_research for general literature/source-grounded research questions and
 planning. Use run_discovery only for supported mechanistic-interpretability
-experiment tasks such as IOI/induction/greater-than/factual recall circuits.
+experiment tasks when the user or selected skill supplies the model under study.
+Never choose a model, task, paper, or known circuit by default. If the user did
+not name the model and the selected skill does not declare one, ask for the
+model before proposing experiment details.
 Treat audit advisories in tool results as user-facing caveats, not hidden
 metadata.
 When the user wants to investigate a model's internals, plan a paper, or run
@@ -97,7 +101,7 @@ def build_system_prompt() -> str:
     except (OSError, subprocess.TimeoutExpired):
         pass
 
-    mechanisms = _recall_mechanisms()
+    mechanisms = _recall_mechanisms() if os.getenv("MECHFERRET_INCLUDE_MEMORY_CONTEXT") == "1" else ""
     if mechanisms:
         sections.append("Previously confirmed mechanisms (from memory):\n" + mechanisms)
     return "\n\n".join(sections)

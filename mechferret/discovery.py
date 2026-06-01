@@ -30,7 +30,6 @@ from typing import Any
 from .agents import ClaimExtractor, Critic, Planner
 from .config import load_config
 from .coordinator import Coordinator, default_workers
-from .defaults import DEFAULT_INTERP_MODEL
 from .hooks import Budget, BudgetGuard
 from .interp.critic import ExperimentCritic
 from .interp.engine import InterpEngine
@@ -69,10 +68,10 @@ UNSUPPORTED_REQUEST_SIGNALS = {
     "sae": "SAE work needs an activation-cache/SAELens workflow, not the current head-circuit discovery skills",
     "saes": "SAE work needs an activation-cache/SAELens workflow, not the current head-circuit discovery skills",
     "sparse autoencoder": "SAE work needs an activation-cache/SAELens workflow, not the current head-circuit discovery skills",
-    "openvla": "OpenVLA needs a VLA/vision-action backend, not the current GPT-2 text-task skills",
-    "vision-language-action": "VLA models need a vision-action backend, not the current GPT-2 text-task skills",
-    "vla": "VLA models need a vision-action backend, not the current GPT-2 text-task skills",
-    "robot": "robot/VLA work needs a vision-action backend, not the current GPT-2 text-task skills",
+    "openvla": "OpenVLA needs a VLA/vision-action backend, not the current text-task discovery skills",
+    "vision-language-action": "VLA models need a vision-action backend, not the current text-task discovery skills",
+    "vla": "VLA models need a vision-action backend, not the current text-task discovery skills",
+    "robot": "robot/VLA work needs a vision-action backend, not the current text-task discovery skills",
 }
 
 
@@ -279,7 +278,7 @@ class DiscoveryController:
         *,
         skill: str | Skill | None = None,
         task: str | None = None,
-        model: str = DEFAULT_INTERP_MODEL,
+        model: str | None = None,
         backend: str = "auto",
         source_paths: list[str] | None = None,
         urls: list[str] | None = None,
@@ -293,7 +292,7 @@ class DiscoveryController:
     ) -> ResearchRun:
         question = _text(question).strip()
         task = _text(task).strip() or None
-        model = _text(model).strip() or DEFAULT_INTERP_MODEL
+        model = _text(model).strip()
         backend = _text(backend).strip() or "auto"
         source_paths = _path_list(source_paths)
         urls = _path_list(urls)
@@ -309,6 +308,8 @@ class DiscoveryController:
             task = task or skill_obj.task
             model = skill_obj.model or model
             budget = budget or skill_obj.to_budget()
+        if not model:
+            raise ValueError("discovery needs an explicit model; pass --model or use a skill that declares a model.")
         task_name = (task or infer_task(question)).lower()
         get_task(task_name)  # validate
         question = question or f"Which components of {model} implement the {task_name} behaviour?"

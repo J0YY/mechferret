@@ -21,10 +21,10 @@ from __future__ import annotations
 
 import hashlib
 import math
+import os
 import random
 from dataclasses import dataclass, field
 
-from ..defaults import DEFAULT_INTERP_MODEL
 from .tasks import Task, get_task
 
 # Standard small interpretability models and their shapes.
@@ -44,8 +44,41 @@ def _seeded_rng(*parts: object) -> random.Random:
     return random.Random(int(digest[:16], 16))
 
 
-def _shape(model: str) -> tuple[int, int, int]:
-    return MODEL_SHAPES.get((model or DEFAULT_INTERP_MODEL).lower(), (12, 12, 768))
+def _shape(model: str | None) -> tuple[int, int, int]:
+    key = _model_key(model)
+    if key in MODEL_SHAPES:
+        return MODEL_SHAPES[key]
+    configured = _configured_shape()
+    if configured is not None:
+        return configured
+    known = ", ".join(sorted(MODEL_SHAPES))
+    raise ValueError(
+        f"synthetic backend does not know the shape for model {key!r}; "
+        f"use one of: {known}, or set MECHFERRET_SYNTHETIC_SHAPE=layers,heads,d_model."
+    )
+
+
+def _model_key(model: str | None) -> str:
+    key = (model or "").strip().lower() if isinstance(model, str) else ""
+    if not key:
+        raise ValueError("model is required; pass --model or use a skill that declares one.")
+    return key
+
+
+def _configured_shape() -> tuple[int, int, int] | None:
+    raw = os.getenv("MECHFERRET_SYNTHETIC_SHAPE", "").strip()
+    if not raw:
+        return None
+    parts = [part.strip() for part in raw.split(",")]
+    if len(parts) != 3:
+        raise ValueError("MECHFERRET_SYNTHETIC_SHAPE must be layers,heads,d_model.")
+    try:
+        layers, heads, d_model = (int(part) for part in parts)
+    except ValueError as exc:
+        raise ValueError("MECHFERRET_SYNTHETIC_SHAPE must contain integers.") from exc
+    if layers <= 0 or heads <= 0 or d_model <= 0:
+        raise ValueError("MECHFERRET_SYNTHETIC_SHAPE values must be positive.")
+    return layers, heads, d_model
 
 
 @dataclass(slots=True)
@@ -127,8 +160,8 @@ class SyntheticBackend:
     name = "synthetic"
     available = True
 
-    def __init__(self, model: str = DEFAULT_INTERP_MODEL, run_salt: object | None = None) -> None:
-        self.model = (model or DEFAULT_INTERP_MODEL).lower()
+    def __init__(self, model: str, run_salt: object | None = None) -> None:
+        self.model = _model_key(model)
         self.n_layers, self.n_heads, self.d_model = _shape(self.model)
         self.run_salt = run_salt if run_salt is not None else random.SystemRandom().getrandbits(64)
         self._circuits: dict[str, GroundTruthCircuit] = {}

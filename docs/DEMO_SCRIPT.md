@@ -16,8 +16,8 @@ mechferret          # bare command = interactive prompt, like `claude`
 ## 1. Run the headline discovery
 
 ```bash
-mechferret discover --skill ioi-circuit --out runs/demo
-mechferret discover --skill ioi-circuit --out runs/demo --json
+mechferret discover --skill <skill> --model <model> --out runs/demo
+mechferret discover --skill <skill> --model <model> --out runs/demo --json
 open runs/demo/report.html
 ```
 
@@ -69,7 +69,7 @@ condition; no human approves each step."
 python3 -m mechferret /modal status                 # detects install + auth + GPU
 python3 -m mechferret /modal setup                  # one-time setup steps
 python3 -m mechferret /modal status --json          # script-friendly status
-python3 -m mechferret /modal run --skill ioi-circuit # whole loop on a GPU, real GPT-2
+python3 -m mechferret /modal run --skill <skill> --model <model> # whole loop on a GPU
 ```
 
 "Same code, same probes — the local backend swaps for `transformer_lens` on a
@@ -79,9 +79,9 @@ Modal A10G when you want real model measurements."
 
 ```bash
 mechferret /cluster setup                            # generic connection steps
-mechferret /cluster run --skill ioi-circuit --dry-run # shows the exact ssh+srun command
-mechferret /cluster run --skill ioi-circuit --dry-run --json
-mechferret /cluster run --skill ioi-circuit          # ssh -> srun -> discover -> scp dossier back
+mechferret /cluster run --skill <skill> --model <model> --dry-run # shows the exact ssh+srun command
+mechferret /cluster run --skill <skill> --model <model> --dry-run --json
+mechferret /cluster run --skill <skill> --model <model>          # ssh -> srun -> discover -> scp dossier back
 ```
 
 "Have a cluster instead of Modal? Set a few env vars and the same loop runs via

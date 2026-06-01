@@ -22,8 +22,6 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from .defaults import DEFAULT_INTERP_MODEL
-
 CONFIG_PATHS = (
     Path(os.getenv("MECHFERRET_CLUSTER_CONFIG", "")) if os.getenv("MECHFERRET_CLUSTER_CONFIG") else None,
     Path(".mechferret/cluster.json"),
@@ -137,7 +135,7 @@ def build_remote_command(
     skill: str | None,
     question: str,
     task: str | None,
-    model: str,
+    model: str | None,
     remote_out: str,
 ) -> str:
     """The inner command run on the compute node (under srun)."""
@@ -151,7 +149,9 @@ def build_remote_command(
     parts.append(f"cd {shlex.quote(remote_project_dir)}")
     if _safe_bool(getattr(cfg, "git_pull", False)):
         parts.append("git pull --ff-only")
-    discover = [python, "-m", "mechferret", "discover", "--backend", "transformer_lens", "--model", str(model or DEFAULT_INTERP_MODEL), "--out", str(remote_out)]
+    discover = [python, "-m", "mechferret", "discover", "--backend", "transformer_lens", "--out", str(remote_out)]
+    if model:
+        discover += ["--model", str(model)]
     if skill:
         discover += ["--skill", str(skill)]
     if task:
@@ -187,7 +187,7 @@ def dispatch_discovery_cluster(
     question: str = "",
     skill: str | None = None,
     task: str | None = None,
-    model: str = DEFAULT_INTERP_MODEL,
+    model: str | None = None,
     out_dir: str | Path = "runs/cluster",
     dry_run: bool = False,
 ) -> dict[str, Any]:

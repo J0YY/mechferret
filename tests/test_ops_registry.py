@@ -180,7 +180,7 @@ class OpsRegistryTest(unittest.TestCase):
             main(["commands", "--group", "compute", "--json"])
         compute_group_payload = json.loads(compute_group_json_out.getvalue())
         self.assertIn("mechferret modal status --json", " ".join(compute_group_payload["next_actions"]))
-        self.assertIn("mechferret cluster run --skill ioi-circuit --dry-run --json", " ".join(compute_group_payload["next_actions"]))
+        self.assertIn("mechferret cluster run --skill <skill> --model <model> --dry-run --json", " ".join(compute_group_payload["next_actions"]))
 
         search_out = StringIO()
         with redirect_stdout(search_out):
@@ -731,7 +731,7 @@ class OpsRegistryTest(unittest.TestCase):
         playbook_payload = json.loads(playbook_out.getvalue())
         self.assertEqual(playbook_payload["kind"], "playbook")
         self.assertIn("mechferret skills --json", " ".join(playbook_payload["next_actions"]))
-        self.assertIn("mechferret discover --skill ioi-circuit --backend synthetic --json", " ".join(playbook_payload["next_actions"]))
+        self.assertIn("--model <model> --backend synthetic --json", " ".join(playbook_payload["next_actions"]))
 
         text_out = StringIO()
         with redirect_stdout(text_out):
@@ -751,8 +751,9 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertEqual(listed["count"], len(listed["skills"]))
         self.assertTrue(any(skill["name"] == "ioi-circuit" for skill in listed["skills"]))
         listed_actions = " ".join(listed["next_actions"])
-        self.assertIn("mechferret skills ioi-circuit --json", listed_actions)
-        self.assertIn("mechferret discover --skill ioi-circuit --backend synthetic --json", listed_actions)
+        self.assertIn("mechferret skills", listed_actions)
+        self.assertIn("--json", listed_actions)
+        self.assertIn("--model <model> --backend synthetic --json", listed_actions)
 
         detail_out = StringIO()
         with redirect_stdout(detail_out):
@@ -763,7 +764,7 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertIn("budget", detail["skill"])
         self.assertIn("min_rigor", detail["skill"])
         detail_actions = " ".join(detail["next_actions"])
-        self.assertIn("mechferret discover --skill ioi-circuit --backend synthetic --json", detail_actions)
+        self.assertIn("mechferret discover --skill ioi-circuit --model <model> --backend synthetic --json", detail_actions)
         self.assertIn("mechferret commands discover --json", detail_actions)
 
         text_out = StringIO()
@@ -772,7 +773,7 @@ class OpsRegistryTest(unittest.TestCase):
         rendered = text_out.getvalue()
         self.assertIn("Skill: ioi-circuit", rendered)
         self.assertIn("Next actions:", rendered)
-        self.assertIn("mechferret discover --skill ioi-circuit --backend synthetic --json", rendered)
+        self.assertIn("mechferret discover --skill ioi-circuit --model <model> --backend synthetic --json", rendered)
 
     def test_cli_compute_status_json_reports_next_actions(self):
         from mechferret.cli import main
@@ -827,7 +828,7 @@ class OpsRegistryTest(unittest.TestCase):
                 main(["cluster", "status"])
         rendered = text_out.getvalue()
         self.assertIn("Next actions:", rendered)
-        self.assertIn("mechferret cluster run --skill ioi-circuit --dry-run --json", rendered)
+        self.assertIn("mechferret cluster run --skill <skill> --model <model> --dry-run --json", rendered)
 
     def test_cli_api_json_redacts_keys_and_reports_updates(self):
         from mechferret.cli import main
@@ -2868,7 +2869,7 @@ class OpsRegistryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             DiscoveryController(root / "memory.sqlite").run(
-                skill="ioi-circuit", backend="synthetic", out_dir=root / "runs" / "discovery", include_memory=False
+                skill="ioi-circuit", model="gpt2", backend="synthetic", out_dir=root / "runs" / "discovery", include_memory=False
             )
             result = bundle_run_artifacts(runs_root=root / "runs", out=root / "exports", project_root=root / "openvla")
             bundle = Path(result["path"])
@@ -3511,6 +3512,7 @@ class OpsRegistryTest(unittest.TestCase):
             root = Path(tmp)
             DiscoveryController(root / "memory.sqlite").run(
                 skill="ioi-circuit",
+                model="gpt2",
                 backend="synthetic",
                 out_dir=root / "runs" / "discovery",
                 include_memory=False,
@@ -4128,6 +4130,8 @@ class OpsRegistryTest(unittest.TestCase):
                         "discover",
                         "--skill",
                         "ioi-circuit",
+                        "--model",
+                        "gpt2",
                         "--backend",
                         "synthetic",
                         "--db",
@@ -4201,6 +4205,8 @@ class OpsRegistryTest(unittest.TestCase):
                         "discover",
                         "--skill",
                         "ioi-circuit",
+                        "--model",
+                        "gpt2",
                         "--backend",
                         "synthetic",
                         "--db",

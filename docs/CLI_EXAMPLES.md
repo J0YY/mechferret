@@ -43,12 +43,12 @@
 
 ## `discover`
 
-- `mechferret discover --skill ioi-circuit --backend synthetic --json`
+- `mechferret discover --skill <skill> --model <model> --backend synthetic --json`
 
 ## `skills`
 
 - `mechferret skills --json`
-- `mechferret skills ioi-circuit`
+- `mechferret skills <skill> --json`
 
 ## `modal`
 
@@ -56,7 +56,7 @@
 
 ## `cluster`
 
-- `mechferret cluster run --skill ioi-circuit --dry-run --json`
+- `mechferret cluster run --skill <skill> --model <model> --dry-run --json`
 
 ## `init`
 

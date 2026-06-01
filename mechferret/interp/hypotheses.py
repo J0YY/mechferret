@@ -21,7 +21,6 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from ..defaults import DEFAULT_INTERP_MODEL
 from ..models import ExperimentResult, ExperimentSpec, Hypothesis
 from ..text import stable_id
 from .synthetic import _shape
@@ -153,8 +152,8 @@ def _hypothesis(value: Any) -> Hypothesis | None:
 
 
 class HypothesisGenerator:
-    def __init__(self, model: str = DEFAULT_INTERP_MODEL, seeds: tuple[int, ...] = (0, 1, 2)) -> None:
-        self.model = _text(model).strip() or DEFAULT_INTERP_MODEL
+    def __init__(self, model: str | None = None, seeds: tuple[int, ...] = (0, 1, 2)) -> None:
+        self.model = _text(model).strip()
         self.seeds = _seeds(seeds)
 
     # --- round 0: screening ---------------------------------------------------------

@@ -14,7 +14,6 @@ from .audit import audit_run_artifact, latest_run_json, print_audit
 from .config import PROVIDERS, configure_provider, default_config_path, load_config, prompt_api_key, save_config
 from .controller import MechFerret
 from .costs import estimate_run_cost
-from .defaults import DEFAULT_INTERP_MODEL
 from .discovery import DiscoveryController
 from .goal_loop import GoalLoop
 from .hooks import Budget
@@ -138,10 +137,10 @@ COMMAND_EXAMPLES = {
         "mechferret api --clear openai --json",
     ],
     "goal": ['mechferret goal "Make this investigation publishable" --seed-corpus --max-iterations 1 --max-rounds 1 --json'],
-    "discover": ["mechferret discover --skill ioi-circuit --backend synthetic --json"],
-    "skills": ["mechferret skills --json", "mechferret skills ioi-circuit"],
+    "discover": ["mechferret discover --skill <skill> --model <model> --backend synthetic --json"],
+    "skills": ["mechferret skills --json", "mechferret skills <skill> --json"],
     "modal": ["mechferret modal status --json"],
-    "cluster": ["mechferret cluster run --skill ioi-circuit --dry-run --json"],
+    "cluster": ["mechferret cluster run --skill <skill> --model <model> --dry-run --json"],
     "init": ["mechferret init", "mechferret init --json"],
     "status": ["mechferret status --select best", "mechferret status --json"],
     "next": ["mechferret next", "mechferret next --json", "mechferret next --select best --limit 3"],
@@ -273,7 +272,7 @@ def build_parser() -> argparse.ArgumentParser:
     discover.add_argument("question", nargs="?", default="", help="Research question (optional if --skill is given).")
     discover.add_argument("--skill", help="Named skill/playbook (see `mechferret /skills`) or a path to a skill JSON.")
     discover.add_argument("--task", choices=["ioi", "induction", "greater_than", "factual_recall"], help="Interpretability task.")
-    discover.add_argument("--model", default=DEFAULT_INTERP_MODEL, help="Model to investigate (e.g. pythia-160m, gpt2).")
+    discover.add_argument("--model", help="Model to investigate; required unless --skill declares one.")
     discover.add_argument("--backend", choices=["auto", "synthetic", "transformer_lens"], default="auto", help="Experiment backend for interpretability probes.")
     discover.add_argument("--source", action="append", default=[], help="Prior-art documents to ground hypotheses.")
     discover.add_argument("--url", action="append", default=[], help="URL to fetch as prior art.")
@@ -296,18 +295,18 @@ def build_parser() -> argparse.ArgumentParser:
     modal_cmd = sub.add_parser("modal", aliases=["/modal"], help="Connect to Modal for GPU compute and run experiments remotely.")
     modal_cmd.add_argument("action", nargs="?", default="status", choices=["status", "setup", "run", "deploy"], help="Modal workflow action.")
     modal_cmd.add_argument("question", nargs="?", default="", help="Question for remote run actions.")
-    modal_cmd.add_argument("--skill", help="Skill to run remotely (e.g. ioi-circuit).")
+    modal_cmd.add_argument("--skill", help="Skill to run remotely.")
     modal_cmd.add_argument("--task", choices=["ioi", "induction", "greater_than", "factual_recall"], help="Interpretability task for remote experiments.")
-    modal_cmd.add_argument("--model", default=DEFAULT_INTERP_MODEL, help="Model to investigate remotely.")
+    modal_cmd.add_argument("--model", help="Model to investigate remotely; required unless --skill declares one.")
     modal_cmd.add_argument("--out", default="runs/modal", help="Output directory for Modal artifacts.")
     modal_cmd.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
 
     cluster_cmd = sub.add_parser("cluster", aliases=["/cluster"], help="Run experiments on a generic SLURM cluster over SSH (srun).")
     cluster_cmd.add_argument("action", nargs="?", default="status", choices=["status", "setup", "run"], help="Cluster workflow action.")
     cluster_cmd.add_argument("question", nargs="?", default="", help="Question for remote run actions.")
-    cluster_cmd.add_argument("--skill", help="Skill to run remotely (e.g. ioi-circuit).")
+    cluster_cmd.add_argument("--skill", help="Skill to run remotely.")
     cluster_cmd.add_argument("--task", choices=["ioi", "induction", "greater_than", "factual_recall"], help="Interpretability task for cluster experiments.")
-    cluster_cmd.add_argument("--model", default=DEFAULT_INTERP_MODEL, help="Model to investigate on the cluster.")
+    cluster_cmd.add_argument("--model", help="Model to investigate on the cluster; required unless --skill declares one.")
     cluster_cmd.add_argument("--out", default="runs/cluster", help="Output directory for cluster artifacts.")
     cluster_cmd.add_argument("--dry-run", action="store_true", help="Print the ssh+srun command without executing.")
     cluster_cmd.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
@@ -1074,12 +1073,13 @@ def main(argv: list[str] | None = None) -> None:
 
 def handle_discover(args) -> None:
     skill = args.skill
-    note = ""
     if not skill and not args.question and not args.task:
-        skill = "ioi-circuit"  # the headline demo
-        note = "No question/skill/task given; running the `ioi-circuit` skill."
-        if not args.json:
-            print(f"{note}\n")
+        exc = ValueError("discovery needs a question, --task, or --skill; no demo skill is selected implicitly.")
+        if args.json:
+            print(json.dumps(_error_payload("discover", exc, out_dir=args.out), indent=2, sort_keys=True))
+            raise SystemExit(2) from None
+        print(f"Discovery not started: {exc}", file=sys.stderr)
+        raise SystemExit(2) from None
     budget = _budget_override(args)
     try:
         run = DiscoveryController(args.db).run(
@@ -1106,8 +1106,6 @@ def handle_discover(args) -> None:
         raise SystemExit(2) from None
     if args.json:
         payload = _run_payload(run, command="discover")
-        if note:
-            payload["note"] = note
         print(json.dumps(payload, indent=2, sort_keys=True))
         return
     print_discovery_summary(run)
@@ -2686,17 +2684,17 @@ def _skills_next_actions(skill=None, *, listed: list[Any] | None = None) -> list
     if listed is not None:
         if not listed:
             return ["Run `mechferret doctor --json` to verify the packaged skills directory."]
-        preferred = next((item for item in listed if item.name == "ioi-circuit"), listed[0])
+        preferred = listed[0]
         return [
             f"Run `mechferret skills {preferred.name} --json` to inspect one skill's budget and stop criteria.",
-            f"Run `mechferret discover --skill {preferred.name} --backend synthetic --json` to exercise a skill locally.",
+            f"Run `mechferret discover --skill {preferred.name} --model <model> --backend synthetic --json` to exercise a skill locally.",
             "Run `mechferret registry --kind playbook --json` to compare skill-backed playbooks.",
         ]
     if skill is None:
         return ["Run `mechferret skills --json` to list available skills."]
     return [
-        f"Run `mechferret discover --skill {skill.name} --backend synthetic --json` to exercise this skill locally.",
-        f"Run `mechferret discover --skill {skill.name} --backend transformer_lens --json` when local model dependencies are installed.",
+        f"Run `mechferret discover --skill {skill.name} --model <model> --backend synthetic --json` to exercise this skill locally.",
+        f"Run `mechferret discover --skill {skill.name} --model <model> --backend transformer_lens --json` when local model dependencies are installed.",
         "Run `mechferret commands discover --json` to inspect discovery options.",
     ]
 
@@ -2720,7 +2718,7 @@ def handle_modal(args) -> None:
         elif not status["authenticated"]:
             print("\nAuthenticate with: modal token new")
         else:
-            print("\nReady. Run: mechferret /modal run --skill ioi-circuit")
+            print("\nReady. Run: mechferret /modal run --skill <skill> --model <model>")
         _print_next_actions(payload.get("next_actions", []))
         return
     if args.action == "setup":
@@ -2732,7 +2730,7 @@ def handle_modal(args) -> None:
         print("  1. pip install -e '.[modal,interp]'")
         print("  2. modal token new            # browser auth")
         print("  3. (optional) modal secret create openai-api-key OPENAI_API_KEY=sk-...")
-        print("  4. mechferret /modal run --skill ioi-circuit")
+        print("  4. mechferret /modal run --skill <skill> --model <model>")
         print(f"\nCurrent status: installed={status['installed']} authenticated={status['authenticated']}")
         _print_next_actions(payload.get("next_actions", []))
         return
@@ -2744,7 +2742,7 @@ def handle_modal(args) -> None:
         print(f"App name: {status['app']} (gpu={status['gpu']})")
         return
     # action == "run"
-    skill = args.skill or (None if (args.question or args.task) else "ioi-circuit")
+    skill = args.skill
     print(f"Dispatching discovery to Modal (skill={skill}, task={args.task}, model={args.model})...")
     result = dispatch_discovery(
         question=args.question, skill=skill, task=args.task, model=args.model, out_dir=args.out
@@ -2794,7 +2792,7 @@ def handle_cluster(args) -> None:
         _print_next_actions(payload.get("next_actions", []))
         return
     # action == "run"
-    skill = args.skill or (None if (args.question or args.task) else "ioi-circuit")
+    skill = args.skill
     if args.dry_run:
         result = dispatch_discovery_cluster(
             question=args.question, skill=skill, task=args.task, model=args.model, out_dir=args.out, dry_run=True
@@ -2841,7 +2839,7 @@ def _modal_payload(action: str, status: dict[str, Any]) -> dict[str, Any]:
             "pip install -e '.[modal,interp]'",
             "modal token new",
             "modal secret create openai-api-key OPENAI_API_KEY=<redacted>",
-            "mechferret /modal run --skill ioi-circuit",
+            "mechferret /modal run --skill <skill> --model <model>",
         ]
         payload["next_actions"] = _modal_next_actions(action, status)
     elif action == "deploy":
@@ -2865,19 +2863,19 @@ def _modal_next_actions(action: str, status: dict[str, Any]) -> list[str]:
                 "Run `mechferret modal status --json` to verify authentication.",
             ]
         return [
-            "Run `mechferret modal run --skill ioi-circuit --json` to launch a remote discovery run.",
+            "Run `mechferret modal run --skill <skill> --model <model> --json` to launch a remote discovery run.",
             "Run `mechferret modal deploy --json` to inspect the deploy command.",
         ]
     if action == "setup":
         return [
             "Install Modal support with `pip install -e '.[modal,interp]'`.",
             "Run `modal token new` to authenticate Modal.",
-            "Run `mechferret modal run --skill ioi-circuit --json` after setup succeeds.",
+            "Run `mechferret modal run --skill <skill> --model <model> --json` after setup succeeds.",
         ]
     if action == "deploy":
         return [
             "Run `modal deploy mechferret/modal_app.py` to deploy the GPU app.",
-            "Run `mechferret modal run --skill ioi-circuit --json` to execute a discovery run.",
+            "Run `mechferret modal run --skill <skill> --model <model> --json` to execute a discovery run.",
         ]
     return []
 
@@ -2908,7 +2906,7 @@ def _cluster_payload(action: str, status: dict[str, Any]) -> dict[str, Any]:
             "cd <remote-project-dir> && pip install -e '.[interp]'",
             "export REMOTE_HOST=<your-ssh-alias>",
             "export REMOTE_PROJECT_DIR=<remote-project-dir>",
-            "mechferret /cluster run --skill ioi-circuit --dry-run",
+            "mechferret /cluster run --skill <skill> --model <model> --dry-run",
         ]
         payload["next_actions"] = _cluster_next_actions(action, status)
     return payload
@@ -2918,8 +2916,8 @@ def _cluster_next_actions(action: str, status: dict[str, Any]) -> list[str]:
     if action == "status":
         if status.get("configured"):
             return [
-                "Run `mechferret cluster run --skill ioi-circuit --dry-run --json` to inspect the SSH+srun command.",
-                "Run `mechferret cluster run --skill ioi-circuit --json` when the dry run looks right.",
+                "Run `mechferret cluster run --skill <skill> --model <model> --dry-run --json` to inspect the SSH+srun command.",
+                "Run `mechferret cluster run --skill <skill> --model <model> --json` when the dry run looks right.",
             ]
         return [
             "Run `mechferret cluster setup --json` for environment variables and connection steps.",
@@ -2929,12 +2927,12 @@ def _cluster_next_actions(action: str, status: dict[str, Any]) -> list[str]:
         return [
             "Set `REMOTE_HOST` and `REMOTE_PROJECT_DIR` for your login node and remote checkout.",
             "Run `mechferret cluster status --json` to verify configuration.",
-            "Run `mechferret cluster run --skill ioi-circuit --dry-run --json` before launching a job.",
+            "Run `mechferret cluster run --skill <skill> --model <model> --dry-run --json` before launching a job.",
         ]
     return []
 
 
-def _dispatch_payload(kind: str, result: dict[str, Any], *, skill: str | None, task: str | None, model: str) -> dict[str, Any]:
+def _dispatch_payload(kind: str, result: dict[str, Any], *, skill: str | None, task: str | None, model: str | None) -> dict[str, Any]:
     run = result.get("run") if isinstance(result.get("run"), dict) else {}
     metrics = run.get("metrics", {}) if isinstance(run, dict) else {}
     payload: dict[str, Any] = {
@@ -2976,8 +2974,8 @@ def _print_cluster_setup() -> None:
     print("       # optional: export REMOTE_GIT_PULL=1   # git pull --ff-only before each run")
     print("  4. Verify, dry-run, then run:")
     print("       mechferret /cluster status")
-    print("       mechferret /cluster run --skill ioi-circuit --dry-run")
-    print("       mechferret /cluster run --skill ioi-circuit")
+    print("       mechferret /cluster run --skill <skill> --model <model> --dry-run")
+    print("       mechferret /cluster run --skill <skill> --model <model>")
     print("\n  MechFerret will: ssh -> srun (with your flags) -> `mechferret discover --backend transformer_lens`")
     print("  on a compute node, then scp the dossier back to your --out directory.")
 
@@ -3123,8 +3121,8 @@ def _registry_next_actions(kind: str, items: list[dict[str, Any]]) -> list[str]:
             for item in items
             if str(item.get("kind", "")) == "playbook"
         }
-        if "ioi-circuit" in skill_names:
-            actions.append("Run `mechferret discover --skill ioi-circuit --backend synthetic --json` to exercise a playbook locally.")
+        if skill_names:
+            actions.append("Run `mechferret discover --skill <skill> --model <model> --backend synthetic --json` to exercise a playbook locally.")
         actions.append("Run `mechferret commands discover --json` to inspect discovery options.")
         return actions
     if kind == "evaluator":

@@ -1734,7 +1734,7 @@ def _why() -> None:
 Modern AI models are black boxes: we can see their inputs and outputs, but not
 the reasoning in between. Mechanistic interpretability reverse-engineers that
 middle — finding the specific circuits (attention heads, MLP features) a model
-uses. Example: in GPT-2, a small set of "name-mover" heads literally copy the
+uses. Example: in a studied transformer, a small set of "name-mover" heads can copy the
 right name when completing "When John and Mary went to the store, Mary gave a
 drink to ___". We can point to the parts and show, by ablating them, that they
 cause the behaviour.

@@ -33,7 +33,7 @@ class ModalDispatchTest(unittest.TestCase):
     def test_dispatch_falls_back_to_local(self):
         # Modal is not installed in CI, so dispatch must run locally and still produce a run.
         with tempfile.TemporaryDirectory() as tmp:
-            result = dispatch_discovery(skill="ioi-circuit", out_dir=Path(tmp) / "run")
+            result = dispatch_discovery(skill="ioi-circuit", model="gpt2", out_dir=Path(tmp) / "run")
             self.assertIn(result["backend"], {"local", "modal"})
             self.assertGreaterEqual(len(result["run"]["discoveries"]), 1)
             self.assertTrue((Path(tmp) / "run").exists())

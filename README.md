@@ -454,7 +454,7 @@ pipeline has to be useful before every GPU job or full experiment is ready.
 | Modal path | Runs heavier experiment work on GPU infrastructure. | Same artifact contract, larger compute. |
 
 The discovery loop refuses obvious prompt/task drift. For example, an OpenVLA
-SAE prompt should not silently run a GPT-2 IOI circuit demo; MechFerret will ask
+SAE prompt should not silently run an unrelated text-circuit demo; MechFerret will ask
 you to run `mechferret sae openvla plan`, use literature mode, add a matching
 skill/backend, or explicitly pass `--allow-mismatch` for a deliberate demo run.
 
@@ -509,7 +509,7 @@ Useful commands:
 pip install -e '.[modal,interp]'
 mechferret /modal status
 mechferret /modal setup
-mechferret /modal run --skill ioi-circuit
+mechferret /modal run --skill <skill> --model <model>
 mechferret /modal status --json
 ```
 
@@ -590,9 +590,9 @@ Useful demo flow:
 Run the local discovery check:
 
 ```bash
-mechferret discover --skill ioi-circuit --out runs/demo
-mechferret discover --skill ioi-circuit --out runs/demo --json
-mechferret discover --skill ioi-circuit --seed-corpus --out runs/demo-with-prior
+mechferret discover --skill <skill> --model <model> --out runs/demo
+mechferret discover --skill <skill> --model <model> --out runs/demo --json
+mechferret discover --skill <skill> --model <model> --seed-corpus --out runs/demo-with-prior
 open runs/demo/report.html
 ```
 
@@ -600,9 +600,9 @@ Run on Modal:
 
 ```bash
 mechferret /modal status
-mechferret /modal run --skill ioi-circuit --out runs/modal-demo
+mechferret /modal run --skill <skill> --model <model> --out runs/modal-demo
 mechferret /cluster status --json
-mechferret /cluster run --skill ioi-circuit --dry-run --json
+mechferret /cluster run --skill <skill> --model <model> --dry-run --json
 ```
 
 ## What Gets Produced

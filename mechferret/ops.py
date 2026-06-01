@@ -509,7 +509,7 @@ current, and specific to this research project.
 Installed: {installed}
 
 ## Research Target
-- Model under study: gpt2
+- Model under study: <model>
 - Task or behavior:
 - Dataset or prompt set:
 - Main hypothesis:
@@ -4045,7 +4045,7 @@ def _artifact_result(
         elif target == "openvla":
             next_actions.append("Run `mechferret quickstart --mode openvla --run` to scaffold OpenVLA artifacts.")
         elif target in {"experiments", "discoveries"}:
-            next_actions.append("Run `mechferret discover --skill ioi-circuit` to create discovery artifacts.")
+            next_actions.append("Run `mechferret discover --skill <skill> --model <model>` to create discovery artifacts.")
         elif target == "manifest":
             next_actions.append("Rerun the dossier with the current MechFerret version to create manifest.json.")
         elif reason == "explicit path":

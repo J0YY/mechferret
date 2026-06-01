@@ -103,7 +103,7 @@ def _greater_than() -> Task:
         clean_prompts=clean,
         corrupt_prompts=corrupt,
         answers=answers,
-        reference="Hanna et al. 2023, 'How does GPT-2 compute greater-than?'.",
+        reference="Hanna et al. 2023, greater-than circuit analysis.",
         expected_components=("mlp_comparison", "attention_to_year"),
     )
 

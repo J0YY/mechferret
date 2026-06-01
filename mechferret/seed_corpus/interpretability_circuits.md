@@ -8,7 +8,7 @@ MLP neurons that implement specific behaviours.
 
 The IOI task asks a model to complete sentences like "When John and Mary went to
 the store, Mary gave a drink to" with the indirect object ("John"). Wang et al.
-(2022) identified a circuit in GPT-2 small involving several head classes:
+(2022) identified a circuit in a small text transformer involving several head classes:
 duplicate-token heads detect the repeated name, S-inhibition heads suppress the
 subject, and name-mover heads copy the correct name to the final position. A
 small number of negative name-mover heads push in the opposite direction. The

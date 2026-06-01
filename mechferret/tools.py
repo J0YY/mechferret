@@ -19,8 +19,6 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from .defaults import DEFAULT_INTERP_MODEL
-
 MAX_OUTPUT = 12000
 PERSIST_THRESHOLD = 16000  # results larger than this are written to disk, not truncated
 JSON_PREVIEW_FIELD_LIMIT = 2000
@@ -738,7 +736,7 @@ def tool_run_discovery(args: dict[str, Any]) -> str:
     task, invalid = _optional_string_arg(args, "task")
     if invalid:
         return json.dumps(invalid)
-    model, invalid = _optional_string_arg(args, "model", DEFAULT_INTERP_MODEL)
+    model, invalid = _optional_string_arg(args, "model")
     if invalid:
         return json.dumps(invalid)
     llm_model, invalid = _optional_string_arg(args, "llm_model")
@@ -787,7 +785,7 @@ def tool_run_discovery(args: dict[str, Any]) -> str:
         question=question or "",
         skill=skill,
         task=task,
-        model=model or DEFAULT_INTERP_MODEL,
+        model=model,
         backend=backend,
         source_paths=source_paths,
         urls=urls,
@@ -1898,7 +1896,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
      "parameters": _obj({"url": {"type": "string"}}, ["url"])},
     {"name": "arxiv_search", "description": "Search arXiv for papers. Defaults to 20 results. sort_by: relevance | submittedDate | lastUpdatedDate. Use for literature grounding.",
      "parameters": _obj({"query": {"type": "string", "description": "arXiv query, e.g. 'cat:cs.LG AND (abs:sparse autoencoder OR abs:linear probe)'"}, "max_results": {"type": "integer"}, "sort_by": {"type": "string", "enum": ["relevance", "submittedDate", "lastUpdatedDate"]}}, ["query"])},
-    {"name": "neuronpedia_search", "description": "Semantic search over SAE-feature explanations for a model on Neuronpedia (e.g. model_id 'gpt2-small').",
+    {"name": "neuronpedia_search", "description": "Semantic search over SAE-feature explanations for an explicit Neuronpedia model id.",
      "parameters": _obj({"model_id": {"type": "string"}, "query": {"type": "string"}}, ["model_id", "query"])},
     {"name": "verify_novelty", "description": "Deep novelty check for a research idea using multi-pass arXiv searches across relevance, recency, architecture, and recent-discovery angles. Call this for each proposed research direction before presenting it.",
      "parameters": _obj({"idea": {"type": "string", "description": "the research idea/direction to novelty-check"}, "queries": {"type": "array", "items": {"type": "string"}, "description": "optional arXiv queries to probe for prior work"}}, ["idea"])},
@@ -1927,7 +1925,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {"name": "run_discovery", "description": "Run the autonomous interpretability discovery loop to find/confirm mechanisms (heads/circuits) for a behaviour.",
      "parameters": _obj({
          "question": {"type": "string"},
-         "skill": {"type": "string", "enum": ["ioi-circuit", "find-induction-heads", "logit-lens-sweep", "factual-recall-trace"]},
+         "skill": {"type": "string", "description": "Skill name from `mechferret skills`, or a path to a skill JSON."},
          "task": {"type": "string", "enum": ["ioi", "induction", "greater_than", "factual_recall"]},
          "model": {"type": "string"},
          "backend": {"type": "string", "enum": ["auto", "synthetic", "transformer_lens", "tl", "real"]},
