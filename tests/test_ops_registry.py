@@ -1591,6 +1591,8 @@ class OpsRegistryTest(unittest.TestCase):
                 (other / "runs" / "demo" / "report.md").write_text("wrong markdown\n", encoding="utf-8")
                 verification = verify_run_artifacts(run_json)
                 self.assertTrue(verification["passed"], verification["failed_checks"])
+                self.assertIn(f"mechferret audit {run_json} --strict", " ".join(verification["next_actions"]))
+                self.assertIn(f"mechferret bundle {run_json}", " ".join(verification["next_actions"]))
                 report = resolve_artifact("report", runs_root=root / "runs")
                 self.assertTrue(report["exists"])
                 self.assertEqual(Path(report["path"]), root / "runs" / "demo" / "report.html")
@@ -3924,6 +3926,9 @@ class OpsRegistryTest(unittest.TestCase):
                 if command == "verify":
                     self.assertIn("Checks:", out.getvalue())
                     self.assertIn("Detailed checks omitted", out.getvalue())
+                    self.assertIn("Next actions:", out.getvalue())
+                    self.assertIn("mechferret audit", out.getvalue())
+                    self.assertIn("mechferret bundle", out.getvalue())
                     self.assertNotIn("source_id_declared:", out.getvalue())
                 if command == "verify-bundle":
                     self.assertIn("Checks:", out.getvalue())

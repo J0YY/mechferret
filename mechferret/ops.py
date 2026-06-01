@@ -872,8 +872,8 @@ def project_status(
                 *(["Run `mechferret init` to create MECHFERRET.md project notes."] if not notes_path.exists() else []),
                 *(["Run `mechferret quickstart --run` to create a local dossier."] if latest_run is None else []),
                 *((audit or {}).get("next_actions", [])),
-                *((verification or {}).get("next_actions", [])),
-                *((bundle_verification or {}).get("next_actions", [])),
+                *((verification or {}).get("next_actions", []) if verification and not verification.get("passed") else []),
+                *((bundle_verification or {}).get("next_actions", []) if bundle_verification and not bundle_verification.get("passed") else []),
                 *artifacts.get("next_actions", []),
                 *doc.get("next_actions", []),
             ]
@@ -3169,6 +3169,11 @@ def verify_run_artifacts(
         }
     refresh_run_manifest(target)
     repaired = verify_run_manifest(target)
+    if repaired.get("passed"):
+        repaired = {
+            **repaired,
+            "next_actions": _dedupe_actions(list(repaired.get("next_actions", [])) + _manifest_verified_next_actions(target)),
+        }
     return {
         **repaired,
         "repair_attempted": True,
@@ -3179,7 +3184,8 @@ def verify_run_artifacts(
 
 def _annotate_manifest_repairability(target: Path, result: dict[str, Any]) -> dict[str, Any]:
     if result.get("passed"):
-        return {**result, "repairable": False}
+        actions = list(result.get("next_actions", [])) + _manifest_verified_next_actions(target)
+        return {**result, "next_actions": _dedupe_actions(actions), "repairable": False}
     failed = list(result.get("failed_checks", []))
     blockers = _manifest_repair_blockers(failed)
     if blockers:
@@ -3193,6 +3199,14 @@ def _annotate_manifest_repairability(target: Path, result: dict[str, Any]) -> di
         "repairable": True,
         "repair_command": command,
     }
+
+
+def _manifest_verified_next_actions(target: Path) -> list[str]:
+    quoted_run = shlex.quote(str(target))
+    return [
+        f"Run `mechferret audit {quoted_run} --strict` to check readiness gates.",
+        f"Run `mechferret bundle {quoted_run}` to package the verified dossier for sharing.",
+    ]
 
 
 def _manifest_repair_blockers(failed_checks: list[str]) -> list[str]:
