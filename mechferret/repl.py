@@ -1531,9 +1531,11 @@ def _print_queue(runner: ChatJobRunner) -> None:
     saved = runner.saved_only()
     saved_side_ready = _ready_saved_side_jobs(saved)
     saved_restorable = _restorable_saved_jobs(saved)
+    live_deferred = _deferred_choice_jobs(recent)
+    saved_deferred = _deferred_choice_jobs(saved)
     if runner.paused():
         print(_c("  queue paused; queued prompts will wait for /queue resume", "33"))
-    if active is None and not side_active and not side_ready and not queued and not saved:
+    if active is None and not side_active and not side_ready and not live_deferred and not saved_deferred and not queued and not saved:
         print(_c("  queue empty", "2"))
     else:
         if active is not None:
@@ -1542,6 +1544,8 @@ def _print_queue(runner: ChatJobRunner) -> None:
             print(_c(f"  side    #{job.id} {job.kind}: {_short_job_text(_display_job_text(job))}", PURPLE))
         for job in side_ready:
             print(_c(f"  ready   #{job.id} {job.kind}: {_short_job_text(_display_job_text(job))}", "33"))
+        for job in live_deferred:
+            print(_c(f"  choice  #{job.id} {job.kind}: {_short_job_text(_display_job_text(job))}", "33"))
         for job in queued:
             print(_c(f"  queued  #{job.id} {job.kind}: {_short_job_text(_display_job_text(job))}", "2"))
         for job in saved:
@@ -1560,7 +1564,7 @@ def _print_queue(runner: ChatJobRunner) -> None:
             print(_c("  run `/queue show side` or `/queue show <id>` to inspect saved prompts and replies", "2"))
         if saved_restorable:
             print(_c("  run `/queue restore` to enqueue saved prompts, or `/queue clear` to drop them", "2"))
-        deferred = [job for job in [*recent, *saved] if job.deferred_options and not job.deferred_selection]
+        deferred = [*live_deferred, *saved_deferred]
         if deferred:
             latest = max(deferred, key=_job_order_key)
             print(_c(f"  run `/queue choose #{latest.id} <number|title>` to resume a deferred option selection", "2"))
