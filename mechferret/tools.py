@@ -652,10 +652,13 @@ def tool_run_research(args: dict[str, Any]) -> str:
             allow_seed_corpus=allow_seed_corpus,
         )
     except (FileNotFoundError, ValueError) as exc:
+        error = str(exc)
+        failed_checks = ["provider_research"] if "Live provider research failed" in error else ["source_material"]
         return json.dumps(
             {
                 "ok": False,
-                "error": str(exc),
+                "error": error,
+                "failed_checks": failed_checks,
                 "next_actions": [
                     "Add source_paths or urls for project-specific evidence.",
                     "Use provider=openai or provider=anthropic for live research if configured.",
@@ -720,6 +723,7 @@ def tool_run_research(args: dict[str, Any]) -> str:
                 "provider_requested": run.provenance.get("provider_requested", ""),
                 "provider_available": run.provenance.get("provider_available", False),
                 "provider_source_added": run.provenance.get("provider_source_added", False),
+                "provider_research": run.provenance.get("provider_research", {}),
                 "used_packaged_seed_corpus": run.provenance.get("used_packaged_seed_corpus", False),
                 "source_count": run.provenance.get("source_count", 0),
             },

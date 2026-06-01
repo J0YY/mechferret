@@ -246,6 +246,7 @@ class MechFerret:
             selected_provider = "openai" if use_openai else provider
             research_adapter = make_research_adapter(selected_provider, model, config)
             provider_source_added = False
+            provider_research_diagnostic: dict[str, Any] = {}
             if not sources and not (research_adapter and research_adapter.available):
                 raise ValueError(
                     "No source material is available for this question. Add --source/--url, use --openai or a configured provider "
@@ -269,6 +270,7 @@ class MechFerret:
                             available=research_adapter.available,
                         ):
                             live_source = research_adapter.search_summary(question)
+                            provider_research_diagnostic = getattr(research_adapter, "last_diagnostic", {}) or {}
                             live_source = _source(live_source)
                             if live_source:
                                 sources.append(live_source)
@@ -277,6 +279,13 @@ class MechFerret:
                                 tracer.event("provider_source_added", source_id=live_source.id, provider=selected_provider)
                                 index = BM25Index.from_sources(sources)
                                 evidence = dedupe_evidence(evidence + index.search(question, limit=8))
+                            elif (
+                                not sources
+                                and selected_provider in {"openai", "anthropic"}
+                                and research_adapter.available
+                            ):
+                                reason = _text(provider_research_diagnostic.get("reason", "")).strip() or "no live source returned"
+                                raise ValueError(f"Live provider research failed for {selected_provider}: {reason}")
 
                     with tracer.span("extract_claims", evidence=len(evidence)):
                         extracted = self.extractor.extract(question, evidence, limit=24)
@@ -343,6 +352,7 @@ class MechFerret:
                     "provider_requested": selected_provider,
                     "provider_available": bool(research_adapter and research_adapter.available),
                     "provider_source_added": provider_source_added,
+                    "provider_research": provider_research_diagnostic,
                     "answer_author": answer_author,
                     "answer_provider": answer_provider,
                     "answer_model": answer_model,

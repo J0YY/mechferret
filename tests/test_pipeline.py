@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -1238,7 +1239,7 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(anthropic_source.text, "Anthropic brief")
         self.assertIn("Question: What is new?", anthropic_calls["messages"][0]["content"])
 
-    def test_live_research_adapters_treat_empty_or_provider_errors_as_absent(self):
+    def test_live_research_adapters_report_empty_or_provider_errors(self):
         from mechferret.config import MechFerretConfig, ProviderSettings
         from mechferret.llm import OpenAIWebResearch
 
@@ -1255,8 +1256,48 @@ class PipelineTest(unittest.TestCase):
         )
         adapter = OpenAIWebResearch(config=config)
         self.assertIsNone(adapter.search_summary([]))
+        self.assertEqual(adapter.last_diagnostic["reason"], "empty question")
         with patch.dict(sys.modules, {"openai": SimpleNamespace(OpenAI=FailingOpenAIClient)}):
             self.assertIsNone(adapter.search_summary("Need current context"))
+        self.assertIn("provider down", adapter.last_diagnostic["reason"])
+        self.assertEqual(adapter.last_diagnostic["provider"], "openai")
+
+    def test_provider_research_failure_without_sources_fails_closed(self):
+        from mechferret.config import MechFerretConfig, ProviderSettings, save_config
+
+        class FailingOpenAIClient:
+            def __init__(self, api_key):
+                self.responses = self
+
+            def create(self, **kwargs):
+                raise RuntimeError("provider down")
+
+        old_config = os.environ.get("MECHFERRET_CONFIG")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_path = root / "config.json"
+            os.environ["MECHFERRET_CONFIG"] = str(config_path)
+            save_config(
+                MechFerretConfig(
+                    default_provider="openai",
+                    providers={"openai": ProviderSettings(api_key="openai-key", model="openai-model")},
+                ),
+                config_path,
+            )
+            try:
+                with patch.dict(sys.modules, {"openai": SimpleNamespace(OpenAI=FailingOpenAIClient)}):
+                    with self.assertRaisesRegex(ValueError, "Live provider research failed for openai: provider down"):
+                        MechFerret(root / "memory.sqlite").run(
+                            "Need current context",
+                            provider="openai",
+                            include_memory=False,
+                            out_dir=root / "run",
+                        )
+            finally:
+                if old_config is None:
+                    os.environ.pop("MECHFERRET_CONFIG", None)
+                else:
+                    os.environ["MECHFERRET_CONFIG"] = old_config
 
 
 if __name__ == "__main__":

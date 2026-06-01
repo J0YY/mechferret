@@ -103,6 +103,7 @@ class OpenAIWebResearch:
     def __init__(self, model: str | None = None, config: MechFerretConfig | None = None) -> None:
         self.config = config or load_config()
         self.model = configured_model("openai", self.config, model)
+        self.last_diagnostic: dict[str, Any] = {}
 
     @property
     def available(self) -> bool:
@@ -111,12 +112,15 @@ class OpenAIWebResearch:
     def search_summary(self, question: str, allowed_domains: list[str] | None = None) -> Source | None:
         question_text = _text(question).strip()
         if not question_text:
+            self.last_diagnostic = {"ok": False, "provider": "openai", "reason": "empty question"}
             return None
         if not self.available:
+            self.last_diagnostic = {"ok": False, "provider": "openai", "model": self.model, "reason": "provider not configured"}
             return None
         try:
             from openai import OpenAI  # type: ignore
         except ImportError:
+            self.last_diagnostic = {"ok": False, "provider": "openai", "model": self.model, "reason": "openai package missing"}
             return None
 
         tool: dict[str, object] = {"type": "web_search"}
@@ -137,11 +141,14 @@ class OpenAIWebResearch:
                     f"Question: {question_text}"
                 ),
             )
-        except Exception:  # noqa: BLE001 - live search is optional; callers can continue without it
+        except Exception as exc:  # noqa: BLE001 - callers decide whether live search is required
+            self.last_diagnostic = {"ok": False, "provider": "openai", "model": self.model, "reason": str(exc)[:180]}
             return None
         text = _provider_text(getattr(response, "output_text", "")) or _provider_text(response)
         if not text:
+            self.last_diagnostic = {"ok": False, "provider": "openai", "model": self.model, "reason": "empty provider response"}
             return None
+        self.last_diagnostic = {"ok": True, "provider": "openai", "model": self.model, "reason": ""}
         return Source(
             id=stable_id("src", f"openai:{question_text}:{text[:500]}"),
             title=f"OpenAI web search: {question_text[:80]}",
@@ -158,6 +165,7 @@ class AnthropicResearch:
     def __init__(self, model: str | None = None, config: MechFerretConfig | None = None) -> None:
         self.config = config or load_config()
         self.model = configured_model("anthropic", self.config, model)
+        self.last_diagnostic: dict[str, Any] = {}
 
     @property
     def available(self) -> bool:
@@ -166,12 +174,15 @@ class AnthropicResearch:
     def search_summary(self, question: str, allowed_domains: list[str] | None = None) -> Source | None:
         question_text = _text(question).strip()
         if not question_text:
+            self.last_diagnostic = {"ok": False, "provider": "anthropic", "reason": "empty question"}
             return None
         if not self.available:
+            self.last_diagnostic = {"ok": False, "provider": "anthropic", "model": self.model, "reason": "provider not configured"}
             return None
         try:
             import anthropic  # type: ignore
         except ImportError:
+            self.last_diagnostic = {"ok": False, "provider": "anthropic", "model": self.model, "reason": "anthropic package missing"}
             return None
 
         client = anthropic.Anthropic(api_key=configured_api_key("anthropic", self.config))
@@ -191,12 +202,15 @@ class AnthropicResearch:
                     }
                 ],
             )
-        except Exception:  # noqa: BLE001 - live research is optional; callers can continue without it
+        except Exception as exc:  # noqa: BLE001 - callers decide whether live research is required
+            self.last_diagnostic = {"ok": False, "provider": "anthropic", "model": self.model, "reason": str(exc)[:180]}
             return None
         blocks = _items(getattr(message, "content", []))
         text = "\n".join(_provider_text(getattr(block, "text", "")) for block in blocks).strip()
         if not text:
+            self.last_diagnostic = {"ok": False, "provider": "anthropic", "model": self.model, "reason": "empty provider response"}
             return None
+        self.last_diagnostic = {"ok": True, "provider": "anthropic", "model": self.model, "reason": ""}
         return Source(
             id=stable_id("src", f"anthropic:{question_text}:{text[:500]}"),
             title=f"Anthropic research brief: {question_text[:80]}",

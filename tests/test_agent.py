@@ -1277,6 +1277,24 @@ class AgentToolTest(unittest.TestCase):
             )
             self.assertFalse(blocked["ok"])
             self.assertIn("No source material", blocked["error"])
+            self.assertEqual(blocked["failed_checks"], ["source_material"])
+
+            with patch("mechferret.controller.MechFerret.run", side_effect=ValueError("Live provider research failed for openai: provider down")):
+                provider_failed = json.loads(
+                    agent._run_tool(
+                        "run_research",
+                        {
+                            "question": "What is new?",
+                            "provider": "openai",
+                            "include_memory": False,
+                            "out_dir": str(root / "provider-failed"),
+                            "db_path": str(root / "memory.sqlite"),
+                        },
+                    )
+                )
+            self.assertFalse(provider_failed["ok"])
+            self.assertEqual(provider_failed["failed_checks"], ["provider_research"])
+            self.assertIn("provider down", provider_failed["error"])
 
             missing = json.loads(
                 agent._run_tool(
