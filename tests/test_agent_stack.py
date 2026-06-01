@@ -427,6 +427,7 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("/queue show <id>", rendered_help)
         self.assertIn("/queue retry <id>", rendered_help)
         self.assertIn("/queue edit <id> <text>", rendered_help)
+        self.assertIn("/queue move <id> first|last", rendered_help)
         self.assertIn("/queue pause", rendered_help)
         self.assertIn("/queue resume", rendered_help)
         self.assertIn("/queue restore", rendered_help)
@@ -689,6 +690,72 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("job #1 is running", rendered)
         self.assertIn("job #1 is done", rendered)
         self.assertEqual(running.text, "running prompt")
+
+    def test_repl_queue_move_reorders_paused_prompts_before_running(self):
+        from mechferret import repl
+
+        started = []
+
+        def fake_chat(agent, session, text, *, background=False):
+            started.append(text)
+            return text
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-move.json"))
+            try:
+                runner.pause()
+                first = runner.submit("first")
+                second = runner.submit("second")
+                third = runner.submit("third")
+                time.sleep(0.1)
+
+                repl._queue_move(runner, [str(third.id), "first"])
+                repl._queue_move(runner, [str(first.id), "after", str(second.id)])
+                self.assertEqual([job.id for job in runner.queued()], [third.id, second.id, first.id])
+
+                runner.resume()
+                self.assertTrue(runner.wait_idle(timeout=2))
+            finally:
+                runner.resume()
+                runner.stop(wait=True)
+
+        self.assertEqual(started, ["third", "second", "first"])
+        rendered = out.getvalue()
+        self.assertIn("moved #3 first", rendered)
+        self.assertIn("moved #1 after #2", rendered)
+
+    def test_repl_queue_move_refuses_nonqueued_or_missing_anchor(self):
+        from mechferret import repl
+
+        release = threading.Event()
+
+        def fake_chat(agent, session, text, *, background=False):
+            if text == "running":
+                self.assertTrue(release.wait(timeout=2))
+            return text
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-move-active.json"))
+            try:
+                running = runner.submit("running")
+                deadline = time.monotonic() + 2
+                while runner.active() is None and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertIsNotNone(runner.active())
+
+                repl._queue_move(runner, [str(running.id), "first"])
+                queued = runner.submit("queued")
+                repl._queue_move(runner, [str(queued.id), "before", "999"])
+            finally:
+                release.set()
+                runner.wait_idle(timeout=2)
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("job #1 is running", rendered)
+        self.assertIn("no queued anchor matched '999'", rendered)
 
     def test_repl_queue_pause_holds_prompts_until_resume(self):
         from mechferret import repl

@@ -24,6 +24,7 @@ SECTIONS: list[tuple[str, list[Command]]] = [
         Command("/queue show <id>", "show a queued job's full prompt, reply, or error"),
         Command("/queue retry <id>", "retry a job without retyping its prompt"),
         Command("/queue edit <id> <text>", "edit a queued prompt before it starts"),
+        Command("/queue move <id> first|last", "reorder a queued prompt before it starts"),
         Command("/queue pause", "hold queued prompts after the active reply finishes"),
         Command("/queue resume", "resume held queued prompts"),
         Command("/queue restore", "restore saved queued/running prompts from the last session"),

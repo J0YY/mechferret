@@ -212,6 +212,40 @@ class ChatJobRunner:
         self.save_pending()
         return edited, "updated"
 
+    def move(self, target: str, where: str, anchor: str = "") -> tuple[PromptJob | None, str]:
+        target = target.strip().lstrip("#")
+        where = where.strip().lower()
+        anchor = anchor.strip().lstrip("#")
+        with self._lock:
+            job = next((item for item in self._jobs if str(item.id) == target), None)
+            if job is None:
+                return None, "missing"
+            if job.status != "queued":
+                return job, job.status
+            queued = [item for item in self._jobs if item.status == "queued"]
+            if where not in {"first", "last", "before", "after"}:
+                return job, "usage"
+            if where in {"before", "after"}:
+                anchor_job = next((item for item in queued if str(item.id) == anchor), None)
+                if anchor_job is None:
+                    return job, "anchor"
+                queued.remove(job)
+                index = queued.index(anchor_job)
+                if where == "after":
+                    index += 1
+                queued.insert(index, job)
+            else:
+                queued.remove(job)
+                if where == "first":
+                    queued.insert(0, job)
+                else:
+                    queued.append(job)
+
+            queued_iter = iter(queued)
+            self._jobs = [next(queued_iter) if item.status == "queued" else item for item in self._jobs]
+        self.save_pending()
+        return job, "moved"
+
     def recent(self, limit: int = 8) -> list[PromptJob]:
         with self._lock:
             return list(self._jobs[-limit:])
@@ -289,6 +323,10 @@ class ChatJobRunner:
                     return
             time.sleep(0.05)
 
+    def _is_next_queued(self, job: PromptJob) -> bool:
+        with self._lock:
+            return next((item is job for item in self._jobs if item.status == "queued"), False)
+
     def _run(self) -> None:
         while True:
             job = self._queue.get()
@@ -300,6 +338,9 @@ class ChatJobRunner:
                     continue
                 if job.status == "canceled":
                     print(_c(f"  skipped canceled #{job.id}", "2"))
+                    continue
+                if not self._is_next_queued(job):
+                    self._queue.put(job)
                     continue
                 job.status = "running"
                 self._set_active(job)
@@ -644,6 +685,8 @@ def run_repl() -> None:
                 _queue_retry(runner, tokens[2:])
             elif len(tokens) > 1 and tokens[1].lower() == "edit":
                 _queue_edit(runner, tokens[2:], _line_after_words(line, 3))
+            elif len(tokens) > 1 and tokens[1].lower() == "move":
+                _queue_move(runner, tokens[2:])
             elif len(tokens) > 1 and tokens[1].lower() == "pause":
                 if runner.pause():
                     print(_c("  queue paused; active work can finish, but queued prompts will wait", "32"))
@@ -952,6 +995,29 @@ def _queue_edit(runner: ChatJobRunner, args: list[str], text: str) -> None:
         print(_c(f"  job #{job.id} is {status}; only queued prompts can be edited.", "33"))
         return
     print(_c(f"  edited #{job.id}", "32"))
+
+
+def _queue_move(runner: ChatJobRunner, args: list[str]) -> None:
+    target = args[0] if args else ""
+    where = args[1].lower() if len(args) > 1 else ""
+    anchor = args[2] if len(args) > 2 else ""
+    if not target or where not in {"first", "last", "before", "after"} or (where in {"before", "after"} and not anchor):
+        print(_c("  usage: /queue move <job id> first|last|before <job id>|after <job id>", "33"))
+        return
+    job, status = runner.move(target, where, anchor)
+    if job is None:
+        print(_c(f"  no queued job matched {target!r}", "33"))
+        return
+    if status == "usage":
+        print(_c("  usage: /queue move <job id> first|last|before <job id>|after <job id>", "33"))
+        return
+    if status == "anchor":
+        print(_c(f"  no queued anchor matched {anchor!r}", "33"))
+        return
+    if status != "moved":
+        print(_c(f"  job #{job.id} is {status}; only queued prompts can be moved.", "33"))
+        return
+    print(_c(f"  moved #{job.id} {where}{(' #' + anchor.lstrip('#')) if anchor else ''}", "32"))
 
 
 def _guard_agent_idle(runner: ChatJobRunner, action: str) -> bool:
