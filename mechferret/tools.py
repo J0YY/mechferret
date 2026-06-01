@@ -1574,6 +1574,7 @@ def _novelty_assessment(
     web_count = sum(1 for row in rows if row.get("source") == "web")
     web_source_types = _novelty_web_source_type_counts(rows)
     source_profile = _novelty_source_profile(rows)
+    freshness_profile = _novelty_freshness_profile(rows)
     arxiv_plan = arxiv_plan or []
     web_plan = web_plan or []
     search_audit = search_audit or []
@@ -1588,7 +1589,11 @@ def _novelty_assessment(
         "web_focuses": sorted({str(row.get("focus", "")) for row in web_plan if row.get("focus")}),
         "retrieved_evidence": len(rows),
         "retrieved_papers": arxiv_count,
-        "recent_evidence": sum(1 for row in rows if _novelty_is_recent(row.get("published", ""))),
+        "recent_evidence": freshness_profile["recent_evidence_count"],
+        "structured_recent_evidence": freshness_profile["structured_recent_evidence_count"],
+        "text_recent_evidence": freshness_profile["text_recent_evidence_count"],
+        "latest_evidence_year": freshness_profile["latest_year"],
+        "evidence_years": freshness_profile["years"],
         "web_results": web_count,
         "web_results_with_snippets": sum(1 for row in rows if row.get("source") == "web" and row.get("abstract")),
         "web_pages_fetched": sum(1 for row in rows if row.get("source") == "web" and row.get("fetched")),
@@ -1645,6 +1650,7 @@ def _novelty_assessment(
         "closest_prior_art": closest,
         "claim_readiness": _novelty_claim_readiness(risk, top_score, coverage),
         "coverage": coverage,
+        "freshness_profile": freshness_profile,
         "search_audit": audit_summary,
         "comparison_matrix": comparison_matrix,
         "novelty_threat_model": threat_model,
@@ -1737,7 +1743,7 @@ def _novelty_scored_prior(row: dict[str, Any], terms: list[str]) -> dict[str, An
     term_score = len(matched) / max(1, len(terms))
     focus = str(row.get("focus", ""))
     focus_score = 0.15 if any(key in focus for key in ("method", "mechanism", "relevance", "evaluation", "implementation")) else 0.0
-    recent_score = 0.1 if _novelty_is_recent(row.get("published", "")) else 0.0
+    recent_score = 0.1 if _novelty_row_is_recent(row) else 0.0
     source_type = str(row.get("source_type", "general_web"))
     source_score = _novelty_source_type_score(source_type)
     source_credibility = _novelty_source_credibility(source_type, row.get("source_domain", ""))
@@ -1756,7 +1762,7 @@ def _novelty_scored_prior(row: dict[str, Any], terms: list[str]) -> dict[str, An
         "source_credibility_score": source_credibility["score"],
         "matched_terms": matched,
         "evidence_excerpt": _novelty_evidence_excerpt(row),
-        "reason": _novelty_prior_reason(matched, focus, row.get("published", ""), row.get("source", ""), source_type),
+        "reason": _novelty_prior_reason(matched, focus, row, row.get("source", ""), source_type),
     }
 
 
@@ -1814,7 +1820,7 @@ def _novelty_comparison_matrix(scored: list[dict[str, Any]], coverage: dict[str,
                 "axis": axis,
                 "covered": bool(covered),
                 "evidence_count": len(matches),
-                "recent_evidence_count": sum(1 for row in matches if _novelty_is_recent(row.get("published", ""))),
+                "recent_evidence_count": sum(1 for row in matches if _novelty_row_is_recent(row)),
                 "strongest_score": round(float(top.get("score", 0.0) or 0.0), 3) if top else 0.0,
                 "representative_prior": representative,
                 "next_action": _novelty_axis_next_action(axis, bool(covered), representative),
@@ -1961,8 +1967,8 @@ def _novelty_disqualifier_required_evidence(threat: str) -> str:
 
 
 def _novelty_recent_pressure(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    recent_rows = [row for row in rows if _novelty_is_recent(row.get("published", ""))]
-    years = sorted({year for row in rows if (year := _novelty_year(row.get("published", "")))}, reverse=True)
+    recent_rows = [row for row in rows if _novelty_row_is_recent(row)]
+    years = sorted({year for row in rows for year in _novelty_evidence_years(row)}, reverse=True)
     recent_titles = []
     for row in recent_rows[:5]:
         title = str(row.get("title", "")).strip()
@@ -2137,7 +2143,7 @@ def _novelty_evidence_excerpt(row: dict[str, Any]) -> str:
     return (abstract or page)[:240]
 
 
-def _novelty_prior_reason(matched: list[str], focus: str, published: Any, source: Any, source_type: Any) -> str:
+def _novelty_prior_reason(matched: list[str], focus: str, row: dict[str, Any], source: Any, source_type: Any) -> str:
     bits = []
     if matched:
         bits.append("shares idea terms: " + ", ".join(matched[:6]))
@@ -2151,14 +2157,62 @@ def _novelty_prior_reason(matched: list[str], focus: str, published: Any, source
         bits.append("retrieved by mechanism-focused search")
     if "evaluation" in focus:
         bits.append("retrieved by evaluation-focused search")
-    if _novelty_is_recent(published):
+    if _novelty_row_is_recent(row):
         bits.append("within the recent-paper window")
     return "; ".join(bits) or "retrieved as adjacent prior art"
 
 
-def _novelty_is_recent(published: Any) -> bool:
-    year = _novelty_year(published)
-    return year is not None and year >= datetime.now(UTC).year - 2
+def _novelty_row_is_recent(row: dict[str, Any]) -> bool:
+    return any(year >= datetime.now(UTC).year - 2 for year in _novelty_evidence_years(row))
+
+
+def _novelty_evidence_years(row: dict[str, Any]) -> list[int]:
+    years: set[int] = set()
+    published_year = _novelty_year(row.get("published", ""))
+    if published_year is not None:
+        years.add(published_year)
+    current_year = datetime.now(UTC).year
+    for key in ("title", "abstract", "page_excerpt"):
+        text = str(row.get(key, "") or "")
+        for index in range(max(0, len(text) - 3)):
+            token = text[index: index + 4]
+            if not token.isdigit():
+                continue
+            year = int(token)
+            if 2020 <= year <= current_year:
+                years.add(year)
+    return sorted(years, reverse=True)
+
+
+def _novelty_freshness_profile(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    current_year = datetime.now(UTC).year
+    recent_floor = current_year - 2
+    all_years = sorted({year for row in rows for year in _novelty_evidence_years(row)}, reverse=True)
+    structured_recent = 0
+    text_recent = 0
+    recent_titles: list[str] = []
+    for row in rows:
+        structured_year = _novelty_year(row.get("published", ""))
+        years = _novelty_evidence_years(row)
+        row_recent = any(year >= recent_floor for year in years)
+        if structured_year is not None and structured_year >= recent_floor:
+            structured_recent += 1
+        elif row_recent:
+            text_recent += 1
+        if row_recent and len(recent_titles) < 8:
+            title = str(row.get("title", "")).strip()
+            if title:
+                recent_titles.append(title)
+    return {
+        "recent_window": _novelty_recent_window_label(),
+        "latest_year": all_years[0] if all_years else None,
+        "years": all_years[:8],
+        "recent_evidence_count": structured_recent + text_recent,
+        "structured_recent_evidence_count": structured_recent,
+        "text_recent_evidence_count": text_recent,
+        "recent_titles": recent_titles,
+        "status": "recent_prior_present" if structured_recent + text_recent else "missing_recent_prior_art",
+    }
 
 
 def _novelty_year(value: Any) -> int | None:

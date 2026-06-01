@@ -1524,6 +1524,7 @@ class AgentToolTest(unittest.TestCase):
     def test_verify_novelty_runs_deep_recent_method_search(self):
         from mechferret import tools
 
+        current_year = datetime.now(UTC).year
         calls = []
         web_calls = []
         fetch_calls = []
@@ -1546,7 +1547,7 @@ class AgentToolTest(unittest.TestCase):
                 {
                     "title": "Sparse autoencoder method implementation for VLA mechanism discovery",
                     "url": "https://example.org/vla-sae",
-                    "snippet": "Recent benchmark implementation for sparse autoencoder method in vision language action policy mechanisms.",
+                    "snippet": f"{current_year} benchmark implementation for sparse autoencoder method in vision language action policy mechanisms.",
                 },
                 {
                     "title": "VLA sparse autoencoder leaderboard",
@@ -1563,7 +1564,7 @@ class AgentToolTest(unittest.TestCase):
         def fake_web_fetch(url, max_chars=2400):
             fetch_calls.append({"url": url, "max_chars": max_chars})
             return (
-                "Fetched page text describing sparse autoencoder method for vision language action policies, "
+                f"Fetched {current_year} page text describing sparse autoencoder method for vision language action policies, "
                 "mechanism discovery, benchmark evaluation, and implementation details."
             )
 
@@ -1645,7 +1646,7 @@ class AgentToolTest(unittest.TestCase):
         self.assertTrue(axes["method"]["covered"])
         self.assertTrue(axes["implementation"]["covered"])
         self.assertTrue(axes["method"]["representative_prior"])
-        self.assertEqual(payload["assessment"]["recent_pressure"]["latest_year"], 2025)
+        self.assertEqual(payload["assessment"]["recent_pressure"]["latest_year"], current_year)
         self.assertEqual(payload["assessment"]["recent_pressure"]["status"], "recent_prior_present")
         self.assertTrue(any(row.get("fetched") for row in payload["web_results"]))
         self.assertIn(payload["assessment"]["evidence_strength"], {"strong_multi_source_overlap", "strong_but_narrow_overlap"})
@@ -1718,6 +1719,12 @@ class AgentToolTest(unittest.TestCase):
         self.assertTrue(any(row["test"] == "claim_collision" for row in payload["assessment"]["disqualifying_overlap_tests"]))
         self.assertIn("threat_model_depth", payload["assessment"]["claim_readiness"]["checks"])
         self.assertGreaterEqual(payload["assessment"]["coverage"]["recent_evidence"], 1)
+        self.assertGreaterEqual(payload["assessment"]["coverage"]["structured_recent_evidence"], 1)
+        self.assertGreaterEqual(payload["assessment"]["coverage"]["text_recent_evidence"], 1)
+        self.assertEqual(payload["assessment"]["coverage"]["latest_evidence_year"], current_year)
+        self.assertIn(current_year, payload["assessment"]["coverage"]["evidence_years"])
+        self.assertEqual(payload["assessment"]["freshness_profile"]["status"], "recent_prior_present")
+        self.assertGreaterEqual(payload["assessment"]["freshness_profile"]["text_recent_evidence_count"], 1)
         self.assertIn("claim-collision", payload["guidance"])
         self.assertIn("recent-discovery", payload["guidance"])
         self.assertIn("architecture-variant", payload["guidance"])
