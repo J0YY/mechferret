@@ -629,6 +629,7 @@ class AgentToolTest(unittest.TestCase):
 
         calls = []
         web_calls = []
+        fetch_calls = []
 
         def fake_search(query, max_results=20, sort_by="relevance"):
             calls.append({"query": query, "max_results": max_results, "sort_by": sort_by})
@@ -662,9 +663,17 @@ class AgentToolTest(unittest.TestCase):
                 },
             ]
 
+        def fake_web_fetch(url, max_chars=1600):
+            fetch_calls.append({"url": url, "max_chars": max_chars})
+            return (
+                "Fetched page text describing sparse autoencoder architecture for vision language action policies, "
+                "mechanism discovery, benchmark evaluation, and implementation details."
+            )
+
         with (
             patch("mechferret.knowledge.search_arxiv", side_effect=fake_search),
             patch("mechferret.knowledge.web_search", side_effect=fake_web_search),
+            patch("mechferret.knowledge.web_fetch", side_effect=fake_web_fetch),
         ):
             payload = json.loads(
                 tools.run_tool(
@@ -686,6 +695,9 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(payload["arxiv_search_plan"], payload["search_plan"])
         self.assertGreaterEqual(len(web_calls), 3)
         self.assertTrue(all(call["max_results"] == 12 for call in web_calls))
+        self.assertGreaterEqual(len(fetch_calls), 1)
+        self.assertLessEqual(len(fetch_calls), 6)
+        self.assertTrue(all(call["max_chars"] == 1600 for call in fetch_calls))
         self.assertIn("web_search_plan", payload)
         self.assertEqual(payload["web_results"][0]["source"], "web")
         self.assertEqual(payload["web_results"][0]["source_domain"], "example.org")
@@ -701,11 +713,14 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("source_credibility", payload["assessment"]["closest_prior_art"][0])
         self.assertIn("source_domain", payload["assessment"]["closest_prior_art"][0])
         self.assertIn("evidence_excerpt", payload["assessment"]["closest_prior_art"][0])
+        self.assertTrue(any(row.get("fetched") for row in payload["web_results"]))
         self.assertIn(payload["assessment"]["evidence_strength"], {"strong_multi_source_overlap", "strong_but_narrow_overlap"})
         self.assertEqual(payload["assessment"]["source_diversity"], "broad_independent")
         self.assertIn("recent_window", payload["assessment"]["coverage"])
         self.assertGreaterEqual(payload["assessment"]["coverage"]["web_results"], 1)
         self.assertGreaterEqual(payload["assessment"]["coverage"]["web_results_with_snippets"], 1)
+        self.assertGreaterEqual(payload["assessment"]["coverage"]["web_pages_fetched"], 1)
+        self.assertGreaterEqual(payload["assessment"]["coverage"]["web_results_with_page_text"], 1)
         self.assertGreaterEqual(payload["assessment"]["coverage"]["web_source_types"]["benchmark"], 1)
         self.assertGreaterEqual(payload["assessment"]["coverage"]["web_source_types"]["code_repository"], 1)
         self.assertGreaterEqual(payload["assessment"]["coverage"]["unique_source_domains"], 3)
@@ -730,6 +745,33 @@ class AgentToolTest(unittest.TestCase):
         self.assertGreater(payload["assessment"]["coverage"]["failed_web_queries"], 0)
         self.assertEqual(payload["related_papers"], [])
         self.assertEqual(payload["web_results"], [])
+
+    def test_verify_novelty_reports_web_fetch_failures_without_losing_search_hits(self):
+        from mechferret import tools
+
+        def fake_search(query, max_results=20, sort_by="relevance"):
+            return 0, []
+
+        def fake_web_search(query, max_results=12):
+            return [
+                {
+                    "title": "Sparse autoencoder project page",
+                    "url": "https://example.org/project",
+                    "snippet": "Project page for sparse autoencoder probes.",
+                }
+            ]
+
+        with (
+            patch("mechferret.knowledge.search_arxiv", side_effect=fake_search),
+            patch("mechferret.knowledge.web_search", side_effect=fake_web_search),
+            patch("mechferret.knowledge.web_fetch", side_effect=RuntimeError("fetch unavailable")),
+        ):
+            payload = json.loads(tools.run_tool("verify_novelty", {"idea": "sparse autoencoder probes"}))
+
+        self.assertEqual(payload["assessment"]["coverage"]["web_results"], 1)
+        self.assertEqual(payload["assessment"]["coverage"]["web_pages_fetched"], 0)
+        self.assertGreater(payload["assessment"]["coverage"]["failed_web_fetches"], 0)
+        self.assertTrue(payload["web_results"])
 
     def test_tools_validate_boolean_values(self):
         from mechferret import tools

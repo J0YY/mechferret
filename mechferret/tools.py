@@ -35,6 +35,8 @@ NOVELTY_MAX_QUERY_PASSES = 12
 NOVELTY_CLOSEST_PRIOR_LIMIT = 8
 NOVELTY_WEB_RESULT_LIMIT = 12
 NOVELTY_WEB_MAX_QUERY_PASSES = 5
+NOVELTY_WEB_FETCH_LIMIT = 6
+NOVELTY_WEB_FETCH_CHARS = 1600
 NOVELTY_RISKS = {
     "high_prior_art_risk",
     "medium_prior_art_risk",
@@ -933,7 +935,7 @@ def _experiments_for_discoveries(experiments, discoveries, *, limit: int):
 
 
 def tool_verify_novelty(args: dict[str, Any]) -> str:
-    from .knowledge import search_arxiv, web_search
+    from .knowledge import search_arxiv, web_fetch, web_search
 
     idea, invalid = _string_arg(args, "idea")
     if invalid:
@@ -982,6 +984,7 @@ def tool_verify_novelty(args: dict[str, Any]) -> str:
                 continue
             seen.add(key)
             web_results.append(row)
+    _novelty_enrich_web_results(web_results, web_fetch, errors)
     return json.dumps({
         "idea": idea,
         "search_plan": plan,
@@ -1158,6 +1161,8 @@ def _novelty_web_row(result: dict[str, Any], *, focus: str) -> dict[str, Any]:
         "source_domain": domain,
         "published": "",
         "abstract": str(abstract).strip()[:700],
+        "page_excerpt": "",
+        "fetched": False,
         "authors": [],
         "focus": focus,
     }
@@ -1205,6 +1210,8 @@ def _novelty_assessment(idea: str, rows: list[dict[str, Any]], errors: list[dict
             "retrieved_papers": arxiv_count,
             "web_results": web_count,
             "web_results_with_snippets": sum(1 for row in rows if row.get("source") == "web" and row.get("abstract")),
+            "web_pages_fetched": sum(1 for row in rows if row.get("source") == "web" and row.get("fetched")),
+            "web_results_with_page_text": sum(1 for row in rows if row.get("source") == "web" and row.get("page_excerpt")),
             "web_source_types": web_source_types,
             "unique_source_domains": source_profile["unique_domains"],
             "source_domain_counts": source_profile["domain_counts"],
@@ -1213,6 +1220,7 @@ def _novelty_assessment(idea: str, rows: list[dict[str, Any]], errors: list[dict
             "failed_queries": len(errors),
             "failed_arxiv_queries": sum(1 for error in errors if error.get("source") == "arxiv"),
             "failed_web_queries": sum(1 for error in errors if error.get("source") == "web"),
+            "failed_web_fetches": sum(1 for error in errors if error.get("source") == "web_fetch"),
             "idea_terms": terms,
             "recent_window": _novelty_recent_window_label(),
         },
@@ -1225,7 +1233,7 @@ def _novelty_assessment(idea: str, rows: list[dict[str, Any]], errors: list[dict
 
 
 def _novelty_scored_prior(row: dict[str, Any], terms: list[str]) -> dict[str, Any]:
-    haystack = f"{row.get('title', '')} {row.get('abstract', '')}".lower()
+    haystack = f"{row.get('title', '')} {row.get('abstract', '')} {row.get('page_excerpt', '')}".lower()
     matched = [term for term in terms if term in haystack]
     term_score = len(matched) / max(1, len(terms))
     focus = str(row.get("focus", ""))
@@ -1248,9 +1256,51 @@ def _novelty_scored_prior(row: dict[str, Any], terms: list[str]) -> dict[str, An
         "source_score": source_score,
         "source_credibility_score": source_credibility["score"],
         "matched_terms": matched,
-        "evidence_excerpt": str(row.get("abstract", ""))[:240],
+        "evidence_excerpt": _novelty_evidence_excerpt(row),
         "reason": _novelty_prior_reason(matched, focus, row.get("published", ""), row.get("source", ""), source_type),
     }
+
+
+def _novelty_enrich_web_results(
+    rows: list[dict[str, Any]],
+    fetch: Callable[..., str],
+    errors: list[dict[str, str]],
+) -> None:
+    candidates = sorted(
+        (row for row in rows if row.get("url")),
+        key=_novelty_fetch_priority,
+        reverse=True,
+    )[:NOVELTY_WEB_FETCH_LIMIT]
+    for row in candidates:
+        url = str(row.get("url", "")).strip()
+        if not url:
+            continue
+        try:
+            text = fetch(url, max_chars=NOVELTY_WEB_FETCH_CHARS)
+        except Exception as exc:  # noqa: BLE001
+            errors.append({"source": "web_fetch", "url": url, "error": str(exc)})
+            continue
+        excerpt = " ".join(str(text or "").split())[:900]
+        if not excerpt:
+            continue
+        row["fetched"] = True
+        row["fetched_chars"] = len(str(text or ""))
+        row["page_excerpt"] = excerpt
+
+
+def _novelty_fetch_priority(row: dict[str, Any]) -> float:
+    source_type = str(row.get("source_type", "general_web"))
+    credibility = _novelty_source_credibility(source_type, row.get("source_domain", ""))
+    snippet_bonus = 0.01 if row.get("abstract") else 0.0
+    return _novelty_source_type_score(source_type) + credibility["score"] + snippet_bonus
+
+
+def _novelty_evidence_excerpt(row: dict[str, Any]) -> str:
+    abstract = str(row.get("abstract", "")).strip()
+    page = str(row.get("page_excerpt", "")).strip()
+    if abstract and page:
+        return f"{abstract[:180]} | page: {page[:180]}"
+    return (abstract or page)[:240]
 
 
 def _novelty_prior_reason(matched: list[str], focus: str, published: Any, source: Any, source_type: Any) -> str:
