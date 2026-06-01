@@ -426,9 +426,9 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("/queue", rendered_help)
         self.assertIn("/queue show <id|latest>", rendered_help)
         self.assertIn("/queue retry <id|latest>", rendered_help)
-        self.assertIn("/queue edit <id> <text>", rendered_help)
-        self.assertIn("/queue move <id> first|last|before|after", rendered_help)
-        self.assertIn("/queue cancel <id|all>", rendered_help)
+        self.assertIn("/queue edit <id|latest> <text>", rendered_help)
+        self.assertIn("/queue move <id|latest> first|last|before|after", rendered_help)
+        self.assertIn("/queue cancel <id|latest|all>", rendered_help)
         self.assertIn("/queue clear [queued|saved|all]", rendered_help)
         self.assertIn("/queue pause", rendered_help)
         self.assertIn("/queue resume", rendered_help)
@@ -706,6 +706,42 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("job #2", rendered)
         self.assertIn("second", rendered)
         self.assertIn("retried #2 as #3", rendered)
+
+    def test_repl_queue_latest_targets_live_mutations(self):
+        from mechferret import repl
+
+        started = []
+
+        def fake_chat(agent, session, text, *, background=False):
+            started.append(text)
+            return text
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-latest-mutations.json"))
+            try:
+                runner.pause()
+                first = runner.submit("first")
+                second = runner.submit("second")
+
+                repl._queue_edit(runner, ["latest"], "updated second")
+                self.assertEqual(second.text, "updated second")
+                repl._queue_move(runner, ["latest", "first"])
+                self.assertEqual([job.id for job in runner.queued()], [second.id, first.id])
+                repl._queue_cancel(runner, ["latest"])
+                self.assertEqual(first.status, "canceled")
+
+                runner.resume()
+                self.assertTrue(runner.wait_idle(timeout=2))
+            finally:
+                runner.resume()
+                runner.stop(wait=True)
+
+        self.assertEqual(started, ["updated second"])
+        rendered = out.getvalue()
+        self.assertIn("edited #2", rendered)
+        self.assertIn("moved #2 first", rendered)
+        self.assertIn("canceled #1", rendered)
 
     def test_repl_queue_retry_requeues_main_side_and_saved_jobs(self):
         from mechferret import repl

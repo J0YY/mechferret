@@ -182,14 +182,25 @@ class ChatJobRunner:
         with self._lock:
             return [job for job in self._jobs if job.status == "queued"]
 
+    def _find_live_job_locked(self, target: str) -> PromptJob | None:
+        target = target.strip().lower().lstrip("#")
+        if target in {"latest", "last"}:
+            return self._jobs[-1] if self._jobs else None
+        return next((job for job in self._jobs if str(job.id) == target), None)
+
     def cancel(self, target: str) -> list[PromptJob]:
         target = target.strip().lower()
         canceled: list[PromptJob] = []
         with self._lock:
-            for job in self._jobs:
-                if job.status != "queued":
-                    continue
-                if target == "all" or str(job.id) == target:
+            if target == "all":
+                for job in self._jobs:
+                    if job.status != "queued":
+                        continue
+                    job.status = "canceled"
+                    canceled.append(job)
+            else:
+                job = self._find_live_job_locked(target)
+                if job is not None and job.status == "queued":
                     job.status = "canceled"
                     canceled.append(job)
         if canceled:
@@ -197,28 +208,24 @@ class ChatJobRunner:
         return canceled
 
     def edit(self, target: str, text: str) -> tuple[PromptJob | None, str]:
-        target = target.strip().lstrip("#")
         edited: PromptJob | None = None
         with self._lock:
-            for job in self._jobs:
-                if str(job.id) != target:
-                    continue
-                if job.status != "queued":
-                    return job, job.status
-                job.text = text
-                edited = job
-                break
+            job = self._find_live_job_locked(target)
+            if job is None:
+                return None, "missing"
+            if job.status != "queued":
+                return job, job.status
+            job.text = text
+            edited = job
         if edited is None:
             return None, "missing"
         self.save_pending()
         return edited, "updated"
 
     def move(self, target: str, where: str, anchor: str = "") -> tuple[PromptJob | None, str]:
-        target = target.strip().lstrip("#")
         where = where.strip().lower()
-        anchor = anchor.strip().lstrip("#")
         with self._lock:
-            job = next((item for item in self._jobs if str(item.id) == target), None)
+            job = self._find_live_job_locked(target)
             if job is None:
                 return None, "missing"
             if job.status != "queued":
@@ -227,8 +234,10 @@ class ChatJobRunner:
             if where not in {"first", "last", "before", "after"}:
                 return job, "usage"
             if where in {"before", "after"}:
-                anchor_job = next((item for item in queued if str(item.id) == anchor), None)
+                anchor_job = self._find_live_job_locked(anchor)
                 if anchor_job is None:
+                    return job, "anchor"
+                if anchor_job.status != "queued":
                     return job, "anchor"
                 if anchor_job is job:
                     return job, "same"
@@ -970,7 +979,7 @@ def _print_canceled(canceled: list[PromptJob]) -> None:
 def _queue_cancel(runner: ChatJobRunner, args: list[str]) -> None:
     target = args[0] if args else ""
     if not target:
-        print(_c("  usage: /queue cancel <job id|all>", "33"))
+        print(_c("  usage: /queue cancel <job id|latest|all>", "33"))
         return
     canceled = runner.cancel(target)
     if canceled:
@@ -1102,7 +1111,7 @@ def _queue_retry(runner: ChatJobRunner, args: list[str]) -> None:
 def _queue_edit(runner: ChatJobRunner, args: list[str], text: str) -> None:
     target = args[0] if args else ""
     if not target or not text:
-        print(_c("  usage: /queue edit <job id> <new prompt>", "33"))
+        print(_c("  usage: /queue edit <job id|latest> <new prompt>", "33"))
         return
     job, status = runner.edit(target, text)
     if job is None:
@@ -1119,14 +1128,14 @@ def _queue_move(runner: ChatJobRunner, args: list[str]) -> None:
     where = args[1].lower() if len(args) > 1 else ""
     anchor = args[2] if len(args) > 2 else ""
     if not target or where not in {"first", "last", "before", "after"} or (where in {"before", "after"} and not anchor):
-        print(_c("  usage: /queue move <job id> first|last|before <job id>|after <job id>", "33"))
+        print(_c("  usage: /queue move <job id|latest> first|last|before <job id|latest>|after <job id|latest>", "33"))
         return
     job, status = runner.move(target, where, anchor)
     if job is None:
         print(_c(f"  no queued job matched {target!r}", "33"))
         return
     if status == "usage":
-        print(_c("  usage: /queue move <job id> first|last|before <job id>|after <job id>", "33"))
+        print(_c("  usage: /queue move <job id|latest> first|last|before <job id|latest>|after <job id|latest>", "33"))
         return
     if status == "anchor":
         print(_c(f"  no queued anchor matched {anchor!r}", "33"))
