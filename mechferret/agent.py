@@ -592,14 +592,23 @@ class Agent:
             )
 
         if name == "present_options":
-            options = args.get("options", []) or []
+            validation = _run_tool(name, args)
+            try:
+                validation_payload = json.loads(validation)
+            except json.JSONDecodeError:
+                validation_payload = {}
+            if isinstance(validation_payload, dict) and validation_payload.get("ok") is False:
+                return validation
+            options = validation_payload.get("option_details") if isinstance(validation_payload, dict) else None
+            if not isinstance(options, list):
+                options = args.get("options", []) or []
             self.on_tool(name, args)
             self.tracer.event("tool", tool=name, options=len(options))
             if self.on_options:
                 choice = self.on_options(options)
                 self.tracer.event("user_selected", choice=str(choice)[:120])
                 return json.dumps({"user_selected": choice})
-            return _run_tool(name, args)  # headless fallback
+            return validation
 
         meta = tool_meta(name)
         decision = permissions.decide(

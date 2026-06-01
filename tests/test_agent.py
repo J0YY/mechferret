@@ -1503,6 +1503,64 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(fired, [])
         self.assertIn("tool_registered", out["failed_checks"])
 
+    def test_agent_dispatch_validates_options_before_picker(self):
+        fired = []
+        picked = []
+        a = agent.Agent(on_tool=lambda name, args: fired.append(name))
+        a.on_options = lambda options: picked.append(options) or "none"
+        a.provider, a.model, a._key = "anthropic", "claude-sonnet-4-6", "x"
+
+        invalid = json.loads(a._dispatch("present_options", {"options": [{"title": "thin"}]}))
+
+        self.assertFalse(invalid["ok"])
+        self.assertEqual(fired, [])
+        self.assertEqual(picked, [])
+        self.assertIn("options_argument", invalid["failed_checks"])
+
+    def test_agent_dispatch_passes_normalized_options_to_picker(self):
+        picked = []
+        a = agent.Agent()
+        a.on_options = lambda options: picked.append(options) or options[0]["title"]
+        a.provider, a.model, a._key = "anthropic", "claude-sonnet-4-6", "x"
+        args = {
+            "options": [
+                {
+                    "title": "Novelty audit",
+                    "summary": "Check the delta",
+                    "detail": "Use retrieved evidence before choosing.",
+                    "citations": ["Closest Paper https://arxiv.org/abs/2501.0001"],
+                    "novelty_risk": "medium_prior_art_risk",
+                    "novelty_verdict": "Related work exists.",
+                    "closest_prior_art": ["Closest Paper https://arxiv.org/abs/2501.0001"],
+                    "claim_readiness": {
+                        "status": "delta_review_required",
+                        "can_claim_high_novelty": False,
+                        "missing_checks": [],
+                        "next_actions": ["Write the delta."],
+                    },
+                    "comparison_matrix": [
+                        {"axis": "method", "covered": True, "evidence_count": 1, "next_action": "Compare method."},
+                        {"axis": "evaluation", "covered": False, "evidence_count": 0, "next_action": "Add benchmark."},
+                    ],
+                    "recent_pressure": {
+                        "status": "recent_prior_present",
+                        "recent_window": "2024-2026",
+                        "recent_evidence_count": 1,
+                        "latest_year": 2025,
+                        "recent_prior_titles": ["Closest Paper"],
+                    },
+                    "required_delta": "Show a causal ablation.",
+                }
+            ]
+        }
+
+        selected = json.loads(a._dispatch("present_options", args))
+
+        self.assertEqual(selected["user_selected"], "Novelty audit")
+        self.assertEqual(picked[0][0]["required_delta"], "Show a causal ablation.")
+        self.assertEqual(picked[0][0]["comparison_matrix"][1]["axis"], "evaluation")
+        self.assertEqual(picked[0][0]["recent_pressure"]["status"], "recent_prior_present")
+
     def test_large_output_persisted(self):
         from mechferret import tools
 
