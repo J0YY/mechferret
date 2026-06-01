@@ -1017,6 +1017,8 @@ class AgentStackTest(unittest.TestCase):
         self.assertEqual(repl._prompt_text_after_words('/queue add say "hi" exactly', 2), 'say "hi" exactly')
         self.assertEqual(repl._prompt_text_after_words('/queue add "unfinished prompt', 2), '"unfinished prompt')
         self.assertEqual(repl._line_after_command("/prompt /paper draft from latest run"), "/paper draft from latest run")
+        self.assertEqual(repl._prompt_text_after_words('/prompt "/paper draft from latest run"', 1), "/paper draft from latest run")
+        self.assertEqual(repl._prompt_text_after_words('/prompt ask "exactly this"', 1), 'ask "exactly this"')
 
     def test_repl_queue_edit_accepts_quoted_replacement_prompt(self):
         from mechferret import repl

@@ -1327,7 +1327,7 @@ def run_repl() -> None:
             print(_c(f"  started side #{job.id} btw", "2"))
             continue
         if bare == "prompt":
-            text = _line_after_command(line)
+            text = _prompt_text_after_words(line, 1)
             if not text:
                 print(_c("  usage: /prompt <prompt>", "33"))
                 continue
