@@ -31,6 +31,7 @@ SECTIONS: list[tuple[str, list[Command]]] = [
         Command("/queue resume", "resume held queued prompts"),
         Command("/queue restore", "restore saved queued/running prompts from the last session"),
         Command("/queue wait [seconds]", "block until active queued and side work finishes"),
+        Command("/queue join <id> [seconds]", "wait for one queued or side job to finish"),
         Command("/cancel <id|all>", "remove queued prompts that have not started yet"),
         Command("/goal <text>", "set an objective and loop autonomously until reached"),
         Command("/plan", "toggle plan mode (approve write/exec/GPU tools)"),

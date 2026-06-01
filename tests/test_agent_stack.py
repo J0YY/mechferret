@@ -434,6 +434,7 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("/queue resume", rendered_help)
         self.assertIn("/queue restore", rendered_help)
         self.assertIn("/queue wait [seconds]", rendered_help)
+        self.assertIn("/queue join <id> [seconds]", rendered_help)
         self.assertIn("/cancel <id|all>", rendered_help)
         self.assertIn("/commands --workflow first_run", rendered_help)
         self.assertIn("show a runnable workflow recipe", rendered_help)
@@ -581,6 +582,73 @@ class AgentStackTest(unittest.TestCase):
         rendered = out.getvalue()
         self.assertIn("waiting for active queued work", rendered)
         self.assertIn("queue idle", rendered)
+
+    def test_repl_queue_join_waits_for_one_job_and_shows_result_hint(self):
+        from mechferret import repl
+
+        release = threading.Event()
+        started = []
+
+        def fake_chat(agent, session, text, *, background=False):
+            started.append(text)
+            self.assertTrue(release.wait(timeout=2))
+            return f"reply for {text}"
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-join.json"))
+            try:
+                job = runner.submit("main")
+                releaser = threading.Thread(target=lambda: (time.sleep(0.05), release.set()))
+                releaser.start()
+                repl._queue_join(runner, [str(job.id), "2"])
+                releaser.join(timeout=2)
+            finally:
+                release.set()
+                runner.stop(wait=True)
+
+        self.assertEqual(started, ["main"])
+        self.assertEqual(job.status, "done")
+        rendered = out.getvalue()
+        self.assertIn("waiting for job #1", rendered)
+        self.assertIn("job #1 done", rendered)
+        self.assertIn("use /queue show #1", rendered)
+
+    def test_repl_queue_join_times_out_or_refuses_saved_and_paused_jobs(self):
+        from mechferret import repl
+
+        release = threading.Event()
+
+        def fake_chat(agent, session, text, *, background=False):
+            self.assertTrue(release.wait(timeout=2))
+            return text
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-join-timeout.json"))
+            try:
+                running = runner.submit("running")
+                deadline = time.monotonic() + 2
+                while runner.active() is None and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                repl._queue_join(runner, [str(running.id), "0.05"])
+
+                queued = runner.submit("queued")
+                runner.pause()
+                repl._queue_join(runner, [str(queued.id), "1"])
+
+                repl._save_queue_jobs(Path("queue-join-timeout.json"), [repl.PromptJob(id=9, text="saved")])
+                repl._queue_join(runner, ["9"])
+            finally:
+                runner.resume()
+                release.set()
+                runner.wait_idle(timeout=2)
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("job #1 still running after timeout", rendered)
+        self.assertIn("queue paused; use /queue resume", rendered)
+        self.assertIn("job #9 is saved", rendered)
 
     def test_repl_queue_show_renders_prompt_reply_and_saved_jobs(self):
         from mechferret import repl

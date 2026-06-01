@@ -34,6 +34,7 @@ VERSION = "0.1.0"
 WIDTH = 78
 PURPLE = "38;5;141"  # soft violet
 PURPLE_B = "1;38;5;141"
+TERMINAL_JOB_STATUSES = {"done", "error", "canceled"}
 
 
 def _c(text: str, code: str) -> str:
@@ -291,6 +292,18 @@ class ChatJobRunner:
                 return True
             time.sleep(0.01)
         return False
+
+    def wait_job(self, target: str, timeout: float = 3600.0) -> tuple[PromptJob | None, bool, bool]:
+        deadline = time.monotonic() + timeout
+        while True:
+            job, saved = self.find_job(target)
+            if job is None or saved or job.status in TERMINAL_JOB_STATUSES:
+                if job is not None and not saved:
+                    self.save_pending()
+                return job, saved, job is not None and job.status in TERMINAL_JOB_STATUSES
+            if time.monotonic() >= deadline:
+                return job, saved, False
+            time.sleep(0.01)
 
     def stop(self, *, wait: bool = False) -> None:
         if self._stopped:
@@ -684,6 +697,8 @@ def run_repl() -> None:
                 _queue_cancel(runner, tokens[2:])
             elif len(tokens) > 1 and tokens[1].lower() == "wait":
                 _queue_wait(runner, tokens[2:])
+            elif len(tokens) > 1 and tokens[1].lower() == "join":
+                _queue_join(runner, tokens[2:])
             elif len(tokens) > 1 and tokens[1].lower() == "show":
                 _queue_show(runner, tokens[2:])
             elif len(tokens) > 1 and tokens[1].lower() == "retry":
@@ -1003,6 +1018,45 @@ def _queue_wait(runner: ChatJobRunner, args: list[str]) -> None:
     else:
         print(_c("  queue still active after timeout", "33"))
         _print_queue(runner)
+
+
+def _queue_join(runner: ChatJobRunner, args: list[str]) -> None:
+    target = args[0] if args else ""
+    timeout = 3600.0
+    if not target:
+        print(_c("  usage: /queue join <job id> [seconds]", "33"))
+        return
+    if len(args) > 1:
+        try:
+            timeout = float(args[1])
+        except ValueError:
+            print(_c("  usage: /queue join <job id> [seconds]", "33"))
+            return
+        if timeout <= 0:
+            print(_c("  join timeout must be positive", "33"))
+            return
+    job, saved = runner.find_job(target)
+    if job is None:
+        print(_c(f"  no queue job matched {target!r}", "33"))
+        return
+    if saved:
+        print(_c(f"  job #{job.id} is saved; run /queue restore before joining it.", "33"))
+        return
+    if runner.paused() and job.status == "queued":
+        print(_c("  queue paused; use /queue resume before joining queued work", "33"))
+        return
+    if job.status not in TERMINAL_JOB_STATUSES:
+        print(_c(f"  waiting for job #{job.id}…", "2"))
+    job, _saved, finished = runner.wait_job(target, timeout=timeout)
+    if job is None:
+        print(_c(f"  no queue job matched {target!r}", "33"))
+        return
+    if finished:
+        print(_c(f"  job #{job.id} {job.status}", "32" if job.status == "done" else "33"))
+        _print_job_result_hint(job)
+        return
+    print(_c(f"  job #{job.id} still {job.status} after timeout", "33"))
+    _print_queue(runner)
 
 
 def _queue_show(runner: ChatJobRunner, args: list[str]) -> None:

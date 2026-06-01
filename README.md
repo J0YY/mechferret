@@ -346,6 +346,7 @@ You can do things like:
 /queue resume  resume held queued prompts
 /queue restore  restore saved queued/running prompts from the last session
 /queue wait     wait until active queued and side work finishes
+/queue join <id> wait for one queued or side job to finish
 /cancel <id>    remove a queued prompt before it starts
 /quickstart     show the recommended demo/OpenVLA/CI command path
 /selftest       run offline readiness checks and optionally verify demo artifacts
