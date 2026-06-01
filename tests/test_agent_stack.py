@@ -424,6 +424,7 @@ class AgentStackTest(unittest.TestCase):
         rendered_help = out.getvalue()
         self.assertIn("/btw <text>", rendered_help)
         self.assertIn("/queue", rendered_help)
+        self.assertIn("/queue show <id>", rendered_help)
         self.assertIn("/queue restore", rendered_help)
         self.assertIn("/queue wait [seconds]", rendered_help)
         self.assertIn("/cancel <id|all>", rendered_help)
@@ -526,6 +527,31 @@ class AgentStackTest(unittest.TestCase):
         rendered = out.getvalue()
         self.assertIn("waiting for active queued work", rendered)
         self.assertIn("queue idle", rendered)
+
+    def test_repl_queue_show_renders_prompt_reply_and_saved_jobs(self):
+        from mechferret import repl
+
+        def fake_chat(agent, session, text, *, background=False):
+            return f"reply for {text}"
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-show.json"))
+            try:
+                job = runner.submit("full prompt text")
+                self.assertTrue(runner.wait_idle(timeout=2))
+                repl._queue_show(runner, [str(job.id)])
+                repl._save_queue_jobs(Path("queue-show.json"), [repl.PromptJob(id=9, text="saved prompt", kind="btw")])
+                repl._queue_show(runner, ["9"])
+            finally:
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("job #1", rendered)
+        self.assertIn("full prompt text", rendered)
+        self.assertIn("reply for full prompt text", rendered)
+        self.assertIn("job #9 saved", rendered)
+        self.assertIn("saved prompt", rendered)
 
     def test_repl_chat_job_runner_cancels_pending_prompts(self):
         from mechferret import repl

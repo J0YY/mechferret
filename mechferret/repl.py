@@ -181,6 +181,17 @@ class ChatJobRunner:
         with self._lock:
             return list(self._jobs[-limit:])
 
+    def find_job(self, target: str) -> tuple[PromptJob | None, bool]:
+        target = target.strip().lstrip("#")
+        with self._lock:
+            for job in self._jobs:
+                if str(job.id) == target:
+                    return job, False
+        for job in self.saved():
+            if str(job.id) == target:
+                return job, True
+        return None, False
+
     def is_busy(self) -> bool:
         with self._lock:
             return self._active is not None or any(job.status in {"queued", "running"} for job in self._jobs)
@@ -296,7 +307,9 @@ def _load_saved_queue(path: Path = QUEUE_FILE) -> list[PromptJob]:
             continue
         kind = row.get("kind") if isinstance(row.get("kind"), str) else "prompt"
         created_at = row.get("created_at") if isinstance(row.get("created_at"), (int, float)) else time.time()
-        jobs.append(PromptJob(id=len(jobs) + 1, text=text, kind=kind, created_at=float(created_at)))
+        raw_id = row.get("id")
+        job_id = int(raw_id) if isinstance(raw_id, int) and raw_id > 0 else len(jobs) + 1
+        jobs.append(PromptJob(id=job_id, text=text, kind=kind, created_at=float(created_at)))
     return jobs
 
 
@@ -566,6 +579,8 @@ def run_repl() -> None:
                 print(_c(f"  cleared {cleared} saved queued prompt(s)", "32" if cleared else "2"))
             elif len(tokens) > 1 and tokens[1].lower() == "wait":
                 _queue_wait(runner, tokens[2:])
+            elif len(tokens) > 1 and tokens[1].lower() == "show":
+                _queue_show(runner, tokens[2:])
             else:
                 _print_queue(runner)
             continue
@@ -797,6 +812,27 @@ def _queue_wait(runner: ChatJobRunner, args: list[str]) -> None:
     else:
         print(_c("  queue still active after timeout", "33"))
         _print_queue(runner)
+
+
+def _queue_show(runner: ChatJobRunner, args: list[str]) -> None:
+    target = args[0] if args else ""
+    if not target:
+        print(_c("  usage: /queue show <job id>", "33"))
+        return
+    job, saved = runner.find_job(target)
+    if job is None:
+        print(_c(f"  no queue job matched {target!r}", "33"))
+        return
+    saved_label = " saved" if saved else ""
+    print(_c(f"  job #{job.id}{saved_label} · {job.kind} · {job.status}", PURPLE_B))
+    if job.error:
+        print(_c("  error:", "31"))
+        print(_indent(job.error))
+    print(_c("  prompt:", "1"))
+    print(_render_reply(job.text))
+    if job.reply:
+        print(_c("  reply:", "1"))
+        print(_render_reply(job.reply))
 
 
 def _guard_agent_idle(runner: ChatJobRunner, action: str) -> bool:
