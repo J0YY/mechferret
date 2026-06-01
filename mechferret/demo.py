@@ -76,7 +76,17 @@ def play(demo: dict, render: bool = True, record: bool = True, speed: float = 1.
 
 
 def _model_task(demo: dict, beat: dict) -> tuple[str, str]:
-    return beat.get("model", demo.get("model", "model")), beat.get("task", demo.get("task", "task"))
+    model = _demo_field(demo, beat, "model")
+    task = _demo_field(demo, beat, "task")
+    if not model or not task:
+        missing = "model" if not model else "task"
+        raise ValueError(f"demo beat requires explicit {missing}; set it on the beat or demo root")
+    return model, task
+
+
+def _demo_field(demo: dict, beat: dict, name: str) -> str:
+    value = beat.get(name, demo.get(name, ""))
+    return value.strip() if isinstance(value, str) else ""
 
 
 def _seed_experiment(mem, demo, beat) -> None:

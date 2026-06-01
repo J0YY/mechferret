@@ -85,6 +85,16 @@ class DemoTest(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             demo.load_demo()
 
+    def test_seed_requires_explicit_model_and_task(self):
+        bad = {
+            "title": "bad",
+            "beats": [{"type": "experiment", "hypothesis": "H1", "probe": "p"}],
+        }
+        Path(".mechferret/demo.json").write_text(json.dumps(bad), encoding="utf-8")
+
+        with self.assertRaisesRegex(ValueError, "explicit model"):
+            demo.seed_only()
+
 
 if __name__ == "__main__":
     unittest.main()
