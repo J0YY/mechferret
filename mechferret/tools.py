@@ -155,6 +155,8 @@ def _persisted_json_summary(name: str, payload: Any, path: Path, result: str) ->
         "risk",
         "verdict",
         "coverage",
+        "evidence_strength",
+        "source_diversity",
         "required_delta",
         "closest_prior_art",
     ):
@@ -213,6 +215,8 @@ def _compact_json_value(value: Any) -> Any:
             "risk",
             "verdict",
             "coverage",
+            "evidence_strength",
+            "source_diversity",
             "required_delta",
             "closest_prior_art",
         ):
@@ -1174,6 +1178,7 @@ def _novelty_assessment(idea: str, rows: list[dict[str, Any]], errors: list[dict
     arxiv_count = sum(1 for row in rows if row.get("source") == "arxiv")
     web_count = sum(1 for row in rows if row.get("source") == "web")
     web_source_types = _novelty_web_source_type_counts(rows)
+    source_profile = _novelty_source_profile(rows)
     if not rows and errors:
         risk = "unknown_search_incomplete"
         verdict = "Novelty is not assessable because one or more retrieval passes failed."
@@ -1192,6 +1197,8 @@ def _novelty_assessment(idea: str, rows: list[dict[str, Any]], errors: list[dict
     return {
         "risk": risk,
         "verdict": verdict,
+        "evidence_strength": _novelty_evidence_strength(top_score, source_profile),
+        "source_diversity": source_profile["diversity"],
         "closest_prior_art": closest,
         "coverage": {
             "retrieved_evidence": len(rows),
@@ -1199,6 +1206,10 @@ def _novelty_assessment(idea: str, rows: list[dict[str, Any]], errors: list[dict
             "web_results": web_count,
             "web_results_with_snippets": sum(1 for row in rows if row.get("source") == "web" and row.get("abstract")),
             "web_source_types": web_source_types,
+            "unique_source_domains": source_profile["unique_domains"],
+            "source_domain_counts": source_profile["domain_counts"],
+            "credible_source_count": source_profile["credible_sources"],
+            "credible_source_types": source_profile["credible_types"],
             "failed_queries": len(errors),
             "failed_arxiv_queries": sum(1 for error in errors if error.get("source") == "arxiv"),
             "failed_web_queries": sum(1 for error in errors if error.get("source") == "web"),
@@ -1222,10 +1233,12 @@ def _novelty_scored_prior(row: dict[str, Any], terms: list[str]) -> dict[str, An
     recent_score = 0.1 if _novelty_is_recent(row.get("published", "")) else 0.0
     source_type = str(row.get("source_type", "general_web"))
     source_score = _novelty_source_type_score(source_type)
-    score = min(1.0, round(term_score * 0.7 + focus_score + recent_score + source_score, 3))
+    source_credibility = _novelty_source_credibility(source_type, row.get("source_domain", ""))
+    score = min(1.0, round(term_score * 0.68 + focus_score + recent_score + source_score + source_credibility["score"], 3))
     return {
         "source": row.get("source", ""),
         "source_type": source_type,
+        "source_credibility": source_credibility["label"],
         "title": row.get("title", ""),
         "url": row.get("url", ""),
         "source_domain": row.get("source_domain", ""),
@@ -1233,6 +1246,7 @@ def _novelty_scored_prior(row: dict[str, Any], terms: list[str]) -> dict[str, An
         "focus": focus,
         "score": score,
         "source_score": source_score,
+        "source_credibility_score": source_credibility["score"],
         "matched_terms": matched,
         "evidence_excerpt": str(row.get("abstract", ""))[:240],
         "reason": _novelty_prior_reason(matched, focus, row.get("published", ""), row.get("source", ""), source_type),
@@ -1304,6 +1318,19 @@ def _novelty_source_type_score(source_type: str) -> float:
     }.get(source_type, 0.0)
 
 
+def _novelty_source_credibility(source_type: str, domain: Any) -> dict[str, Any]:
+    domain_text = str(domain or "").lower()
+    if source_type == "paper" or any(key in domain_text for key in ("arxiv.org", "openreview.net", "aclanthology.org", "proceedings.mlr.press", "papers.nips.cc")):
+        return {"label": "scholarly", "score": 0.035}
+    if source_type == "benchmark" or "paperswithcode.com" in domain_text:
+        return {"label": "benchmark", "score": 0.03}
+    if source_type == "code_repository" or any(key in domain_text for key in ("github.com", "gitlab.com", "huggingface.co")):
+        return {"label": "implementation", "score": 0.02}
+    if source_type in {"project_page", "documentation"}:
+        return {"label": source_type, "score": 0.01}
+    return {"label": "generic", "score": 0.0}
+
+
 def _novelty_web_source_type_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
     counts = {source_type: 0 for source_type in sorted(NOVELTY_WEB_SOURCE_TYPES)}
     for row in rows:
@@ -1314,6 +1341,52 @@ def _novelty_web_source_type_counts(rows: list[dict[str, Any]]) -> dict[str, int
             source_type = "general_web"
         counts[source_type] += 1
     return {key: value for key, value in counts.items() if value}
+
+
+def _novelty_source_profile(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    domain_counts: dict[str, int] = {}
+    credible_types: set[str] = set()
+    credible_sources = 0
+    for row in rows:
+        domain = str(row.get("source_domain", "")).strip().lower()
+        if domain:
+            domain_counts[domain] = domain_counts.get(domain, 0) + 1
+        source_type = str(row.get("source_type", "general_web"))
+        credibility = _novelty_source_credibility(source_type, domain)
+        if credibility["score"] > 0:
+            credible_sources += 1
+            credible_types.add(source_type)
+    unique_domains = len(domain_counts)
+    unique_types = len({str(row.get("source_type", "general_web")) for row in rows})
+    if unique_domains >= 3 and unique_types >= 2 and credible_sources >= 2:
+        diversity = "broad_independent"
+    elif unique_domains >= 2 and credible_sources >= 1:
+        diversity = "moderate"
+    elif rows:
+        diversity = "narrow"
+    else:
+        diversity = "none"
+    return {
+        "unique_domains": unique_domains,
+        "domain_counts": dict(sorted(domain_counts.items(), key=lambda item: (-item[1], item[0]))[:8]),
+        "credible_sources": credible_sources,
+        "credible_types": sorted(credible_types),
+        "diversity": diversity,
+    }
+
+
+def _novelty_evidence_strength(top_score: float, source_profile: dict[str, Any]) -> str:
+    diversity = source_profile.get("diversity")
+    credible_sources = int(source_profile.get("credible_sources") or 0)
+    if top_score >= 0.55 and diversity == "broad_independent":
+        return "strong_multi_source_overlap"
+    if top_score >= 0.55 and credible_sources:
+        return "strong_but_narrow_overlap"
+    if top_score >= 0.25 and diversity in {"broad_independent", "moderate"}:
+        return "moderate_multi_source_overlap"
+    if top_score >= 0.25:
+        return "moderate_narrow_overlap"
+    return "weak_or_adjacent_overlap"
 
 
 def _novelty_recent_window_label() -> str:

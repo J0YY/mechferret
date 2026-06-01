@@ -698,13 +698,20 @@ class AgentToolTest(unittest.TestCase):
         self.assertTrue(payload["assessment"]["closest_prior_art"])
         self.assertIn("sparse", payload["assessment"]["closest_prior_art"][0]["matched_terms"])
         self.assertIn("source_type", payload["assessment"]["closest_prior_art"][0])
+        self.assertIn("source_credibility", payload["assessment"]["closest_prior_art"][0])
         self.assertIn("source_domain", payload["assessment"]["closest_prior_art"][0])
         self.assertIn("evidence_excerpt", payload["assessment"]["closest_prior_art"][0])
+        self.assertIn(payload["assessment"]["evidence_strength"], {"strong_multi_source_overlap", "strong_but_narrow_overlap"})
+        self.assertEqual(payload["assessment"]["source_diversity"], "broad_independent")
         self.assertIn("recent_window", payload["assessment"]["coverage"])
         self.assertGreaterEqual(payload["assessment"]["coverage"]["web_results"], 1)
         self.assertGreaterEqual(payload["assessment"]["coverage"]["web_results_with_snippets"], 1)
         self.assertGreaterEqual(payload["assessment"]["coverage"]["web_source_types"]["benchmark"], 1)
         self.assertGreaterEqual(payload["assessment"]["coverage"]["web_source_types"]["code_repository"], 1)
+        self.assertGreaterEqual(payload["assessment"]["coverage"]["unique_source_domains"], 3)
+        self.assertGreaterEqual(payload["assessment"]["coverage"]["credible_source_count"], 2)
+        self.assertIn("benchmark", payload["assessment"]["coverage"]["credible_source_types"])
+        self.assertIn("github.com", payload["assessment"]["coverage"]["source_domain_counts"])
         self.assertGreaterEqual(payload["assessment"]["coverage"]["retrieved_evidence"], 2)
         self.assertIn("Do not claim high novelty", payload["guidance"])
 
@@ -1174,6 +1181,8 @@ class AgentToolTest(unittest.TestCase):
             "assessment": {
                 "risk": "high_prior_art_risk",
                 "verdict": "Closest retrieved evidence overlaps.",
+                "evidence_strength": "strong_multi_source_overlap",
+                "source_diversity": "broad_independent",
                 "coverage": {"web_source_types": {"benchmark": 2}, "web_results": 3},
                 "closest_prior_art": [
                     {"title": "closest", "source_type": "benchmark", "score": 0.9, "evidence_excerpt": "x" * 300}
@@ -1193,6 +1202,8 @@ class AgentToolTest(unittest.TestCase):
         parsed = json.loads(out)
         self.assertTrue(parsed["tool_output_truncated"])
         self.assertEqual(parsed["assessment"]["risk"], "high_prior_art_risk")
+        self.assertEqual(parsed["assessment"]["evidence_strength"], "strong_multi_source_overlap")
+        self.assertEqual(parsed["assessment"]["source_diversity"], "broad_independent")
         self.assertEqual(parsed["assessment"]["coverage"]["web_source_types"]["benchmark"], 2)
         self.assertEqual(parsed["assessment"]["closest_prior_art"][0]["source_type"], "benchmark")
 
