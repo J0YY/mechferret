@@ -87,6 +87,7 @@ class PromptJob:
     status: str = "queued"
     reply: str | None = None
     error: str = ""
+    applied: bool = False
     created_at: float = field(default_factory=time.time)
 
 
@@ -371,6 +372,27 @@ class ChatJobRunner:
             retried = self.submit(original.text, kind=original.kind)
         return original, retried, saved
 
+    def apply_side_result(self, target: str = "side") -> tuple[PromptJob | None, str]:
+        target = target or "side"
+        with self._lock:
+            if self._active is not None:
+                return None, "busy"
+            job = self._find_live_job_locked(target)
+            if job is None:
+                return None, "missing"
+            if job.kind != "btw":
+                return job, "kind"
+            if job.status != "done":
+                return job, job.status
+            if not job.reply:
+                return job, "no_reply"
+            if job.applied:
+                return job, "already"
+            _append_side_result_to_main_context(self.agent, job)
+            job.applied = True
+            self.session.step = f"applied side #{job.id}"
+            return job, "applied"
+
     def is_busy(self) -> bool:
         with self._lock:
             return self._active is not None or any(job.status in {"queued", "running"} for job in self._jobs)
@@ -638,6 +660,19 @@ def _clone_agent_for_side_chat(agent: Any) -> Any:
     return side
 
 
+def _append_side_result_to_main_context(agent: Any, job: PromptJob) -> None:
+    messages = getattr(agent, "messages", None)
+    if not isinstance(messages, list):
+        messages = []
+        setattr(agent, "messages", messages)
+    if getattr(agent, "provider", "") == "openai" and not messages:
+        from .agent import build_system_prompt
+
+        messages.append({"role": "system", "content": build_system_prompt()})
+    messages.append({"role": "user", "content": f"[Applied /btw side question #{job.id}]\n{_display_job_text(job)}"})
+    messages.append({"role": "assistant", "content": job.reply or ""})
+
+
 # --- welcome screen ------------------------------------------------------------------
 
 def _two_column_box(left: list[str], right: list[str]) -> str:
@@ -903,6 +938,8 @@ def run_repl() -> None:
                 _queue_show(runner, tokens[2:])
             elif len(tokens) > 1 and tokens[1].lower() == "retry":
                 _queue_retry(runner, tokens[2:])
+            elif len(tokens) > 1 and tokens[1].lower() == "apply":
+                _queue_apply(runner, tokens[2:])
             elif len(tokens) > 1 and tokens[1].lower() == "edit":
                 _queue_edit(runner, tokens[2:], _line_after_words(line, 3))
             elif len(tokens) > 1 and tokens[1].lower() == "move":
@@ -1131,7 +1168,7 @@ def _print_queue(runner: ChatJobRunner) -> None:
     done = [job for job in recent if job.status in {"done", "error", "canceled"}]
     for job in done[-3:]:
         status = job.status
-        detail = f" ({job.error})" if job.error else ""
+        detail = f" ({job.error})" if job.error else (" (applied)" if job.applied else "")
         text = _short_job_text(_display_job_text(job))
         print(_c(f"  {status:8} #{job.id} {job.kind}: {text}{detail}", "31" if job.error else "2"))
 
@@ -1148,6 +1185,8 @@ def _print_queued(job: PromptJob, runner: ChatJobRunner) -> None:
 
 def _print_job_result_hint(job: PromptJob) -> None:
     print(_c(f"  use /queue show #{job.id} to view the prompt, reply, or error", "2"))
+    if job.kind == "btw" and job.status == "done" and not job.applied:
+        print(_c(f"  use /queue apply #{job.id} to add this side reply to the main conversation", "2"))
 
 
 def _print_finished(job: PromptJob, *, label: str = "queued") -> None:
@@ -1281,6 +1320,8 @@ def _queue_show(runner: ChatJobRunner, args: list[str]) -> None:
         return
     saved_label = " saved" if saved else ""
     print(_c(f"  job #{job.id}{saved_label} · {job.kind} · {job.status}", PURPLE_B))
+    if job.applied:
+        print(_c("  applied to main conversation", "2"))
     if job.error:
         print(_c("  error:", "31"))
         print(_indent(job.error))
@@ -1305,6 +1346,30 @@ def _queue_retry(runner: ChatJobRunner, args: list[str]) -> None:
         return
     saved_label = " saved" if saved else ""
     print(_c(f"  retried #{original.id}{saved_label} as #{retried.id}", "32"))
+
+
+def _queue_apply(runner: ChatJobRunner, args: list[str]) -> None:
+    target = args[0] if args else "side"
+    job, status = runner.apply_side_result(target)
+    if status == "applied" and job is not None:
+        print(_c(f"  applied side #{job.id} to the main conversation", "32"))
+        return
+    if status == "busy":
+        print(_c("  wait for the active prompt before applying side replies", "33"))
+        return
+    if job is None:
+        print(_c(f"  no side job matched {target!r}", "33"))
+        return
+    if status == "kind":
+        print(_c(f"  job #{job.id} is {job.kind}; only /btw side replies can be applied.", "33"))
+        return
+    if status == "already":
+        print(_c(f"  side #{job.id} is already applied", "2"))
+        return
+    if status == "no_reply":
+        print(_c(f"  side #{job.id} has no reply to apply", "33"))
+        return
+    print(_c(f"  side #{job.id} is {status}; wait for it to finish before applying.", "33"))
 
 
 def _queue_edit(runner: ChatJobRunner, args: list[str], text: str) -> None:

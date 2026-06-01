@@ -427,6 +427,7 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("/queue add <text>", rendered_help)
         self.assertIn("/queue show <id|latest|active|running|side|next>", rendered_help)
         self.assertIn("/queue retry <id|latest|running|side|next>", rendered_help)
+        self.assertIn("/queue apply <id|side|latest>", rendered_help)
         self.assertIn("/queue edit <id|latest|next> <text>", rendered_help)
         self.assertIn("/queue move <id|latest|next> first|last|before|after", rendered_help)
         self.assertIn("/queue cancel <id|latest|next|all>", rendered_help)
@@ -655,6 +656,81 @@ class AgentStackTest(unittest.TestCase):
         self.assertEqual(len(started), 2)
         self.assertEqual(started[0], "main")
         self.assertIn("Side request entered with /btw", started[1])
+
+    def test_repl_queue_apply_promotes_finished_btw_to_main_context(self):
+        from mechferret import repl
+
+        class MainAgent:
+            provider = "openai"
+            messages: list[dict[str, object]]
+
+            def __init__(self) -> None:
+                self.messages = []
+
+        def fake_chat(agent, session, text, *, background=False):
+            return "side answer"
+
+        agent = MainAgent()
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(agent, repl.Session(), chat_fn=fake_chat, queue_path=Path("btw-apply.json"))
+            try:
+                side = runner.submit_side(repl._btw_prompt("side question"))
+                self.assertTrue(runner.wait_idle(timeout=2))
+                repl._queue_apply(runner, ["side"])
+                repl._queue_apply(runner, [str(side.id)])
+                repl._queue_show(runner, [str(side.id)])
+            finally:
+                runner.stop(wait=True)
+
+        self.assertTrue(side.applied)
+        self.assertEqual([message["role"] for message in agent.messages], ["system", "user", "assistant"])
+        self.assertIn("Applied /btw side question #1", str(agent.messages[1]["content"]))
+        self.assertIn("side question", str(agent.messages[1]["content"]))
+        self.assertEqual(agent.messages[2]["content"], "side answer")
+        rendered = out.getvalue()
+        self.assertIn("use /queue apply #1", rendered)
+        self.assertIn("applied side #1 to the main conversation", rendered)
+        self.assertIn("side #1 is already applied", rendered)
+        self.assertIn("applied to main conversation", rendered)
+
+    def test_repl_queue_apply_waits_for_main_prompt_to_finish(self):
+        from mechferret import repl
+
+        class MainAgent:
+            provider = "anthropic"
+
+            def __init__(self) -> None:
+                self.messages = []
+
+        release_main = threading.Event()
+
+        def fake_chat(agent, session, text, *, background=False):
+            if text == "main":
+                self.assertTrue(release_main.wait(timeout=2))
+            return "reply"
+
+        agent = MainAgent()
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(agent, repl.Session(), chat_fn=fake_chat, queue_path=Path("btw-apply-busy.json"))
+            try:
+                runner.submit("main")
+                deadline = time.monotonic() + 2
+                while runner.active() is None and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                side = runner.submit_side(repl._btw_prompt("side question"))
+                deadline = time.monotonic() + 2
+                while side.status == "running" and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                repl._queue_apply(runner, ["side"])
+            finally:
+                release_main.set()
+                runner.stop(wait=True)
+
+        self.assertFalse(side.applied)
+        self.assertEqual(agent.messages, [])
+        self.assertIn("wait for the active prompt before applying side replies", out.getvalue())
 
     def test_repl_queue_wait_waits_for_main_and_side_jobs(self):
         from mechferret import repl
