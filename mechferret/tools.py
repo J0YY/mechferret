@@ -2729,6 +2729,7 @@ def _option_detail(option: dict[str, Any]) -> dict[str, Any]:
         detail["disqualifying_overlap_tests"] = disqualifying_tests
     search_audit = _option_search_audit(option.get("search_audit"))
     if search_audit:
+        search_audit = {key: value for key, value in search_audit.items() if key != "passes"}
         detail["search_audit"] = search_audit
     recent_pressure = _option_recent_pressure(option.get("recent_pressure"))
     if recent_pressure:
@@ -2957,12 +2958,15 @@ def _option_search_audit(value: Any) -> dict[str, Any]:
             for key, flag in focus_coverage.items()
             if isinstance(key, str) and type(flag) is bool
         }
-    source_type_counts = _option_count_map(value.get("source_type_counts"))
-    source_domain_counts = _option_count_map(value.get("source_domain_counts"), normalize_key=True)
+    passes = _option_search_passes(value.get("passes"))
+    source_type_counts, source_domain_counts = _source_counts_from_option_passes(passes)
     if source_type_counts:
         audit["source_type_counts"] = source_type_counts
     if source_domain_counts:
         audit["source_domain_counts"] = source_domain_counts
+    if passes:
+        audit["passes_count"] = len(passes)
+        audit["passes"] = passes[:12]
     source_axis_coverage = _novelty_source_axis_coverage_from_counts(source_type_counts, source_domain_counts)
     audit["source_axis_coverage"] = source_axis_coverage
     missing_source_axis_coverage = [
@@ -3021,6 +3025,61 @@ def _option_count_map(value: Any, *, normalize_key: bool = False) -> dict[str, i
             continue
         counts[name] = count
     return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0]) if normalize_key else item[0]))
+
+
+def _option_search_passes(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    rows: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        source = str(item.get("source", "")).strip()
+        focus = str(item.get("focus", "")).strip()
+        if not source or not focus:
+            continue
+        row: dict[str, Any] = {
+            "source": source,
+            "focus": focus,
+            "requested_results": _safe_int(item.get("requested_results")),
+            "retrieved": _safe_int(item.get("retrieved")),
+            "unique_added": _safe_int(item.get("unique_added")),
+            "failed": bool(item.get("failed")) if type(item.get("failed")) is bool else False,
+        }
+        if "sort_by" in item:
+            row["sort_by"] = str(item.get("sort_by", "")).strip()
+        source_types = _option_count_map(item.get("source_types"))
+        source_domains = _option_count_map(item.get("source_domains"), normalize_key=True)
+        if source_types:
+            row["source_types"] = source_types
+        if source_domains:
+            row["source_domains"] = source_domains
+        rows.append(row)
+    return rows
+
+
+def _source_counts_from_option_passes(rows: list[dict[str, Any]]) -> tuple[dict[str, int], dict[str, int]]:
+    source_type_counts: dict[str, int] = {}
+    source_domain_counts: dict[str, int] = {}
+    for row in rows:
+        source_types = row.get("source_types")
+        if isinstance(source_types, dict):
+            for source_type, count in source_types.items():
+                name = str(source_type).strip()
+                value = _safe_int(count)
+                if name and value > 0:
+                    source_type_counts[name] = source_type_counts.get(name, 0) + value
+        source_domains = row.get("source_domains")
+        if isinstance(source_domains, dict):
+            for domain, count in source_domains.items():
+                name = str(domain).strip().lower()
+                value = _safe_int(count)
+                if name and value > 0:
+                    source_domain_counts[name] = source_domain_counts.get(name, 0) + value
+    return (
+        dict(sorted(source_type_counts.items())),
+        dict(sorted(source_domain_counts.items(), key=lambda item: (-item[1], item[0]))),
+    )
 
 
 def _option_search_focus_summary(value: Any) -> list[dict[str, Any]]:
@@ -4092,7 +4151,8 @@ TOOL_SPECS: list[dict[str, Any]] = [
              "source_type_counts": {"type": "object"},
              "source_domain_counts": {"type": "object"},
              "focus_summary": {"type": "array", "items": {"type": "object"}},
-        }, "description": "assessment.search_audit from verify_novelty; include pass_count, failed_passes, empty_search_passes, duplicate_only_search_passes, focus_coverage, evidence_focus_coverage, source_axis_coverage, missing_focus_coverage, missing_evidence_focus_coverage, missing_source_axis_coverage, source_type_counts, source_domain_counts, and focus_summary. The audit must prove at least 12 arXiv passes at 50 results, 12 web passes at 24 results, focused deep-search coverage, source-axis evidence, unique_added evidence from both arXiv and web, and zero failed retrieval passes."},
+             "passes": {"type": "array", "items": {"type": "object"}},
+        }, "description": "assessment.search_audit from verify_novelty; include pass_count, failed_passes, empty_search_passes, duplicate_only_search_passes, focus_coverage, evidence_focus_coverage, source_axis_coverage, missing_focus_coverage, missing_evidence_focus_coverage, missing_source_axis_coverage, source_type_counts, source_domain_counts, focus_summary, and passes with per-pass source_types/source_domains. The audit must prove at least 12 arXiv passes at 50 results, 12 web passes at 24 results, focused deep-search coverage, source-axis evidence from per-pass rows, unique_added evidence from both arXiv and web, and zero failed retrieval passes."},
          "recent_pressure": {"type": "object", "properties": {
              "status": {"type": "string"},
              "recent_window": {"type": "string"},

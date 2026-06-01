@@ -114,6 +114,42 @@ def _option_search_audit():
         }
         for i, focus in enumerate(web_focuses)
     )
+    passes = []
+    for focus in arxiv_focuses:
+        passes.append(
+            {
+                "source": "arxiv",
+                "focus": focus,
+                "sort_by": "submittedDate" if "recent" in focus else "relevance",
+                "requested_results": 50,
+                "retrieved": 50,
+                "unique_added": 4,
+                "source_types": {"paper": 4},
+                "source_domains": {"arxiv.org": 4},
+                "failed": False,
+            }
+        )
+    web_source_evidence = {
+        "web_github_code_repository": ("code_repository", "github.com"),
+        "web_huggingface_model_hub": ("model_hub", "huggingface.co"),
+        "web_paperswithcode_benchmark": ("benchmark", "paperswithcode.com"),
+        "web_openreview_peer_review": ("paper", "openreview.net"),
+        "web_lab_technical_report": ("lab_report", "deepmind.google"),
+    }
+    for focus in web_focuses:
+        source_type, domain = web_source_evidence.get(focus, ("general_web", "example.org"))
+        passes.append(
+            {
+                "source": "web",
+                "focus": focus,
+                "requested_results": 24,
+                "retrieved": 24,
+                "unique_added": 3,
+                "source_types": {source_type: 3},
+                "source_domains": {domain: 3},
+                "failed": False,
+            }
+        )
     return {
         "pass_count": 26,
         "failed_passes": 0,
@@ -185,6 +221,7 @@ def _option_search_audit():
         ],
         "failed_focuses": [],
         "focus_summary": focus_summary,
+        "passes": passes,
     }
 
 
@@ -291,6 +328,7 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("missing_evidence_focus_coverage", search_audit_props)
         self.assertIn("source_axis_coverage", search_audit_props)
         self.assertIn("missing_source_axis_coverage", search_audit_props)
+        self.assertIn("passes", search_audit_props)
 
     def test_resolve_artifact_tool_returns_json(self):
         from mechferret import tools
@@ -1128,6 +1166,11 @@ class AgentToolTest(unittest.TestCase):
         missing_source_axis_search_audit = _option_search_audit()
         missing_source_axis_search_audit["source_type_counts"].pop("model_hub", None)
         missing_source_axis_search_audit["source_domain_counts"].pop("huggingface.co", None)
+        for row in missing_source_axis_search_audit["passes"]:
+            if row.get("source_types") == {"model_hub": 3}:
+                row["source_types"] = {"general_web": 3}
+            if row.get("source_domains") == {"huggingface.co": 3}:
+                row["source_domains"] = {"example.org": 3}
         missing_source_axis = _validated_option("Missing source axis evidence")
         missing_source_axis["search_audit"] = missing_source_axis_search_audit
         bad_missing_source_axis = json.loads(
@@ -1140,8 +1183,29 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(bad_missing_source_axis["expected"], "objects with search_audit from verify_novelty assessment")
 
         forged_source_axis_search_audit = _option_search_audit()
-        forged_source_axis_search_audit["source_type_counts"] = {"paper": 20}
-        forged_source_axis_search_audit["source_domain_counts"] = {"arxiv.org": 20}
+        forged_source_axis_search_audit["source_type_counts"] = {
+            "paper": 20,
+            "benchmark": 3,
+            "code_repository": 3,
+            "model_hub": 3,
+            "lab_report": 3,
+        }
+        forged_source_axis_search_audit["source_domain_counts"] = {
+            "arxiv.org": 20,
+            "openreview.net": 3,
+            "paperswithcode.com": 3,
+            "github.com": 3,
+            "huggingface.co": 3,
+            "deepmind.google": 3,
+        }
+        forged_source_axis_search_audit["passes"] = [
+            {
+                **row,
+                "source_types": {"paper": 4},
+                "source_domains": {"arxiv.org": 4},
+            }
+            for row in forged_source_axis_search_audit["passes"]
+        ]
         forged_source_axis_search_audit["source_axis_coverage"] = {
             key: True for key in forged_source_axis_search_audit["source_axis_coverage"]
         }
