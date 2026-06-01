@@ -106,6 +106,22 @@ def _option_search_audit():
         "empty_arxiv_passes": 1,
         "empty_web_passes": 1,
         "duplicate_only_search_passes": 3,
+        "focus_coverage": {
+            "recency": True,
+            "recent_discovery": True,
+            "architecture": True,
+            "method": True,
+            "mechanism": True,
+            "evaluation": True,
+            "implementation": True,
+            "replication": True,
+            "failure_modes": True,
+            "protocol": True,
+            "exact_phrase": True,
+            "claim_collision": True,
+            "peer_review": True,
+        },
+        "missing_focus_coverage": [],
         "empty_focuses": [
             {"source": "arxiv", "focus": "peer_review_critique"},
             {"source": "web", "focus": "web_peer_review"},
@@ -1055,6 +1071,7 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(ok["option_details"][0]["search_audit"]["pass_count"], 18)
         self.assertEqual(ok["option_details"][0]["search_audit"]["empty_search_passes"], 2)
         self.assertEqual(ok["option_details"][0]["search_audit"]["focus_summary"][0]["requested_results_max"], 50)
+        self.assertTrue(ok["option_details"][0]["search_audit"]["focus_coverage"]["claim_collision"])
         self.assertEqual(ok["option_details"][0]["recent_pressure"]["status"], "recent_prior_present")
         self.assertEqual(ok["option_details"][0]["recent_pressure"]["latest_year"], 2025)
 
@@ -1423,6 +1440,8 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("search_audit", payload["assessment"])
         self.assertEqual(payload["assessment"]["search_audit"]["pass_count"], len(payload["search_audit"]))
         self.assertGreater(payload["assessment"]["search_audit"]["duplicate_only_search_passes"], 0)
+        self.assertTrue(payload["assessment"]["search_audit"]["focus_coverage"]["claim_collision"])
+        self.assertEqual(payload["assessment"]["search_audit"]["missing_focus_coverage"], [])
         focus_audit = {
             (row["source"], row["focus"]): row
             for row in payload["assessment"]["search_audit"]["focus_summary"]

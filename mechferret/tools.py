@@ -308,9 +308,11 @@ def _compact_novelty_search_audit_summary(search_audit: dict[str, Any]) -> dict[
         "empty_arxiv_passes",
         "empty_web_passes",
         "duplicate_only_search_passes",
+        "focus_coverage",
+        "missing_focus_coverage",
     ):
         if key in search_audit:
-            compact[key] = search_audit[key]
+            compact[key] = _compact_json_value(search_audit[key])
     for key in ("empty_focuses", "failed_focuses"):
         value = search_audit.get(key)
         if isinstance(value, list):
@@ -1642,6 +1644,11 @@ def _novelty_search_audit_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         for row in focus_rows
         if int(row.get("failed_passes", 0) or 0) > 0
     ]
+    focus_coverage = _option_search_focus_coverage(focus_rows)
+    missing_focus_coverage = [
+        focus for focus in sorted(NOVELTY_REQUIRED_OPTION_SEARCH_FOCUS)
+        if not focus_coverage.get(focus)
+    ]
     return {
         "pass_count": len(normalized),
         "failed_passes": sum(1 for row in normalized if row.get("failed")),
@@ -1659,6 +1666,8 @@ def _novelty_search_audit_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "empty_focuses": empty_focuses,
         "failed_focuses": failed_focuses,
+        "focus_coverage": focus_coverage,
+        "missing_focus_coverage": missing_focus_coverage,
         "focus_summary": focus_rows,
         "passes": normalized,
     }
@@ -2603,6 +2612,16 @@ def _option_search_audit(value: Any) -> dict[str, Any]:
         "duplicate_only_search_passes",
     ):
         audit[key] = _safe_int(value.get(key))
+    focus_coverage = value.get("focus_coverage")
+    if isinstance(focus_coverage, dict):
+        audit["focus_coverage"] = {
+            str(key): bool(flag)
+            for key, flag in focus_coverage.items()
+            if isinstance(key, str) and type(flag) is bool
+        }
+    missing_focus_coverage = _option_strings(value.get("missing_focus_coverage", []))
+    if missing_focus_coverage:
+        audit["missing_focus_coverage"] = missing_focus_coverage[:16]
     for key in ("empty_focuses", "failed_focuses"):
         rows = _option_search_focus_rows(value.get(key))
         if rows:
@@ -3610,8 +3629,10 @@ TOOL_SPECS: list[dict[str, Any]] = [
              "duplicate_only_search_passes": {"type": "integer"},
              "empty_focuses": {"type": "array", "items": {"type": "object"}},
              "failed_focuses": {"type": "array", "items": {"type": "object"}},
+             "focus_coverage": {"type": "object"},
+             "missing_focus_coverage": {"type": "array", "items": {"type": "string"}},
              "focus_summary": {"type": "array", "items": {"type": "object"}},
-         }, "description": "assessment.search_audit from verify_novelty; include pass_count, failed_passes, empty_search_passes, duplicate_only_search_passes, and focus_summary. The audit must prove at least 10 arXiv passes at 50 results, 8 web passes at 24 results, and zero failed retrieval passes."},
+         }, "description": "assessment.search_audit from verify_novelty; include pass_count, failed_passes, empty_search_passes, duplicate_only_search_passes, focus_coverage, missing_focus_coverage, and focus_summary. The audit must prove at least 10 arXiv passes at 50 results, 8 web passes at 24 results, focused deep-search coverage, and zero failed retrieval passes."},
          "recent_pressure": {"type": "object", "properties": {
              "status": {"type": "string"},
              "recent_window": {"type": "string"},
