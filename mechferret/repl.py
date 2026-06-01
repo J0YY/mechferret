@@ -173,16 +173,20 @@ class ChatJobRunner:
 
     def stop(self, *, wait: bool = False) -> None:
         if self._stopped:
+            if wait:
+                self._thread.join(timeout=2)
             return
         self._stopped = True
         self._queue.put(None)
         if wait:
             self._thread.join(timeout=2)
-        self.save_pending()
+        self.save_pending(include_active=True)
 
-    def save_pending(self) -> int:
+    def save_pending(self, *, include_active: bool = False) -> int:
         with self._lock:
             pending = [job for job in self._jobs if job.status == "queued"]
+            if include_active and self._active is not None and self._active.status == "running":
+                pending = [self._active, *pending]
         return _save_queue_jobs(self._queue_path, pending)
 
     def _set_active(self, job: PromptJob | None) -> None:

@@ -533,6 +533,33 @@ class AgentStackTest(unittest.TestCase):
 
         self.assertEqual(sorted(started), ["first", "second"])
 
+    def test_repl_chat_job_runner_saves_active_prompt_on_fast_shutdown(self):
+        from mechferret import repl
+
+        queue_path = Path("active-queue.json")
+        release = threading.Event()
+        started = []
+
+        def fake_chat(agent, session, text, *, background=False):
+            started.append(text)
+            self.assertTrue(release.wait(timeout=2))
+            return text
+
+        with redirect_stdout(StringIO()):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=queue_path)
+            try:
+                runner.submit("active prompt")
+                deadline = time.monotonic() + 2
+                while runner.active() is None and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                runner.stop(wait=False)
+                self.assertEqual([job.text for job in runner.saved()], ["active prompt"])
+            finally:
+                release.set()
+                runner.stop(wait=True)
+
+        self.assertEqual(started, ["active prompt"])
+
     def test_repl_btw_parsing_preserves_prompt_text(self):
         from mechferret import repl
 

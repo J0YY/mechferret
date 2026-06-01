@@ -336,7 +336,7 @@ You can do things like:
 ```text
 /btw <prompt>   queue a compact side question while another reply is running
 /queue          show the active and queued prompts
-/queue restore  restore saved queued prompts from the last session
+/queue restore  restore saved queued/running prompts from the last session
 /cancel <id>    remove a queued prompt before it starts
 /quickstart     show the recommended demo/OpenVLA/CI command path
 /selftest       run offline readiness checks and optionally verify demo artifacts
