@@ -239,7 +239,7 @@ def build_parser() -> argparse.ArgumentParser:
     api = sub.add_parser("api", aliases=["/api"], help="Show or change provider configuration.")
     api.add_argument("--provider", choices=sorted(PROVIDERS) + ["local"], help="Set default provider.")
     api.add_argument("--api-key", help="Store or replace the key for --provider.")
-    api.add_argument("--model", help="Store or replace the default model for --provider.")
+    api.add_argument("--model", help="Store or replace the configured chat model for --provider.")
     api.add_argument("--show", action="store_true", help="Show configured provider status.")
     api.add_argument("--clear", choices=sorted(PROVIDERS), help="Remove a stored provider key.")
     api.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
@@ -2627,9 +2627,10 @@ def handle_skills(args) -> None:
         if args.json:
             print(json.dumps(payload, indent=2, sort_keys=True))
             return
+        model_label = skill.model or "(required at run time)"
         print(f"Skill: {skill.name}")
         print(f"Description: {skill.description}")
-        print(f"Task: {skill.task}  Model: {skill.model}")
+        print(f"Task: {skill.task}  Model: {model_label}")
         print(f"Question: {skill.question}")
         print(f"Screen heads: {skill.max_screen_heads}  Promote top-k: {skill.promote_top_k}  Seeds: {skill.seeds}")
         print(f"Budget: {skill.budget}")
@@ -2639,7 +2640,7 @@ def handle_skills(args) -> None:
         _print_next_actions(payload["next_actions"])
         return
     skills = list_skills()
-    next_actions = _skills_next_actions(skills[0] if skills else None, listed=skills)
+    next_actions = _skills_next_actions(listed=skills)
     if args.json:
         print(
             json.dumps(
@@ -2670,6 +2671,7 @@ def _skill_payload(skill) -> dict[str, Any]:
         "description": skill.description,
         "task": skill.task,
         "model": skill.model,
+        "model_required": not bool(skill.model),
         "question": skill.question,
         "max_screen_heads": skill.max_screen_heads,
         "promote_top_k": skill.promote_top_k,
@@ -2686,17 +2688,17 @@ def _skills_next_actions(skill=None, *, listed: list[Any] | None = None) -> list
     if listed is not None:
         if not listed:
             return ["Run `mechferret doctor --json` to verify the packaged skills directory."]
-        preferred = listed[0]
         return [
-            f"Run `mechferret skills {preferred.name} --json` to inspect one skill's budget and stop criteria.",
-            f"Run `mechferret discover --skill {preferred.name} --model <model> --backend synthetic --json` to exercise a skill locally.",
+            "Run `mechferret skills <skill> --json` to inspect a specific skill's task, budget, and stop criteria.",
+            "Run `mechferret discover --skill <skill> --model <model> --backend synthetic --json` after choosing a matching skill and target model.",
             "Run `mechferret registry --kind playbook --json` to compare skill-backed playbooks.",
         ]
     if skill is None:
         return ["Run `mechferret skills --json` to list available skills."]
+    model_flag = "" if skill.model else " --model <model>"
     return [
-        f"Run `mechferret discover --skill {skill.name} --model <model> --backend synthetic --json` to exercise this skill locally.",
-        f"Run `mechferret discover --skill {skill.name} --model <model> --backend transformer_lens --json` when local model dependencies are installed.",
+        f"Run `mechferret discover --skill {skill.name}{model_flag} --backend synthetic --json` to exercise this skill locally.",
+        f"Run `mechferret discover --skill {skill.name}{model_flag} --backend transformer_lens --json` when local model dependencies are installed.",
         "Run `mechferret commands discover --json` to inspect discovery options.",
     ]
 

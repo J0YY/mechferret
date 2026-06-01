@@ -646,7 +646,7 @@ mechferret /skills
 Show one:
 
 ```bash
-mechferret /skills ioi-circuit
+mechferret /skills <skill>
 ```
 
 Built-in skills:

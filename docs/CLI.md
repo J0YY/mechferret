@@ -958,7 +958,7 @@ Options:
 - `-h`, `--help`: show this help message and exit
 - `--provider`: choices: `anthropic`, `openai`, `local`; Set default provider.
 - `--api-key`: Store or replace the key for --provider.
-- `--model`: Store or replace the default model for --provider.
+- `--model`: Store or replace the configured chat model for --provider.
 - `--show`: Show configured provider status.
 - `--clear`: choices: `anthropic`, `openai`; Remove a stored provider key.
 - `--json`: Print machine-readable JSON.

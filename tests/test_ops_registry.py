@@ -751,9 +751,10 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertEqual(listed["count"], len(listed["skills"]))
         self.assertTrue(any(skill["name"] == "ioi-circuit" for skill in listed["skills"]))
         listed_actions = " ".join(listed["next_actions"])
-        self.assertIn("mechferret skills", listed_actions)
+        self.assertIn("mechferret skills <skill> --json", listed_actions)
         self.assertIn("--json", listed_actions)
-        self.assertIn("--model <model> --backend synthetic --json", listed_actions)
+        self.assertIn("mechferret discover --skill <skill> --model <model> --backend synthetic --json", listed_actions)
+        self.assertNotIn("discover --skill ioi-circuit", listed_actions)
 
         detail_out = StringIO()
         with redirect_stdout(detail_out):
@@ -761,6 +762,7 @@ class OpsRegistryTest(unittest.TestCase):
         detail = json.loads(detail_out.getvalue())
         self.assertTrue(detail["ok"])
         self.assertEqual(detail["skill"]["name"], "ioi-circuit")
+        self.assertTrue(detail["skill"]["model_required"])
         self.assertIn("budget", detail["skill"])
         self.assertIn("min_rigor", detail["skill"])
         detail_actions = " ".join(detail["next_actions"])
@@ -772,6 +774,7 @@ class OpsRegistryTest(unittest.TestCase):
             main(["skills", "ioi-circuit"])
         rendered = text_out.getvalue()
         self.assertIn("Skill: ioi-circuit", rendered)
+        self.assertIn("Model: (required at run time)", rendered)
         self.assertIn("Next actions:", rendered)
         self.assertIn("mechferret discover --skill ioi-circuit --model <model> --backend synthetic --json", rendered)
 
