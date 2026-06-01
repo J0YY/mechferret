@@ -606,7 +606,7 @@ class AgentStackTest(unittest.TestCase):
         self.assertFalse(runner.is_busy())
         self.assertEqual(len(started), 2)
         rendered = out.getvalue()
-        self.assertIn("waiting for active queued work", rendered)
+        self.assertIn("waiting for active or side work", rendered)
         self.assertIn("queue idle", rendered)
 
     def test_repl_queue_join_waits_for_one_job_and_shows_result_hint(self):
@@ -675,6 +675,37 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("job #1 still running after timeout", rendered)
         self.assertIn("queue paused; use /queue resume", rendered)
         self.assertIn("job #9 is saved", rendered)
+
+    def test_repl_queue_wait_allows_running_work_while_paused_without_queued_jobs(self):
+        from mechferret import repl
+
+        release = threading.Event()
+
+        def fake_chat(agent, session, text, *, background=False):
+            self.assertTrue(release.wait(timeout=2))
+            return text
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-wait-paused-running.json"))
+            try:
+                runner.submit_side(repl._btw_prompt("side question"))
+                deadline = time.monotonic() + 2
+                while not runner.side_active() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                runner.pause()
+                releaser = threading.Thread(target=lambda: (time.sleep(0.05), release.set()))
+                releaser.start()
+                repl._queue_wait(runner, ["2"])
+                releaser.join(timeout=2)
+            finally:
+                release.set()
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("waiting for active or side work", rendered)
+        self.assertIn("queue idle", rendered)
+        self.assertNotIn("use /queue resume", rendered)
 
     def test_repl_queue_show_renders_prompt_reply_and_saved_jobs(self):
         from mechferret import repl

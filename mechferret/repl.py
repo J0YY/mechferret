@@ -1170,13 +1170,13 @@ def _queue_wait(runner: ChatJobRunner, args: list[str]) -> None:
         if timeout <= 0:
             print(_c("  wait timeout must be positive", "33"))
             return
-    if runner.paused():
+    if runner.paused() and runner.queued():
         print(_c("  queue paused; use /queue resume before waiting for queued work", "33"))
         return
     if not runner.is_busy():
         print(_c("  queue already idle", "2"))
         return
-    print(_c("  waiting for active queued work…", "2"))
+    print(_c("  waiting for active or side work…", "2"))
     if runner.wait_idle(timeout=timeout):
         print(_c("  queue idle", "32"))
     else:
