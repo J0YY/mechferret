@@ -523,6 +523,45 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("use /queue show #1", rendered)
         self.assertIn("use /queue show #2", rendered)
 
+    def test_repl_background_print_redisplays_readline_input_on_tty(self):
+        import sys
+        from unittest.mock import patch
+
+        from mechferret import repl
+
+        class TtyBuffer(StringIO):
+            def isatty(self):
+                return True
+
+        class FakeReadline:
+            def __init__(self) -> None:
+                self.redisplays = 0
+
+            def redisplay(self) -> None:
+                self.redisplays += 1
+
+        stdin = TtyBuffer()
+        stdout = TtyBuffer()
+        fake_readline = FakeReadline()
+        with (
+            patch.object(repl, "readline", fake_readline),
+            patch.object(sys, "stdin", stdin),
+            patch.object(sys, "stdout", stdout),
+        ):
+            repl._print_background("  finished #1")
+
+        self.assertEqual(stdout.getvalue(), "\r\033[2K  finished #1\n")
+        self.assertEqual(fake_readline.redisplays, 1)
+
+    def test_repl_background_print_keeps_redirected_output_plain(self):
+        from mechferret import repl
+
+        out = StringIO()
+        with redirect_stdout(out):
+            repl._print_background("  finished #1")
+
+        self.assertEqual(out.getvalue(), "  finished #1\n")
+
     def test_repl_print_queued_shows_position_and_controls(self):
         from mechferret import repl
 
