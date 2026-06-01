@@ -89,6 +89,7 @@ class AgentStackTest(unittest.TestCase):
                 }
             ],
             {"usd": math.nan, "nested": {1: Path("artifact"), "items": ("a", Path("b")), "bad": math.inf}},
+            {"policy": Path("persisted"), "bad": math.inf},
         )
 
         loaded = json.loads(path.read_text(encoding="utf-8"))
@@ -99,6 +100,8 @@ class AgentStackTest(unittest.TestCase):
         self.assertEqual(loaded["cost"]["nested"]["1"], "artifact")
         self.assertEqual(loaded["cost"]["nested"]["items"], ["a", "b"])
         self.assertIsNone(loaded["cost"]["nested"]["bad"])
+        self.assertEqual(loaded["metadata"]["policy"], "persisted")
+        self.assertIsNone(loaded["metadata"]["bad"])
         with path.open("r", encoding="utf-8") as handle:
             json.load(handle, parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)))
 
@@ -218,6 +221,32 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("which model and behavior/task", a.messages[2]["content"])
         self.assertNotIn("GPT-2", a.messages[2]["content"])
         self.assertNotIn("5.0", a.messages[2]["content"])
+
+    def test_agent_load_session_preserves_benchmark_context_suppression(self):
+        from mechferret import agent, sessions
+
+        sessions.save_session(
+            "suppressed",
+            "openai",
+            "gpt-test",
+            [
+                {"role": "user", "content": "Use GPT-2 small for IOI."},
+                {"role": "assistant", "content": "Run duplicate-token/name-mover tests in GPT-2 small."},
+            ],
+            {},
+            {"suppress_benchmark_context": True},
+        )
+
+        a = agent.Agent()
+        a.provider, a.model, a._key = "openai", "gpt-test", "x"
+        a.load_session("suppressed")
+
+        payload_text = json.dumps(a.messages)
+        self.assertTrue(a._suppress_benchmark_context)
+        self.assertNotIn("gpt2", payload_text.lower())
+        self.assertNotIn("GPT-2", payload_text)
+        self.assertNotIn("IOI", payload_text)
+        self.assertNotIn("duplicate-token", payload_text)
 
     def test_agent_load_session_rejects_embedded_bad_id_and_provider(self):
         from mechferret import agent, sessions

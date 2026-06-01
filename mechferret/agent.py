@@ -595,6 +595,7 @@ class Agent:
             sessions.save_session(
                 self.session_id, self.provider, self.model, self.messages,
                 {"usd": self.cost.usd, "input": self.cost.input_tokens, "output": self.cost.output_tokens},
+                {"suppress_benchmark_context": self._suppress_benchmark_context},
             )
         except Exception as exc:  # noqa: BLE001 - transcript persistence is best-effort
             try:
@@ -680,7 +681,14 @@ class Agent:
                 self._key = candidate_key
         messages = data.get("messages", [])
         loaded_messages = [message for message in messages if isinstance(message, dict)] if isinstance(messages, list) else []
-        self.messages = _sanitize_loaded_messages(loaded_messages, self.provider)
+        metadata = data.get("metadata", {})
+        metadata = metadata if isinstance(metadata, dict) else {}
+        self._suppress_benchmark_context = bool(metadata.get("suppress_benchmark_context"))
+        self.messages = _sanitize_loaded_messages(
+            loaded_messages,
+            self.provider,
+            suppress_benchmark_context=self._suppress_benchmark_context,
+        )
         c = data.get("cost", {})
         c = c if isinstance(c, dict) else {}
         self.cost.usd = _coerce_float(c.get("usd"), 0.0)

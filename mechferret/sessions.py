@@ -80,7 +80,14 @@ class SessionMeta:
     updated_at: str
 
 
-def save_session(session_id: str, provider: str, model: str, messages: list, cost: dict) -> Path:
+def save_session(
+    session_id: str,
+    provider: str,
+    model: str,
+    messages: list,
+    cost: dict,
+    metadata: dict[str, Any] | None = None,
+) -> Path:
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
     path = _session_path(session_id)
     payload = {
@@ -89,6 +96,7 @@ def save_session(session_id: str, provider: str, model: str, messages: list, cos
         "model": model,
         "messages": _json_ready(messages if isinstance(messages, list) else []),
         "cost": _json_ready(cost if isinstance(cost, dict) else {}),
+        "metadata": _json_ready(metadata if isinstance(metadata, dict) else {}),
         "updated_at": datetime.now(UTC).isoformat(timespec="seconds"),
     }
     tmp = path.with_suffix(".json.tmp")
