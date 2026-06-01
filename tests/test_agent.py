@@ -766,6 +766,13 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("benchmark", payload["assessment"]["coverage"]["credible_source_types"])
         self.assertIn("github.com", payload["assessment"]["coverage"]["source_domain_counts"])
         self.assertGreaterEqual(payload["assessment"]["coverage"]["retrieved_evidence"], 2)
+        self.assertIn("claim_readiness", payload["assessment"])
+        self.assertFalse(payload["assessment"]["claim_readiness"]["can_claim_high_novelty"])
+        self.assertEqual(payload["assessment"]["claim_readiness"]["status"], "not_ready_prior_art_overlap")
+        self.assertIn("focus_coverage", payload["assessment"]["coverage"])
+        self.assertTrue(payload["assessment"]["coverage"]["focus_coverage"]["method"])
+        self.assertTrue(payload["assessment"]["coverage"]["focus_coverage"]["replication"])
+        self.assertGreaterEqual(payload["assessment"]["coverage"]["recent_evidence"], 1)
         self.assertIn("method, mechanism, evaluation", payload["guidance"])
 
     def test_verify_novelty_search_plan_uses_idea_terms_without_fixed_architectures(self):
@@ -794,6 +801,9 @@ class AgentToolTest(unittest.TestCase):
             payload = json.loads(tools.run_tool("verify_novelty", {"idea": "adaptive probe routing for activation patches"}))
 
         self.assertEqual(payload["assessment"]["risk"], "unknown_search_incomplete")
+        self.assertEqual(payload["assessment"]["claim_readiness"]["status"], "not_ready_search_incomplete")
+        self.assertFalse(payload["assessment"]["claim_readiness"]["can_claim_high_novelty"])
+        self.assertIn("search_completed", payload["assessment"]["claim_readiness"]["missing_checks"])
         self.assertGreater(payload["assessment"]["coverage"]["failed_queries"], 0)
         self.assertGreater(payload["assessment"]["coverage"]["failed_arxiv_queries"], 0)
         self.assertGreater(payload["assessment"]["coverage"]["failed_web_queries"], 0)

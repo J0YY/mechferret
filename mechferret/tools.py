@@ -1272,6 +1272,34 @@ def _novelty_assessment(
     source_profile = _novelty_source_profile(rows)
     arxiv_plan = arxiv_plan or []
     web_plan = web_plan or []
+    coverage = {
+        "search_strategy": "deep_recent_method_mechanism_evaluation_implementation_replication",
+        "arxiv_query_count": len(arxiv_plan),
+        "web_query_count": len(web_plan),
+        "arxiv_results_per_query": max((int(row.get("max_results", 0)) for row in arxiv_plan), default=0),
+        "web_results_per_query": max((int(row.get("max_results", 0)) for row in web_plan), default=0),
+        "arxiv_focuses": sorted({str(row.get("focus", "")) for row in arxiv_plan if row.get("focus")}),
+        "web_focuses": sorted({str(row.get("focus", "")) for row in web_plan if row.get("focus")}),
+        "retrieved_evidence": len(rows),
+        "retrieved_papers": arxiv_count,
+        "recent_evidence": sum(1 for row in rows if _novelty_is_recent(row.get("published", ""))),
+        "web_results": web_count,
+        "web_results_with_snippets": sum(1 for row in rows if row.get("source") == "web" and row.get("abstract")),
+        "web_pages_fetched": sum(1 for row in rows if row.get("source") == "web" and row.get("fetched")),
+        "web_results_with_page_text": sum(1 for row in rows if row.get("source") == "web" and row.get("page_excerpt")),
+        "web_source_types": web_source_types,
+        "unique_source_domains": source_profile["unique_domains"],
+        "source_domain_counts": source_profile["domain_counts"],
+        "credible_source_count": source_profile["credible_sources"],
+        "credible_source_types": source_profile["credible_types"],
+        "failed_queries": len(errors),
+        "failed_arxiv_queries": sum(1 for error in errors if error.get("source") == "arxiv"),
+        "failed_web_queries": sum(1 for error in errors if error.get("source") == "web"),
+        "failed_web_fetches": sum(1 for error in errors if error.get("source") == "web_fetch"),
+        "idea_terms": terms,
+        "recent_window": _novelty_recent_window_label(),
+    }
+    coverage["focus_coverage"] = _novelty_focus_coverage(coverage["arxiv_focuses"], coverage["web_focuses"])
     if not rows and errors:
         risk = "unknown_search_incomplete"
         verdict = "Novelty is not assessable because one or more retrieval passes failed."
@@ -1293,32 +1321,8 @@ def _novelty_assessment(
         "evidence_strength": _novelty_evidence_strength(top_score, source_profile),
         "source_diversity": source_profile["diversity"],
         "closest_prior_art": closest,
-        "coverage": {
-            "search_strategy": "deep_recent_method_mechanism_evaluation_implementation_replication",
-            "arxiv_query_count": len(arxiv_plan),
-            "web_query_count": len(web_plan),
-            "arxiv_results_per_query": max((int(row.get("max_results", 0)) for row in arxiv_plan), default=0),
-            "web_results_per_query": max((int(row.get("max_results", 0)) for row in web_plan), default=0),
-            "arxiv_focuses": sorted({str(row.get("focus", "")) for row in arxiv_plan if row.get("focus")}),
-            "web_focuses": sorted({str(row.get("focus", "")) for row in web_plan if row.get("focus")}),
-            "retrieved_evidence": len(rows),
-            "retrieved_papers": arxiv_count,
-            "web_results": web_count,
-            "web_results_with_snippets": sum(1 for row in rows if row.get("source") == "web" and row.get("abstract")),
-            "web_pages_fetched": sum(1 for row in rows if row.get("source") == "web" and row.get("fetched")),
-            "web_results_with_page_text": sum(1 for row in rows if row.get("source") == "web" and row.get("page_excerpt")),
-            "web_source_types": web_source_types,
-            "unique_source_domains": source_profile["unique_domains"],
-            "source_domain_counts": source_profile["domain_counts"],
-            "credible_source_count": source_profile["credible_sources"],
-            "credible_source_types": source_profile["credible_types"],
-            "failed_queries": len(errors),
-            "failed_arxiv_queries": sum(1 for error in errors if error.get("source") == "arxiv"),
-            "failed_web_queries": sum(1 for error in errors if error.get("source") == "web"),
-            "failed_web_fetches": sum(1 for error in errors if error.get("source") == "web_fetch"),
-            "idea_terms": terms,
-            "recent_window": _novelty_recent_window_label(),
-        },
+        "claim_readiness": _novelty_claim_readiness(risk, top_score, coverage),
+        "coverage": coverage,
         "required_delta": [
             "Name the nearest prior paper and the exact method component that differs.",
             "Show a benchmark, ablation, or causal test where the idea behaves differently.",
@@ -1354,6 +1358,79 @@ def _novelty_scored_prior(row: dict[str, Any], terms: list[str]) -> dict[str, An
         "evidence_excerpt": _novelty_evidence_excerpt(row),
         "reason": _novelty_prior_reason(matched, focus, row.get("published", ""), row.get("source", ""), source_type),
     }
+
+
+def _novelty_focus_coverage(arxiv_focuses: list[str], web_focuses: list[str]) -> dict[str, bool]:
+    text = " ".join([*arxiv_focuses, *web_focuses]).lower()
+    return {
+        "relevance": "relevance" in text,
+        "recency": "recent" in text or "submitted" in text or "updated" in text,
+        "method": "method" in text,
+        "mechanism": "mechanism" in text,
+        "evaluation": "evaluation" in text or "benchmark" in text,
+        "implementation": "implementation" in text or "code" in text,
+        "replication": "replication" in text or "reproduction" in text,
+        "failure_modes": "failure" in text or "limitations" in text,
+        "protocol": "protocol" in text or "dataset" in text,
+        "survey": "survey" in text,
+    }
+
+
+def _novelty_claim_readiness(risk: str, top_score: float, coverage: dict[str, Any]) -> dict[str, Any]:
+    focus_coverage = coverage.get("focus_coverage") if isinstance(coverage.get("focus_coverage"), dict) else {}
+    checks = {
+        "deep_query_plan": coverage.get("arxiv_query_count", 0) >= 10
+        and coverage.get("web_query_count", 0) >= 8
+        and coverage.get("arxiv_results_per_query", 0) >= 30
+        and coverage.get("web_results_per_query", 0) >= 16,
+        "focus_breadth": all(
+            bool(focus_coverage.get(name))
+            for name in ("method", "mechanism", "evaluation", "implementation", "replication", "failure_modes", "protocol")
+        ),
+        "retrieved_prior_art": coverage.get("retrieved_evidence", 0) >= 8,
+        "recent_prior_art": coverage.get("recent_evidence", 0) >= 1,
+        "credible_source_diversity": coverage.get("unique_source_domains", 0) >= 3
+        and coverage.get("credible_source_count", 0) >= 2,
+        "web_page_enrichment": coverage.get("web_results_with_page_text", 0) >= 1,
+        "search_completed": coverage.get("failed_arxiv_queries", 0) == 0 and coverage.get("failed_web_queries", 0) == 0,
+    }
+    missing = [name for name, passed in checks.items() if not passed]
+    if risk == "unknown_search_incomplete" or not checks["search_completed"]:
+        status = "not_ready_search_incomplete"
+    elif risk == "high_prior_art_risk":
+        status = "not_ready_prior_art_overlap"
+    elif missing:
+        status = "not_ready_needs_more_evidence"
+    elif top_score >= 0.25:
+        status = "delta_review_required"
+    else:
+        status = "provisional_low_overlap_after_deep_search"
+    return {
+        "status": status,
+        "can_claim_high_novelty": False,
+        "checks": checks,
+        "missing_checks": missing,
+        "next_actions": _novelty_readiness_next_actions(status, missing),
+    }
+
+
+def _novelty_readiness_next_actions(status: str, missing: list[str]) -> list[str]:
+    actions = []
+    if status == "not_ready_search_incomplete":
+        actions.append("Retry failed retrieval passes before judging novelty.")
+    if status == "not_ready_prior_art_overlap":
+        actions.append("Treat the direction as prior-art-overlapping until the exact method and evaluation delta is demonstrated.")
+    if "focus_breadth" in missing:
+        actions.append("Run follow-up searches covering method, mechanism, evaluation, implementation, replication, failure modes, and protocol.")
+    if "retrieved_prior_art" in missing or "credible_source_diversity" in missing:
+        actions.append("Collect more independent papers, benchmarks, code, or project reports before selecting this idea.")
+    if "recent_prior_art" in missing:
+        actions.append("Add recent submitted-date and updated-date searches for the last two years.")
+    if "web_page_enrichment" in missing:
+        actions.append("Fetch the top credible web/code/project pages and compare their technical details.")
+    if not actions:
+        actions.append("Use the closest prior art list to write a precise required delta; do not claim high novelty without expert review.")
+    return actions
 
 
 def _novelty_enrich_web_results(
