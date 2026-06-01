@@ -425,14 +425,14 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("/btw <text>", rendered_help)
         self.assertIn("/queue", rendered_help)
         self.assertIn("/queue show <id|latest|active|running|side|next>", rendered_help)
-        self.assertIn("/queue retry <id|latest|next>", rendered_help)
+        self.assertIn("/queue retry <id|latest|running|side|next>", rendered_help)
         self.assertIn("/queue edit <id|latest|next> <text>", rendered_help)
         self.assertIn("/queue move <id|latest|next> first|last|before|after", rendered_help)
         self.assertIn("/queue cancel <id|latest|next|all>", rendered_help)
         self.assertIn("/queue clear [queued|saved|all]", rendered_help)
         self.assertIn("/queue pause", rendered_help)
         self.assertIn("/queue resume", rendered_help)
-        self.assertIn("/queue restore [id|latest|next|all]", rendered_help)
+        self.assertIn("/queue restore [id|latest|running|side|next|all]", rendered_help)
         self.assertIn("/queue wait [seconds]", rendered_help)
         self.assertIn("/queue join <id|latest|active|running|side|next> [seconds]", rendered_help)
         self.assertIn("/cancel <id|latest|next|all>", rendered_help)
@@ -927,6 +927,42 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("job #9 saved", rendered)
         self.assertIn("saved prompt", rendered)
 
+    def test_repl_queue_saved_aliases_resolve_side_and_running_jobs(self):
+        from mechferret import repl
+
+        queue_path = Path("queue-saved-side-running.json")
+        main_running = repl.PromptJob(id=3, text="main running prompt", status="running", created_at=100.0)
+        side_old = repl.PromptJob(id=5, text=repl._btw_prompt("old side prompt"), kind="btw", status="queued", created_at=150.0)
+        side_new = repl.PromptJob(id=8, text=repl._btw_prompt("new side prompt"), kind="btw", status="running", created_at=200.0)
+        repl._save_queue_jobs(queue_path, [main_running, side_old, side_new])
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: "reply", queue_path=queue_path)
+            try:
+                side, side_saved = runner.find_job("side")
+                running, running_saved = runner.find_job("running")
+                self.assertIsNotNone(side)
+                self.assertIsNotNone(running)
+                self.assertEqual(side.id, side_new.id)
+                self.assertEqual(running.id, side_new.id)
+                self.assertTrue(side_saved)
+                self.assertTrue(running_saved)
+
+                repl._queue_show(runner, ["side"])
+                repl._queue_retry(runner, ["btw"])
+                self.assertTrue(runner.wait_idle(timeout=2))
+                restored = runner.restore_saved("running")
+                self.assertEqual([job.id for job in restored], [side_new.id])
+            finally:
+                runner.stop(wait=True)
+
+        self.assertEqual([job.id for job in repl._load_saved_queue(queue_path)], [main_running.id, side_old.id])
+        rendered = out.getvalue()
+        self.assertIn("job #8 saved", rendered)
+        self.assertIn("new side prompt", rendered)
+        self.assertIn("retried #8 saved", rendered)
+
     def test_repl_queue_saved_aliases_resolve_latest_and_next_jobs(self):
         from mechferret import repl
 
@@ -1126,7 +1162,7 @@ class AgentStackTest(unittest.TestCase):
 
         rendered = out.getvalue()
         self.assertIn("/queue show <job id|latest|active|running|side|next>", rendered)
-        self.assertIn("/queue retry <job id|latest|next>", rendered)
+        self.assertIn("/queue retry <job id|latest|running|side|next>", rendered)
         self.assertIn("/queue edit <job id|latest|next> <new prompt>", rendered)
         self.assertIn("/queue move <job id|latest|next>", rendered)
         self.assertIn("/queue join <job id|latest|active|running|side|next> [seconds]", rendered)

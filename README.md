@@ -337,14 +337,14 @@ You can do things like:
 /btw <prompt>   run a compact side question while another reply is running
 /queue          show the active and queued prompts
 /queue show <id|latest|active|running|side|next> show a queued job's full prompt, reply, or error
-/queue retry <id|latest|next> retry a job without retyping its prompt
+/queue retry <id|latest|running|side|next> retry a job without retyping its prompt
 /queue edit <id|latest|next> <prompt> edit a queued prompt before it starts
 /queue move <id|latest|next> first|last|before|after reorder a queued prompt before it starts
 /queue cancel <id|latest|next|all> cancel queued prompts from the queue view
 /queue clear queued|saved|all clear live or saved queue state
 /queue pause   hold queued prompts after the active reply finishes
 /queue resume  resume held queued prompts
-/queue restore [id|latest|next|all] restore saved queued/running prompts from the last session
+/queue restore [id|latest|running|side|next|all] restore saved queued/running prompts from the last session
 /queue wait     wait until active queued and side work finishes
 /queue join <id|latest|active|running|side|next> wait for one queued or side job to finish
 /cancel <id|latest|next|all> remove queued prompts before they start

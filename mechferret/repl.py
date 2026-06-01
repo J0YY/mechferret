@@ -356,14 +356,8 @@ class ChatJobRunner:
             if job is not None:
                 return job, False
         saved_jobs = self.saved()
-        if target in {"latest", "last"} and saved_jobs:
-            return max(saved_jobs, key=_job_order_key), True
-        if target == "next" and saved_jobs:
-            return saved_jobs[0], True
-        for job in saved_jobs:
-            if str(job.id) == target:
-                return job, True
-        return None, False
+        saved_job = _find_saved_queue_job(saved_jobs, target)
+        return (saved_job, True) if saved_job is not None else (None, False)
 
     def retry(self, target: str) -> tuple[PromptJob | None, PromptJob | None, bool]:
         original, saved = self.find_job(target)
@@ -562,6 +556,12 @@ def _find_saved_queue_job(jobs: list[PromptJob], target: str) -> PromptJob | Non
         return None
     if target in {"latest", "last"}:
         return max(jobs, key=_job_order_key)
+    if target in {"active", "running"}:
+        running_jobs = [job for job in jobs if job.status == "running"]
+        return max(running_jobs, key=_job_order_key) if running_jobs else None
+    if target in {"side", "btw"}:
+        side_jobs = [job for job in jobs if job.kind == "btw"]
+        return max(side_jobs, key=_job_order_key) if side_jobs else None
     if target == "next":
         return jobs[0]
     return next((job for job in jobs if str(job.id) == target), None)
@@ -1269,7 +1269,7 @@ def _queue_show(runner: ChatJobRunner, args: list[str]) -> None:
 def _queue_retry(runner: ChatJobRunner, args: list[str]) -> None:
     target = args[0] if args else ""
     if not target:
-        print(_c("  usage: /queue retry <job id|latest|next>", "33"))
+        print(_c("  usage: /queue retry <job id|latest|running|side|next>", "33"))
         return
     original, retried, saved = runner.retry(target)
     if original is None:
