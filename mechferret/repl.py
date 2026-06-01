@@ -246,16 +246,29 @@ class ChatJobRunner:
 
     def edit(self, target: str, text: str) -> tuple[PromptJob | None, str]:
         edited: PromptJob | None = None
+        target = target.strip().lower().lstrip("#")
         with self._lock:
             job = self._find_live_job_locked(target)
-            if job is None:
-                return None, "missing"
-            if job.status != "queued":
-                return job, job.status
-            job.text = text
-            edited = job
+            if job is not None:
+                if job.status != "queued":
+                    return job, job.status
+                job.text = text
+                edited = job
         if edited is None:
-            return None, "missing"
+            saved_jobs = self.saved()
+            saved_job = _find_saved_queue_job(saved_jobs, target)
+            if saved_job is None:
+                return None, "missing"
+            if saved_job.status != "queued":
+                return saved_job, saved_job.status
+            saved_job.text = text
+            with self._lock:
+                live_ids = {job.id for job in self._jobs}
+                pending = [job for job in self._jobs if job.status == "queued"]
+            pending.extend(job for job in saved_jobs if job.id not in live_ids)
+            self._preserved_saved_ids.add(saved_job.id)
+            _save_queue_jobs(self._queue_path, pending)
+            return saved_job, "updated"
         self.save_pending()
         return edited, "updated"
 
@@ -500,15 +513,21 @@ def _pop_saved_queue_jobs(jobs: list[PromptJob], target: str) -> tuple[list[Prom
         return [], []
     if target == "all":
         return list(jobs), []
-    if target in {"latest", "last"}:
-        match = max(jobs, key=_job_order_key)
-    elif target == "next":
-        match = jobs[0]
-    else:
-        match = next((job for job in jobs if str(job.id) == target), None)
+    match = _find_saved_queue_job(jobs, target)
     if match is None:
         return [], list(jobs)
     return [match], [job for job in jobs if job.id != match.id]
+
+
+def _find_saved_queue_job(jobs: list[PromptJob], target: str) -> PromptJob | None:
+    target = target.strip().lower().lstrip("#")
+    if not jobs:
+        return None
+    if target in {"latest", "last"}:
+        return max(jobs, key=_job_order_key)
+    if target == "next":
+        return jobs[0]
+    return next((job for job in jobs if str(job.id) == target), None)
 
 
 def _queue_file_lock(path: Path) -> threading.Lock:

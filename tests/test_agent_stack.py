@@ -760,6 +760,42 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("job #1 saved", rendered)
         self.assertIn("running", rendered)
 
+    def test_repl_queue_edit_updates_saved_queued_prompts(self):
+        from mechferret import repl
+
+        queue_path = Path("queue-saved-edit.json")
+        repl._save_queue_jobs(queue_path, [
+            repl.PromptJob(id=3, text="older saved prompt", created_at=100.0),
+            repl.PromptJob(id=8, text="newer saved prompt", created_at=200.0),
+            repl.PromptJob(id=9, text="running saved prompt", status="running", created_at=300.0),
+        ])
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: "reply", queue_path=queue_path)
+            try:
+                repl._queue_edit(runner, ["next"], "updated older saved prompt")
+                repl._queue_edit(runner, ["8"], "updated newer saved prompt")
+                repl._queue_edit(runner, ["latest"], "should not update running prompt")
+                repl._queue_show(runner, ["3"])
+                repl._queue_show(runner, ["8"])
+                repl._queue_show(runner, ["9"])
+            finally:
+                runner.stop(wait=True)
+
+        saved = repl._load_saved_queue(queue_path)
+        self.assertEqual([job.text for job in saved], [
+            "updated older saved prompt",
+            "updated newer saved prompt",
+            "running saved prompt",
+        ])
+        rendered = out.getvalue()
+        self.assertIn("edited #3", rendered)
+        self.assertIn("edited #8", rendered)
+        self.assertIn("job #9 is running; only queued prompts can be edited.", rendered)
+        self.assertIn("updated older saved prompt", rendered)
+        self.assertIn("updated newer saved prompt", rendered)
+
     def test_repl_queue_cancel_removes_saved_aliases(self):
         from mechferret import repl
 
