@@ -965,6 +965,45 @@ class AgentStackTest(unittest.TestCase):
         self.assertEqual(agent.messages[-1]["content"], "reply for " + repl._btw_prompt("side question"))
         self.assertEqual(calls, [repl._btw_prompt("side question"), "newer main"])
 
+    def test_repl_queue_apply_side_prefers_ready_side_over_running_side(self):
+        from mechferret import repl
+
+        class MainAgent:
+            provider = "anthropic"
+
+            def __init__(self) -> None:
+                self.messages = []
+
+        release_second = threading.Event()
+
+        def fake_chat(agent, session, text, *, background=False):
+            if "second side" in text:
+                self.assertTrue(release_second.wait(timeout=2))
+            return f"reply for {text}"
+
+        agent = MainAgent()
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(agent, repl.Session(), chat_fn=fake_chat, queue_path=Path("btw-apply-ready-side.json"))
+            try:
+                first = runner.submit_side(repl._btw_prompt("first side"))
+                deadline = time.monotonic() + 2
+                while first.status == "running" and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                second = runner.submit_side(repl._btw_prompt("second side"))
+                deadline = time.monotonic() + 2
+                while not runner.side_active() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+
+                repl._queue_apply(runner, ["side"])
+            finally:
+                release_second.set()
+                runner.stop(wait=True)
+
+        self.assertTrue(first.applied)
+        self.assertFalse(second.applied)
+        self.assertIn("applied side #1 to the main conversation", out.getvalue())
+
     def test_repl_queue_wait_waits_for_main_and_side_jobs(self):
         from mechferret import repl
 

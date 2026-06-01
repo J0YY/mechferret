@@ -416,9 +416,10 @@ class ChatJobRunner:
         with self._lock:
             if self._active is not None:
                 return None, "busy"
-            if normalized in {"latest", "last"}:
+            if normalized in {"side", "btw", "latest", "last"}:
                 side_jobs = [job for job in self._jobs if job.kind == "btw"]
-                job = max(side_jobs, key=_job_order_key) if side_jobs else None
+                ready = [job for job in side_jobs if job.status == "done" and job.reply and not job.applied]
+                job = max(ready or side_jobs, key=_job_order_key) if side_jobs else None
             else:
                 job = self._find_live_job_locked(target)
             if job is None:
