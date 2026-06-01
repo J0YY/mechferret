@@ -1,5 +1,5 @@
 model:
-  hf_id: openvla/openvla-7b
+  hf_id: ""
   torch_dtype: bfloat16
   attn_implementation: sdpa
 

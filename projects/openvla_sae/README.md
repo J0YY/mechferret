@@ -14,7 +14,7 @@ Core hypothesis to test: SAEs trained on OpenVLA activations may recover sparse,
 
 ## Minimal workflow
 1. Install OpenVLA deps on a GPU machine.
-2. Cache activations from `openvla/openvla-7b`.
+2. Set `model.hf_id` in `configs/phase1.yaml`, or pass `MODEL=<hf-model-id>` to the phase script.
 3. Train Top-K SAEs on selected activation sites.
 4. Evaluate reconstruction/action KL.
 5. Find top activating examples.

@@ -2,6 +2,8 @@
 set -euo pipefail
 
 # Edit these paths for your GPU machine.
+CONFIG=${CONFIG:-projects/openvla_sae/configs/phase1.yaml}
+MODEL=${MODEL:-}
 MANIFEST=${MANIFEST:-data/openvla_sae_phase1.jsonl}
 SITE=${SITE:-language_model.model.layers.24}
 CACHE_DIR=${CACHE_DIR:-runs/openvla_sae/cache_l24}
@@ -12,11 +14,16 @@ SAE_BATCH_SIZE=${SAE_BATCH_SIZE:-}
 SAE_K=${SAE_K:-}
 SAE_MAX_TOKENS=${SAE_MAX_TOKENS:-2000000}
 
-python projects/openvla_sae/src/cache_openvla_activations.py \
-  --manifest "$MANIFEST" \
-  --out-dir "$CACHE_DIR" \
-  --site "$SITE" \
+cache_args=(
+  --config "$CONFIG"
+  --manifest "$MANIFEST"
+  --out-dir "$CACHE_DIR"
+  --site "$SITE"
   --max-examples "$CACHE_MAX_EXAMPLES"
+)
+if [[ -n "$MODEL" ]]; then cache_args+=(--model "$MODEL"); fi
+
+python projects/openvla_sae/src/cache_openvla_activations.py "${cache_args[@]}"
 
 train_args=(
   --cache-dir "$CACHE_DIR"

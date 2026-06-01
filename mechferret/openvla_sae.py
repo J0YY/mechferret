@@ -96,6 +96,38 @@ def _path(value: Any, default: str | Path = "") -> Path:
     return Path(default)
 
 
+def _phase1_model_id(config_path: Path) -> str:
+    try:
+        text = config_path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    try:
+        import yaml  # type: ignore
+
+        cfg = yaml.safe_load(text) or {}
+        model = cfg.get("model") if isinstance(cfg, dict) else {}
+        return _text(model.get("hf_id") if isinstance(model, dict) else "").strip()
+    except Exception:  # noqa: BLE001 - fallback keeps status dependency-light
+        pass
+    in_model = False
+    model_indent = 0
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].rstrip()
+        if not line.strip():
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        stripped = line.strip()
+        if stripped == "model:":
+            in_model = True
+            model_indent = indent
+            continue
+        if in_model and indent <= model_indent:
+            in_model = False
+        if in_model and stripped.startswith("hf_id:"):
+            return stripped.partition(":")[2].strip().strip("\"'")
+    return ""
+
+
 def _json_safe(value: Any) -> Any:
     if isinstance(value, dict):
         return {_text(key, str(key)): _json_safe(item) for key, item in value.items()}
@@ -122,6 +154,8 @@ def _json_dumps(value: Any, **kwargs: Any) -> str:
 def status(project_root: str | Path = PROJECT_ROOT, manifest: str | Path | None = None) -> dict[str, Any]:
     root = _path(project_root, PROJECT_ROOT)
     manifest_path = _path(manifest, DEFAULT_MANIFEST) if manifest else DEFAULT_MANIFEST
+    config_path = root / "configs" / "phase1.yaml"
+    model_id = _phase1_model_id(config_path)
     files = {name: (root / name).exists() for name in REQUIRED_FILES}
     template_available = _template_available()
     deps = _dependency_status()
@@ -134,7 +168,7 @@ def status(project_root: str | Path = PROJECT_ROOT, manifest: str | Path | None 
         "missing_images": [],
     }
     ready_local = all(files.values())
-    ready_gpu = ready_local and manifest_status["valid_rows"] > 0 and deps["torch"] and deps["transformers"]
+    ready_gpu = ready_local and bool(model_id) and manifest_status["valid_rows"] > 0 and deps["torch"] and deps["transformers"]
     next_actions = []
     if not ready_local:
         if template_available:
@@ -145,6 +179,8 @@ def status(project_root: str | Path = PROJECT_ROOT, manifest: str | Path | None 
         next_actions.append(f"Create a JSONL manifest at {manifest_path} with image_path and instruction fields.")
     elif manifest_status["errors"] or manifest_status["missing_images"]:
         next_actions.append("Fix manifest rows or image paths before caching activations.")
+    if ready_local and not model_id:
+        next_actions.append(f"Set model.hf_id in {config_path}, or run the phase script with MODEL=<hf-model-id>.")
     if not deps["torch"] or not deps["transformers"]:
         next_actions.append(f"Install GPU dependencies with {root / 'scripts' / 'install_openvla_min.sh'}.")
     if ready_gpu:
@@ -153,6 +189,7 @@ def status(project_root: str | Path = PROJECT_ROOT, manifest: str | Path | None 
         "project_root": str(root),
         "files": files,
         "dependencies": deps,
+        "model": {"hf_id": model_id, "configured": bool(model_id), "config": str(config_path)},
         "manifest": manifest_status,
         "template_available": template_available,
         "ready_local": ready_local,
@@ -600,6 +637,7 @@ def command_lines(project_root: str | Path = PROJECT_ROOT) -> str:
     if script.exists():
         return f"bash {script}"
     return (
+        "MODEL=<hf-model-id> \\\n"
         "MANIFEST=data/openvla_sae_phase1.jsonl \\\n"
         "SITE=language_model.model.layers.24 \\\n"
         "CACHE_DIR=runs/openvla_sae/cache_l24 \\\n"

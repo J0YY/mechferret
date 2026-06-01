@@ -120,6 +120,8 @@ class OpenVLASAETest(unittest.TestCase):
     def test_status_sees_project_files(self):
         result = status()
         self.assertTrue(result["ready_local"])
+        self.assertFalse(result["model"]["configured"])
+        self.assertIn("model.hf_id", " ".join(result["next_actions"]))
         self.assertIn("src/cache_openvla_activations.py", result["files"])
 
     def test_write_plan_creates_markdown_and_json(self):
@@ -200,14 +202,50 @@ class OpenVLASAETest(unittest.TestCase):
             self.assertEqual(len(rows), 1)
             self.assertEqual(errors, [])
             args = mod.build_parser().parse_args([
+                "--model", "test/openvla",
                 "--manifest", str(manifest),
                 "--out-dir", str(root / "cache"),
                 "--site", "language_model.model.layers.24",
                 "--dry-run",
             ])
             report = mod.dry_run_report(args)
+            self.assertEqual(report["model"], "test/openvla")
+            self.assertEqual(report["model_source"], "cli")
             self.assertEqual(report["valid_rows"], 1)
             self.assertIn("torch", report["dependencies"])
+
+    def test_cache_script_requires_explicit_or_configured_model(self):
+        mod = load_cache_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            image = root / "img.png"
+            image.write_bytes(b"x")
+            manifest = root / "manifest.jsonl"
+            manifest.write_text(json.dumps({"image_path": str(image), "instruction": "pick"}) + "\n", encoding="utf-8")
+            args = mod.build_parser().parse_args([
+                "--config", str(root / "missing.yaml"),
+                "--manifest", str(manifest),
+                "--out-dir", str(root / "cache"),
+                "--site", "language_model.model.layers.24",
+                "--dry-run",
+            ])
+            report = mod.dry_run_report(args)
+            self.assertFalse(report["ok"])
+            self.assertEqual(report["model_source"], "missing")
+            self.assertIn("model is required", report["errors"][0])
+
+            cfg = root / "phase1.yaml"
+            cfg.write_text("model:\n  hf_id: test/from-config\n", encoding="utf-8")
+            args = mod.build_parser().parse_args([
+                "--config", str(cfg),
+                "--manifest", str(manifest),
+                "--out-dir", str(root / "cache"),
+                "--site", "language_model.model.layers.24",
+                "--dry-run",
+            ])
+            report = mod.dry_run_report(args)
+            self.assertEqual(report["model"], "test/from-config")
+            self.assertEqual(report["model_source"], "config")
 
     def test_evaluate_artifacts_writes_report_without_torch(self):
         with tempfile.TemporaryDirectory() as tmp:
