@@ -25,6 +25,8 @@ SECTIONS: list[tuple[str, list[Command]]] = [
         Command("/queue retry <id>", "retry a job without retyping its prompt"),
         Command("/queue edit <id> <text>", "edit a queued prompt before it starts"),
         Command("/queue move <id> first|last|before|after", "reorder a queued prompt before it starts"),
+        Command("/queue cancel <id|all>", "cancel queued prompts from the queue view"),
+        Command("/queue clear [queued|saved|all]", "clear live queued prompts or saved queue state"),
         Command("/queue pause", "hold queued prompts after the active reply finishes"),
         Command("/queue resume", "resume held queued prompts"),
         Command("/queue restore", "restore saved queued/running prompts from the last session"),

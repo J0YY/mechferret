@@ -428,6 +428,8 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("/queue retry <id>", rendered_help)
         self.assertIn("/queue edit <id> <text>", rendered_help)
         self.assertIn("/queue move <id> first|last|before|after", rendered_help)
+        self.assertIn("/queue cancel <id|all>", rendered_help)
+        self.assertIn("/queue clear [queued|saved|all]", rendered_help)
         self.assertIn("/queue pause", rendered_help)
         self.assertIn("/queue resume", rendered_help)
         self.assertIn("/queue restore", rendered_help)
@@ -849,6 +851,76 @@ class AgentStackTest(unittest.TestCase):
         self.assertEqual(first.status, "done")
         self.assertEqual(second.status, "canceled")
         self.assertEqual(started, ["first"])
+
+    def test_repl_queue_cancel_alias_cancels_pending_prompts(self):
+        from mechferret import repl
+
+        started = []
+        release = threading.Event()
+
+        def fake_chat(agent, session, text, *, background=False):
+            started.append(text)
+            if text == "first":
+                self.assertTrue(release.wait(timeout=2))
+            return text
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-cancel-alias.json"))
+            try:
+                runner.submit("first")
+                second = runner.submit("second")
+                deadline = time.monotonic() + 2
+                while runner.active() is None and time.monotonic() < deadline:
+                    time.sleep(0.01)
+
+                repl._queue_cancel(runner, [str(second.id)])
+                release.set()
+                self.assertTrue(runner.wait_idle(timeout=2))
+            finally:
+                release.set()
+                runner.stop(wait=True)
+
+        self.assertEqual(second.status, "canceled")
+        self.assertEqual(started, ["first"])
+        self.assertIn("canceled #2", out.getvalue())
+
+    def test_repl_queue_clear_scopes_live_and_saved_queue_state(self):
+        from mechferret import repl
+
+        started = []
+
+        def fake_chat(agent, session, text, *, background=False):
+            started.append(text)
+            return text
+
+        queue_path = Path("queue-clear-scopes.json")
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=queue_path)
+            try:
+                runner.pause()
+                first = runner.submit("first")
+                second = runner.submit("second")
+
+                repl._queue_clear(runner, ["queued"])
+                self.assertEqual([first.status, second.status], ["canceled", "canceled"])
+                self.assertEqual(runner.saved(), [])
+
+                repl._queue_clear(runner, ["all"])
+            finally:
+                runner.resume()
+                runner.stop(wait=True)
+
+            repl._save_queue_jobs(queue_path, [repl.PromptJob(id=9, text="saved prompt")])
+            repl._queue_clear(runner, ["saved"])
+            self.assertEqual(runner.saved(), [])
+
+        self.assertEqual(started, [])
+        rendered = out.getvalue()
+        self.assertIn("canceled #1, #2", rendered)
+        self.assertIn("cleared 1 saved queued prompt", rendered)
+        self.assertIn("no queued prompts to cancel", rendered)
 
     def test_repl_chat_job_runner_saves_and_restores_pending_prompts(self):
         from mechferret import repl

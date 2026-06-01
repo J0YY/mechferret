@@ -677,8 +677,9 @@ def run_repl() -> None:
                 else:
                     print(_c("  no saved queued prompts to restore", "2"))
             elif len(tokens) > 1 and tokens[1].lower() == "clear":
-                cleared = runner.clear_saved()
-                print(_c(f"  cleared {cleared} saved queued prompt(s)", "32" if cleared else "2"))
+                _queue_clear(runner, tokens[2:])
+            elif len(tokens) > 1 and tokens[1].lower() == "cancel":
+                _queue_cancel(runner, tokens[2:])
             elif len(tokens) > 1 and tokens[1].lower() == "wait":
                 _queue_wait(runner, tokens[2:])
             elif len(tokens) > 1 and tokens[1].lower() == "show":
@@ -709,8 +710,7 @@ def run_repl() -> None:
                 continue
             canceled = runner.cancel(target)
             if canceled:
-                ids = ", ".join(f"#{job.id}" for job in canceled)
-                print(_c(f"  canceled {ids}", "32"))
+                _print_canceled(canceled)
             else:
                 print(_c(f"  no queued job matched {target!r}", "33"))
             continue
@@ -920,6 +920,42 @@ def _print_queue(runner: ChatJobRunner) -> None:
         status = job.status
         detail = f" ({job.error})" if job.error else ""
         print(_c(f"  {status:8} #{job.id} {job.kind}{detail}", "31" if job.error else "2"))
+
+
+def _print_canceled(canceled: list[PromptJob]) -> None:
+    ids = ", ".join(f"#{job.id}" for job in canceled)
+    print(_c(f"  canceled {ids}", "32"))
+
+
+def _queue_cancel(runner: ChatJobRunner, args: list[str]) -> None:
+    target = args[0] if args else ""
+    if not target:
+        print(_c("  usage: /queue cancel <job id|all>", "33"))
+        return
+    canceled = runner.cancel(target)
+    if canceled:
+        _print_canceled(canceled)
+    else:
+        print(_c(f"  no queued job matched {target!r}", "33"))
+
+
+def _queue_clear(runner: ChatJobRunner, args: list[str]) -> None:
+    scope = args[0].lower() if args else "saved"
+    if scope not in {"queued", "saved", "all"}:
+        print(_c("  usage: /queue clear [queued|saved|all]", "33"))
+        return
+    canceled: list[PromptJob] = []
+    cleared = 0
+    if scope in {"queued", "all"}:
+        canceled = runner.cancel("all")
+    if scope in {"saved", "all"}:
+        cleared = runner.clear_saved()
+    if canceled:
+        _print_canceled(canceled)
+    elif scope in {"queued", "all"}:
+        print(_c("  no queued prompts to cancel", "2"))
+    if scope in {"saved", "all"}:
+        print(_c(f"  cleared {cleared} saved queued prompt(s)", "32" if cleared else "2"))
 
 
 def _queue_wait(runner: ChatJobRunner, args: list[str]) -> None:
