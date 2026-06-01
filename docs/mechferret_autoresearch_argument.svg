@@ -110,7 +110,7 @@
       <text x="0" y="43" class="body">DiscoveryController, HypothesisGenerator, InterpEngine</text>
       <text x="0" y="86" class="body">ExperimentCritic, Coordinator, BudgetGuard, memory</text>
       <text x="0" y="129" class="body">Explicit smoke runs, TransformerLens, Modal GPU, SLURM</text>
-      <line class="divider" x1="0" y1="128" x2="620" y2="128"/>
+      <line class="divider" x1="0" y1="146" x2="620" y2="146"/>
       <text x="0" y="166" class="body">A skill can describe a target behavior. MechFerret can</text>
       <text x="0" y="194" class="body">run probes, enforce controls, and test the claim.</text>
     </g>
