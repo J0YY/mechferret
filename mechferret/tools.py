@@ -998,7 +998,7 @@ def tool_verify_novelty(args: dict[str, Any]) -> str:
         "errors": errors,
         "novelty_questions": _novelty_questions(idea),
         "guidance": "Do not claim high novelty unless the idea survives relevance, submitted-date, "
-                    "updated-date, architecture, and discovery searches. Compare against the closest "
+                    "updated-date, method, mechanism, evaluation, implementation, and discovery searches. Compare against the closest "
                     "recent papers, name the exact delta, cite likely prior art, and downgrade any "
                     "direction that only renames an existing method.",
     })
@@ -1040,7 +1040,6 @@ def _novelty_search_plan(idea: str, queries: list[str] | None) -> list[dict[str,
     seeds = _unique_strings([*(queries or []), idea])
     terms = _novelty_terms(idea)
     compact = " ".join(terms[:8]) or idea
-    architecture_terms = " ".join(terms[:5]) or idea
     candidates = []
     for query in seeds[:3]:
         candidates.append(_novelty_plan_item(query, "relevance", "provided_relevance"))
@@ -1050,9 +1049,9 @@ def _novelty_search_plan(idea: str, queries: list[str] | None) -> list[dict[str,
             _novelty_plan_item(compact, "relevance", "core_relevance"),
             _novelty_plan_item(compact, "submittedDate", "recent_submitted"),
             _novelty_plan_item(compact, "lastUpdatedDate", "recent_updated"),
-            _novelty_plan_item(f"{architecture_terms} architecture transformer", "relevance", "architecture_relevance"),
-            _novelty_plan_item(f"{architecture_terms} circuit sparse autoencoder", "relevance", "architecture_mechanism"),
-            _novelty_plan_item(f"{architecture_terms} discovery benchmark state of the art", "submittedDate", "recent_discovery"),
+            _novelty_plan_item(f"{compact} method design", "relevance", "method_relevance"),
+            _novelty_plan_item(f"{compact} mechanism ablation causal evidence", "relevance", "mechanism_evidence"),
+            _novelty_plan_item(f"{compact} benchmark evaluation negative results", "submittedDate", "recent_evaluation"),
         ]
     )
     plan: list[dict[str, Any]] = []
@@ -1075,9 +1074,10 @@ def _novelty_web_search_plan(idea: str, queries: list[str] | None) -> list[dict[
         candidates.append(_novelty_web_plan_item(query, "provided_web_relevance"))
     candidates.extend(
         [
-            _novelty_web_plan_item(f"{compact} recent paper implementation", "web_recent_implementation"),
-            _novelty_web_plan_item(f"{compact} benchmark architecture discovery", "web_architecture_discovery"),
-            _novelty_web_plan_item(f"{compact} github project", "web_code_prior"),
+            _novelty_web_plan_item(f"{compact} recent paper method", "web_recent_method"),
+            _novelty_web_plan_item(f"{compact} benchmark evaluation leaderboard", "web_benchmark_evaluation"),
+            _novelty_web_plan_item(f"{compact} implementation repository code", "web_code_prior"),
+            _novelty_web_plan_item(f"{compact} project page technical report", "web_project_or_report"),
         ]
     )
     plan: list[dict[str, Any]] = []
@@ -1237,7 +1237,7 @@ def _novelty_scored_prior(row: dict[str, Any], terms: list[str]) -> dict[str, An
     matched = [term for term in terms if term in haystack]
     term_score = len(matched) / max(1, len(terms))
     focus = str(row.get("focus", ""))
-    focus_score = 0.15 if any(key in focus for key in ("architecture", "mechanism", "relevance")) else 0.0
+    focus_score = 0.15 if any(key in focus for key in ("method", "mechanism", "relevance", "evaluation", "implementation")) else 0.0
     recent_score = 0.1 if _novelty_is_recent(row.get("published", "")) else 0.0
     source_type = str(row.get("source_type", "general_web"))
     source_score = _novelty_source_type_score(source_type)
@@ -1311,10 +1311,12 @@ def _novelty_prior_reason(matched: list[str], focus: str, published: Any, source
         bits.append("retrieved from web search")
     if source_type in {"paper", "benchmark", "code_repository", "project_page", "documentation"}:
         bits.append(f"source type: {source_type}")
-    if "architecture" in focus:
-        bits.append("retrieved by architecture-focused search")
+    if "method" in focus:
+        bits.append("retrieved by method-focused search")
     if "mechanism" in focus:
         bits.append("retrieved by mechanism-focused search")
+    if "evaluation" in focus:
+        bits.append("retrieved by evaluation-focused search")
     if _novelty_is_recent(published):
         bits.append("within the recent-paper window")
     return "; ".join(bits) or "retrieved as adjacent prior art"
@@ -2352,7 +2354,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
      "parameters": _obj({"query": {"type": "string", "description": "arXiv query, e.g. 'cat:cs.LG AND (abs:sparse autoencoder OR abs:linear probe)'"}, "max_results": {"type": "integer"}, "sort_by": {"type": "string", "enum": ["relevance", "submittedDate", "lastUpdatedDate"]}}, ["query"])},
     {"name": "neuronpedia_search", "description": "Semantic search over SAE-feature explanations for an explicit Neuronpedia model id.",
      "parameters": _obj({"model_id": {"type": "string"}, "query": {"type": "string"}}, ["model_id", "query"])},
-    {"name": "verify_novelty", "description": "Deep novelty check for a research idea using multi-pass arXiv searches across relevance, recency, architecture, and recent-discovery angles. Call this for each proposed research direction before presenting it.",
+    {"name": "verify_novelty", "description": "Deep novelty check for a research idea using multi-pass arXiv and web searches across relevance, recency, method, mechanism, evaluation, implementation, and recent-discovery angles. Call this for each proposed research direction before presenting it.",
      "parameters": _obj({"idea": {"type": "string", "description": "the research idea/direction to novelty-check"}, "queries": {"type": "array", "items": {"type": "string"}, "description": "optional arXiv queries to probe for prior work"}}, ["idea"])},
     {"name": "present_options", "description": "Present 2-5 research directions to the user as an interactive, expandable picker and return their choice. Use this instead of writing options as prose. Every option must include detail, citations, novelty_risk, novelty_verdict, closest_prior_art, and required_delta from verify_novelty assessment.",
      "parameters": _obj({"options": {"type": "array", "items": {"type": "object", "properties": {

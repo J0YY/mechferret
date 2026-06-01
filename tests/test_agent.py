@@ -690,7 +690,8 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("submittedDate", {call["sort_by"] for call in calls})
         self.assertIn("lastUpdatedDate", {call["sort_by"] for call in calls})
         self.assertTrue(any("architecture" in call["query"].lower() for call in calls))
-        self.assertTrue(any("discovery" in call["query"].lower() for call in calls))
+        self.assertTrue(any("mechanism" in call["query"].lower() for call in calls))
+        self.assertTrue(any("evaluation" in call["query"].lower() for call in calls))
         self.assertEqual(len(payload["search_plan"]), len(calls))
         self.assertEqual(payload["arxiv_search_plan"], payload["search_plan"])
         self.assertGreaterEqual(len(web_calls), 3)
@@ -728,7 +729,23 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("benchmark", payload["assessment"]["coverage"]["credible_source_types"])
         self.assertIn("github.com", payload["assessment"]["coverage"]["source_domain_counts"])
         self.assertGreaterEqual(payload["assessment"]["coverage"]["retrieved_evidence"], 2)
-        self.assertIn("Do not claim high novelty", payload["guidance"])
+        self.assertIn("method, mechanism, evaluation", payload["guidance"])
+
+    def test_verify_novelty_search_plan_uses_idea_terms_without_fixed_architectures(self):
+        from mechferret import tools
+
+        idea = "adaptive receptor design for protein folding assays"
+        arxiv_plan = tools._novelty_search_plan(idea, None)
+        web_plan = tools._novelty_web_search_plan(idea, None)
+        combined = " ".join(item["query"].lower() for item in [*arxiv_plan, *web_plan])
+
+        self.assertIn("protein", combined)
+        self.assertIn("method design", combined)
+        self.assertIn("benchmark evaluation", combined)
+        self.assertIn("implementation repository code", combined)
+        self.assertNotIn("transformer", combined)
+        self.assertNotIn("sparse autoencoder", combined)
+        self.assertNotIn("github " + "project", combined)
 
     def test_verify_novelty_reports_unknown_when_search_fails(self):
         from mechferret import tools
