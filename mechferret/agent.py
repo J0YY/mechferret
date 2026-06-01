@@ -517,13 +517,15 @@ class Agent:
         provider = data.get("provider")
         model = data.get("model")
         if provider in {"anthropic", "openai"}:
-            self.provider = provider
-        if isinstance(model, str) and model and provider in {"anthropic", "openai"}:
-            self.model = model
+            candidate_model = model.strip() if isinstance(model, str) and model.strip() else configured_model(provider)
+            candidate_key = configured_api_key(provider) or (self._key if self.provider == provider else "")
+            if candidate_key and candidate_model:
+                self.provider = provider
+                self.model = candidate_model
+                self._key = candidate_key
         messages = data.get("messages", [])
         loaded_messages = [message for message in messages if isinstance(message, dict)] if isinstance(messages, list) else []
         self.messages = _sanitize_loaded_messages(loaded_messages, self.provider)
-        self._key = configured_api_key(self.provider) or self._key
         c = data.get("cost", {})
         c = c if isinstance(c, dict) else {}
         self.cost.usd = _coerce_float(c.get("usd"), 0.0)

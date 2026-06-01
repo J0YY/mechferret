@@ -8,6 +8,7 @@ import unittest
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
 
 class AgentStackTest(unittest.TestCase):
@@ -244,6 +245,56 @@ class AgentStackTest(unittest.TestCase):
         self.assertEqual(a.model, "claude-opus-4-8")
         self.assertEqual(a.messages, [{"role": "user", "content": "keep"}])
         self.assertEqual(a.cost.input_tokens, 2)
+
+    def test_agent_load_session_requires_current_key_before_activating_saved_provider(self):
+        from mechferret import agent, sessions
+
+        sessions.save_session(
+            "needs-key",
+            "openai",
+            "gpt-test",
+            [{"role": "user", "content": "keep"}],
+            {},
+        )
+
+        with patch.dict(os.environ, {"MECHFERRET_CONFIG": str(Path("missing-config.json"))}, clear=True):
+            a = agent.Agent()
+            self.assertFalse(a.configured)
+            a.load_session("needs-key")
+
+        self.assertEqual(a.session_id, "needs-key")
+        self.assertFalse(a.configured)
+        self.assertEqual(a.provider, "")
+        self.assertEqual(a.model, "")
+        self.assertEqual(a._key, "")
+        self.assertEqual(a.messages, [{"role": "user", "content": "keep"}])
+
+    def test_agent_load_session_activates_saved_provider_with_current_env_key(self):
+        from mechferret import agent, sessions
+
+        sessions.save_session(
+            "has-key",
+            "openai",
+            "gpt-test",
+            [{"role": "user", "content": "keep"}],
+            {},
+        )
+
+        with patch.dict(
+            os.environ,
+            {"MECHFERRET_CONFIG": str(Path("missing-config.json")), "OPENAI_API_KEY": "env-key"},
+            clear=True,
+        ):
+            a = agent.Agent()
+            self.assertFalse(a.configured)
+            a.load_session("has-key")
+
+        self.assertTrue(a.configured)
+        self.assertEqual(a.provider, "openai")
+        self.assertEqual(a.model, "gpt-test")
+        self.assertEqual(a._key, "env-key")
+        self.assertEqual(a.messages[0]["role"], "system")
+        self.assertEqual(a.messages[1], {"role": "user", "content": "keep"})
 
     def test_persist_failure_is_traced_without_blocking_send(self):
         from mechferret import agent, sessions
