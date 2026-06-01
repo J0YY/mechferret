@@ -1346,6 +1346,54 @@ class AgentToolTest(unittest.TestCase):
         self.assertNotIn("GPT-2", reply)
         self.assertNotIn("tool_calls", a.messages[-1])
 
+    def test_openai_send_refreshes_stale_system_prompt_before_turn(self):
+        stale_system = (
+            "Project notes (MECHFERRET.md):\n"
+            "## Research Target\n"
+            "- Model under study: gpt2\n"
+            "NEVER end a turn flat. " + "press " + "enter to proceed."
+        )
+        stale_reply = (
+            "The minimal experiment should be:\n"
+            "1. Target behavior: duplicate-token/name-mover behavior in GPT-2 small.\n"
+            "2. Start modules: heads 5.0, 5.2, 5.6, 5.11.\n"
+            "Next: " + "press " + "enter to proceed."
+        )
+        captured = {}
+
+        def fake_post(url, payload, headers):
+            captured["messages"] = payload["messages"]
+            return {"choices": [{"message": {"role": "assistant", "content": "Ready."}}]}
+
+        original = agent._http_post
+        cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            os.chdir(tmp)
+            try:
+                agent._http_post = fake_post
+                a = agent.Agent()
+                a.provider, a.model, a._key = "openai", "gpt-test", "fake"
+                a.messages = [
+                    {"role": "system", "content": stale_system},
+                    {"role": "user", "content": "keep going"},
+                    {"role": "assistant", "content": stale_reply},
+                ]
+                reply = a.send("fresh prompt")
+            finally:
+                agent._http_post = original
+                os.chdir(cwd)
+
+        self.assertEqual(reply, "Ready.")
+        prompt = captured["messages"][0]["content"]
+        payload_text = json.dumps(captured["messages"])
+        self.assertEqual(captured["messages"][0]["role"], "system")
+        self.assertNotIn("Model under study: gpt2", prompt)
+        self.assertNotIn("NEVER end a turn flat", prompt)
+        self.assertNotIn("press " + "enter", prompt.lower())
+        self.assertIn("which model and behavior/task", payload_text)
+        self.assertNotIn("GPT-2", payload_text)
+        self.assertNotIn("5.0", payload_text)
+
     def test_anthropic_stale_benchmark_text_blocks_same_turn_tool_call(self):
         calls = {"n": 0}
         streamed = []

@@ -703,6 +703,7 @@ class Agent:
     # --- Anthropic ------------------------------------------------------------------
 
     def _send_anthropic(self, user_text: str) -> str:
+        self.messages = _sanitize_loaded_messages(self.messages, "anthropic")
         self.messages.append({"role": "user", "content": user_text})
         tools = [
             {"name": t["name"], "description": t["description"], "input_schema": t["parameters"]}
@@ -783,8 +784,7 @@ class Agent:
     # --- OpenAI ---------------------------------------------------------------------
 
     def _send_openai(self, user_text: str) -> str:
-        if not self.messages:
-            self.messages.append({"role": "system", "content": build_system_prompt()})
+        self.messages = _sanitize_loaded_messages(self.messages, "openai")
         self.messages.append({"role": "user", "content": user_text})
         tools = [
             {"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["parameters"]}}
