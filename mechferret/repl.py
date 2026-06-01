@@ -48,6 +48,7 @@ def _vlen(text: str) -> int:
 KNOWN_COMMANDS = COMMAND_WORDS
 
 HISTORY_FILE = Path.home() / ".mechferret" / "repl_history"
+QUEUE_FILE = Path.home() / ".mechferret" / "repl_queue.json"
 
 # Small, cute ferret — equal-width lines so it centers as one aligned block.
 FERRET = [
@@ -84,10 +85,12 @@ class ChatJobRunner:
         session: Session,
         *,
         chat_fn: Callable[..., str | None] | None = None,
+        queue_path: Path | None = None,
     ) -> None:
         self.agent = agent
         self.session = session
         self._chat_fn = chat_fn or _chat
+        self._queue_path = queue_path or QUEUE_FILE
         self._queue: queue.Queue[PromptJob | None] = queue.Queue()
         self._jobs: list[PromptJob] = []
         self._active: PromptJob | None = None
@@ -103,7 +106,31 @@ class ChatJobRunner:
             self._next_id += 1
             self._jobs.append(job)
         self._queue.put(job)
+        self.save_pending()
         return job
+
+    def saved(self) -> list[PromptJob]:
+        return _load_saved_queue(self._queue_path)
+
+    def restore_saved(self) -> list[PromptJob]:
+        saved_jobs = self.saved()
+        if not saved_jobs:
+            return []
+        self.clear_saved()
+        restored: list[PromptJob] = []
+        for saved in saved_jobs:
+            restored.append(self.submit(saved.text, kind=saved.kind))
+        return restored
+
+    def clear_saved(self) -> int:
+        saved = self.saved()
+        try:
+            self._queue_path.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            return 0
+        return len(saved)
 
     def active(self) -> PromptJob | None:
         with self._lock:
@@ -123,6 +150,8 @@ class ChatJobRunner:
                 if target == "all" or str(job.id) == target:
                     job.status = "canceled"
                     canceled.append(job)
+        if canceled:
+            self.save_pending()
         return canceled
 
     def recent(self, limit: int = 8) -> list[PromptJob]:
@@ -137,6 +166,7 @@ class ChatJobRunner:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if not self.is_busy():
+                self.save_pending()
                 return True
             time.sleep(0.01)
         return False
@@ -148,6 +178,12 @@ class ChatJobRunner:
         self._queue.put(None)
         if wait:
             self._thread.join(timeout=2)
+        self.save_pending()
+
+    def save_pending(self) -> int:
+        with self._lock:
+            pending = [job for job in self._jobs if job.status == "queued"]
+        return _save_queue_jobs(self._queue_path, pending)
 
     def _set_active(self, job: PromptJob | None) -> None:
         with self._lock:
@@ -164,19 +200,69 @@ class ChatJobRunner:
                     continue
                 job.status = "running"
                 self._set_active(job)
+                self.save_pending()
                 print(_c(f"  ▶ queued #{job.id} {job.kind}: {_short_job_text(job.text)}", "2"))
                 reply = self._chat_fn(self.agent, self.session, job.text, background=True)
                 job.reply = reply
                 job.status = "done"
+                self.save_pending()
                 print(_c(f"  ✓ finished #{job.id}", "32"))
             except Exception as exc:  # noqa: BLE001 - background work should not kill the prompt
                 if job is not None:
                     job.status = "error"
                     job.error = str(exc)
+                    self.save_pending()
                     print(_c(f"  error in queued #{job.id}: {exc}", "31"))
             finally:
                 self._set_active(None)
                 self._queue.task_done()
+
+
+def _job_to_dict(job: PromptJob) -> dict[str, Any]:
+    return {
+        "id": job.id,
+        "text": job.text,
+        "kind": job.kind,
+        "status": job.status,
+        "created_at": job.created_at,
+    }
+
+
+def _load_saved_queue(path: Path = QUEUE_FILE) -> list[PromptJob]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return []
+    rows = payload.get("jobs") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return []
+    jobs: list[PromptJob] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        text = row.get("text")
+        if not isinstance(text, str) or not text.strip():
+            continue
+        kind = row.get("kind") if isinstance(row.get("kind"), str) else "prompt"
+        created_at = row.get("created_at") if isinstance(row.get("created_at"), (int, float)) else time.time()
+        jobs.append(PromptJob(id=len(jobs) + 1, text=text, kind=kind, created_at=float(created_at)))
+    return jobs
+
+
+def _save_queue_jobs(path: Path, jobs: list[PromptJob]) -> int:
+    if not jobs:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            pass
+        return 0
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps({"jobs": [_job_to_dict(job) for job in jobs]}, indent=2, sort_keys=True), encoding="utf-8")
+    tmp.replace(path)
+    return len(jobs)
 
 
 # --- welcome screen ------------------------------------------------------------------
@@ -249,10 +335,13 @@ def _print_status_and_bar(agent, session, runner: ChatJobRunner | None = None) -
     if runner is not None:
         active = runner.active()
         queued = len(runner.queued())
+        saved = len(runner.saved())
         if active is not None:
             bits.append(_c(f"running:#{active.id}", PURPLE))
         if queued:
             bits.append(_c(f"queued:{queued}", "33"))
+        if saved:
+            bits.append(_c(f"saved:{saved}", "33"))
     print(_c("─" * WIDTH, "2"))
     print("  " + _c(" · ", "2").join(bits))
     # sticky tl;dr line: research goal + current step
@@ -400,7 +489,18 @@ def run_repl() -> None:
             _print_help()
             continue
         if bare == "queue":
-            _print_queue(runner)
+            if len(tokens) > 1 and tokens[1].lower() == "restore":
+                restored = runner.restore_saved()
+                if restored:
+                    ids = ", ".join(f"#{job.id}" for job in restored)
+                    print(_c(f"  restored {ids}", "32"))
+                else:
+                    print(_c("  no saved queued prompts to restore", "2"))
+            elif len(tokens) > 1 and tokens[1].lower() == "clear":
+                cleared = runner.clear_saved()
+                print(_c(f"  cleared {cleared} saved queued prompt(s)", "32" if cleared else "2"))
+            else:
+                _print_queue(runner)
             continue
         if bare == "cancel":
             target = tokens[1] if len(tokens) > 1 else ""
@@ -572,13 +672,18 @@ def _print_queue(runner: ChatJobRunner) -> None:
     active = runner.active()
     queued = runner.queued()
     recent = runner.recent()
-    if active is None and not queued:
+    saved = runner.saved()
+    if active is None and not queued and not saved:
         print(_c("  queue empty", "2"))
     else:
         if active is not None:
             print(_c(f"  running #{active.id} {active.kind}: {_short_job_text(active.text)}", PURPLE))
         for job in queued:
             print(_c(f"  queued  #{job.id} {job.kind}: {_short_job_text(job.text)}", "2"))
+        for job in saved:
+            print(_c(f"  saved   #{job.id} {job.kind}: {_short_job_text(job.text)}", "33"))
+        if saved:
+            print(_c("  run `/queue restore` to enqueue saved prompts, or `/queue clear` to drop them", "2"))
     done = [job for job in recent if job.status in {"done", "error", "canceled"}]
     for job in done[-3:]:
         status = job.status

@@ -424,6 +424,7 @@ class AgentStackTest(unittest.TestCase):
         rendered_help = out.getvalue()
         self.assertIn("/btw <text>", rendered_help)
         self.assertIn("/queue", rendered_help)
+        self.assertIn("/queue restore", rendered_help)
         self.assertIn("/cancel <id|all>", rendered_help)
         self.assertIn("/commands --workflow first_run", rendered_help)
         self.assertIn("/commands --workflow first_run  show a runnable workflow recipe", rendered_help)
@@ -440,7 +441,7 @@ class AgentStackTest(unittest.TestCase):
 
         out = StringIO()
         with redirect_stdout(out):
-            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat)
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue.json"))
             first = runner.submit("first prompt")
             side = runner.submit(repl._btw_prompt("side question"), kind="btw")
             self.assertTrue(runner.wait_idle(timeout=2))
@@ -472,7 +473,7 @@ class AgentStackTest(unittest.TestCase):
             return text
 
         with redirect_stdout(StringIO()):
-            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat)
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue.json"))
             try:
                 first = runner.submit("first")
                 second = runner.submit("second")
@@ -492,6 +493,45 @@ class AgentStackTest(unittest.TestCase):
         self.assertEqual(first.status, "done")
         self.assertEqual(second.status, "canceled")
         self.assertEqual(started, ["first"])
+
+    def test_repl_chat_job_runner_saves_and_restores_pending_prompts(self):
+        from mechferret import repl
+
+        queue_path = Path("saved-queue.json")
+        release = threading.Event()
+        started = []
+
+        def fake_chat(agent, session, text, *, background=False):
+            started.append(text)
+            if text == "first":
+                self.assertTrue(release.wait(timeout=2))
+            return text
+
+        with redirect_stdout(StringIO()):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=queue_path)
+            try:
+                runner.submit("first")
+                second = runner.submit("second")
+                deadline = time.monotonic() + 2
+                while runner.active() is None and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertEqual([job.text for job in runner.saved()], ["second"])
+                self.assertTrue(queue_path.exists())
+                restored_runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=queue_path)
+                restored = restored_runner.restore_saved()
+                self.assertEqual([job.text for job in restored], [second.text])
+                self.assertEqual(runner.cancel(str(second.id)), [second])
+                release.set()
+                self.assertTrue(restored_runner.wait_idle(timeout=2))
+                self.assertTrue(runner.wait_idle(timeout=2))
+                self.assertEqual(restored_runner.saved(), [])
+            finally:
+                release.set()
+                runner.stop(wait=True)
+                if "restored_runner" in locals():
+                    restored_runner.stop(wait=True)
+
+        self.assertEqual(sorted(started), ["first", "second"])
 
     def test_repl_btw_parsing_preserves_prompt_text(self):
         from mechferret import repl
