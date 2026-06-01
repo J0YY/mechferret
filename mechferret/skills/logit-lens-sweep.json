@@ -5,7 +5,6 @@
   "question": "At which layer does the selected model commit to predicting a year greater than the start year, and which components drive it?",
   "max_screen_heads": 72,
   "promote_top_k": 4,
-  "seeds": [0, 1, 2],
   "budget": {"max_experiments": 250, "max_rounds": 2, "max_gpu_seconds": 500},
   "stop": {"min_confirmed_mechanisms": 1, "min_rigor_score": 0.6},
   "references": ["Hanna et al. 2023, greater-than circuit analysis.", "nostalgebraist 2020, interpreting transformer residual streams with the logit lens."]

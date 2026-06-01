@@ -97,7 +97,7 @@ class ExperimentSpec:
     target: dict[str, Any]  # e.g. {"layer": 5, "head": 1}
     metric: str = "logit_diff"
     controls: list[str] = field(default_factory=list)
-    seeds: list[int] = field(default_factory=lambda: [0, 1, 2])
+    seeds: list[int] = field(default_factory=list)
     backend: str = "auto"  # auto | synthetic | transformer_lens | modal
     hypothesis_id: str = ""
     params: dict[str, Any] = field(default_factory=dict)

@@ -31,7 +31,7 @@ class Skill:
     question: str = ""
     max_screen_heads: int = 96
     promote_top_k: int = 5
-    seeds: list[int] = field(default_factory=lambda: [0, 1, 2])
+    seeds: list[int] = field(default_factory=list)
     budget: dict[str, Any] = field(default_factory=dict)
     stop: dict[str, Any] = field(default_factory=dict)
     references: list[str] = field(default_factory=list)
@@ -138,7 +138,7 @@ def _from_payload(payload: dict[str, Any]) -> Skill:
         question=_string(payload.get("question")),
         max_screen_heads=_int(payload.get("max_screen_heads", 96), 96, min_value=1),
         promote_top_k=_int(payload.get("promote_top_k", 5), 5, min_value=1),
-        seeds=_int_list(payload.get("seeds", [0, 1, 2]), [0, 1, 2]),
+        seeds=_int_list(payload.get("seeds", []), []),
         budget=_dict(payload.get("budget")),
         stop=_dict(payload.get("stop")),
         references=_str_list(payload.get("references", [])),

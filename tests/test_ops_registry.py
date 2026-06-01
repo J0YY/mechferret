@@ -765,6 +765,8 @@ class OpsRegistryTest(unittest.TestCase):
         self.assertTrue(detail["skill"]["model_required"])
         self.assertIn("budget", detail["skill"])
         self.assertIn("min_rigor", detail["skill"])
+        self.assertEqual(detail["skill"]["seeds"], [])
+        self.assertEqual(detail["skill"]["seed_policy"], "run-specific generated seeds")
         detail_actions = " ".join(detail["next_actions"])
         self.assertIn("mechferret discover --skill ioi-circuit --model <model> --backend synthetic --json", detail_actions)
         self.assertIn("mechferret commands discover --json", detail_actions)

@@ -19,6 +19,7 @@ loop can still run without one.
 from __future__ import annotations
 
 import math
+import secrets
 from typing import Any
 
 from ..models import ExperimentResult, ExperimentSpec, Hypothesis
@@ -27,6 +28,7 @@ from .synthetic import _shape
 from .tasks import get_task
 
 CONFIRMATORY_PROBES = ("attention_pattern", "direct_logit_attribution", "activation_patching")
+DEFAULT_SEED_COUNT = 3
 
 
 def _text(value: Any) -> str:
@@ -98,13 +100,24 @@ def _bool(value: Any) -> bool:
     return False
 
 
-def _seeds(value: Any) -> list[int]:
+def runtime_seed_plan(count: int = DEFAULT_SEED_COUNT) -> list[int]:
+    count = _positive_int(count, DEFAULT_SEED_COUNT)
+    rng = secrets.SystemRandom()
+    seeds: list[int] = []
+    while len(seeds) < count:
+        candidate = rng.randrange(1, 2**31 - 1)
+        if candidate not in seeds:
+            seeds.append(candidate)
+    return seeds
+
+
+def _seeds(value: Any, *, default: list[int] | None = None) -> list[int]:
     seeds: list[int] = []
     for seed in _items(value):
         parsed = _nonnegative_int(seed)
         if parsed is not None and parsed not in seeds:
             seeds.append(parsed)
-    return seeds or [0, 1, 2]
+    return seeds or list(default or runtime_seed_plan())
 
 
 def _task(name: Any):
@@ -149,7 +162,7 @@ def _hypothesis(value: Any) -> Hypothesis | None:
 
 
 class HypothesisGenerator:
-    def __init__(self, model: str | None = None, seeds: tuple[int, ...] = (0, 1, 2)) -> None:
+    def __init__(self, model: str | None = None, seeds: tuple[int, ...] | list[int] | None = None) -> None:
         self.model = _text(model).strip()
         self.seeds = _seeds(seeds)
 

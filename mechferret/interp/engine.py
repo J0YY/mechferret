@@ -15,6 +15,7 @@ critic cares about:
 from __future__ import annotations
 
 import math
+import secrets
 import statistics
 from typing import Any
 
@@ -33,6 +34,7 @@ MIN_EFFECT_BY_UNIT = {
     "final_correct_prob": 0.25,
 }
 _DEFAULT_MIN_EFFECT = 0.3
+DEFAULT_SEED_COUNT = 3
 
 
 def _text(value: Any) -> str:
@@ -57,9 +59,9 @@ def _number(value: Any, default: float = 0.0) -> float:
     return parsed if math.isfinite(parsed) else default
 
 
-def _seeds(value: Any) -> list[int]:
+def _seeds(value: Any, *, default: list[int] | None = None) -> list[int]:
     if not isinstance(value, list):
-        return [0]
+        return list(default or _runtime_seed_plan())
     seeds: list[int] = []
     for seed in value:
         if type(seed) is bool:
@@ -70,7 +72,17 @@ def _seeds(value: Any) -> list[int]:
             continue
         if parsed not in seeds:
             seeds.append(parsed)
-    return seeds or [0]
+    return seeds or list(default or _runtime_seed_plan())
+
+
+def _runtime_seed_plan(count: int = DEFAULT_SEED_COUNT) -> list[int]:
+    rng = secrets.SystemRandom()
+    seeds: list[int] = []
+    while len(seeds) < max(1, int(count)):
+        candidate = rng.randrange(1, 2**31 - 1)
+        if candidate not in seeds:
+            seeds.append(candidate)
+    return seeds
 
 
 def _items(value: Any) -> list[Any]:
@@ -91,6 +103,7 @@ class InterpEngine:
         self.model = _text(model).strip()
         self.requested_backend = _text(backend).strip() or "auto"
         self._backends: dict[tuple[str, str], object] = {}
+        self._default_seeds = _runtime_seed_plan()
 
     def backend_for(self, model: str | None = None, backend: str | None = None):
         model_name = _text(model).strip() or self.model
@@ -119,7 +132,7 @@ class InterpEngine:
         except Exception as exc:  # noqa: BLE001 - malformed specs become error result rows
             return self._error_result(result_id, spec_id, probe_name, target, str(exc))
 
-        seeds = _seeds(getattr(spec, "seeds", [0]))
+        seeds = _seeds(getattr(spec, "seeds", []), default=self._default_seeds)
         effects: list[float] = []
         controls: list[float] = []
         observations: list[str] = []

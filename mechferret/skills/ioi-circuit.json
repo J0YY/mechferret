@@ -5,7 +5,6 @@
   "question": "Which attention heads implement the Indirect Object Identification behaviour in the selected model, and what are their roles?",
   "max_screen_heads": 96,
   "promote_top_k": 6,
-  "seeds": [0, 1, 2],
   "budget": {"max_experiments": 400, "max_rounds": 3, "max_gpu_seconds": 900},
   "stop": {"min_confirmed_mechanisms": 2, "min_rigor_score": 0.7},
   "references": ["Wang et al. 2022, Interpretability in the Wild (IOI circuit)."]

@@ -33,7 +33,7 @@ from .coordinator import Coordinator, default_workers
 from .hooks import Budget, BudgetGuard
 from .interp.critic import ExperimentCritic
 from .interp.engine import InterpEngine
-from .interp.hypotheses import HypothesisGenerator, classify_head_role, update_hypotheses
+from .interp.hypotheses import HypothesisGenerator, classify_head_role, runtime_seed_plan, update_hypotheses
 from .interp.tasks import get_task, infer_task
 from .llm import make_research_adapter, synthesize_answer_with_provider
 from .memory import ResearchMemory
@@ -218,6 +218,12 @@ def _budget(value: Any) -> Budget:
     )
 
 
+def _discovery_seed_plan(skill: Skill | None) -> tuple[list[int], str]:
+    if skill is not None and skill.seeds:
+        return list(skill.seeds), "skill"
+    return runtime_seed_plan(), "run_generated"
+
+
 def request_alignment_issue(
     question: str,
     skill: Skill | None,
@@ -322,14 +328,13 @@ class DiscoveryController:
         budget = _budget(budget or Budget())
 
         run_id = f"disc_{uuid.uuid4().hex[:10]}"
+        seeds, seed_source = _discovery_seed_plan(skill_obj)
         out_path = Path(out_dir)
         tracer = TraceRecorder(run_id, out_path)
         memory = ResearchMemory(self.memory_path)
         guard = BudgetGuard(budget=budget)
         engine = InterpEngine(model=model, backend=backend)
-        generator = HypothesisGenerator(
-            model=model, seeds=tuple(skill_obj.seeds) if skill_obj else (0, 1, 2)
-        )
+        generator = HypothesisGenerator(model=model, seeds=seeds)
         exp_critic = ExperimentCritic()
 
         try:
@@ -496,6 +501,8 @@ class DiscoveryController:
                     "backend_used": backend_name,
                     "skill": skill_obj.name if skill_obj else "",
                     "task": task_name,
+                    "seeds": seeds,
+                    "seed_source": seed_source,
                     "budget": {
                         "max_rounds": budget.max_rounds,
                         "max_experiments": budget.max_experiments,

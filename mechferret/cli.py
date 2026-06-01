@@ -2637,7 +2637,7 @@ def handle_skills(args) -> None:
         print(f"Description: {skill.description}")
         print(f"Task: {skill.task}  Model: {model_label}")
         print(f"Question: {skill.question}")
-        print(f"Screen heads: {skill.max_screen_heads}  Promote top-k: {skill.promote_top_k}  Seeds: {skill.seeds}")
+        print(f"Screen heads: {skill.max_screen_heads}  Promote top-k: {skill.promote_top_k}  Seeds: {_skill_seed_label(skill)}")
         print(f"Budget: {skill.budget}")
         print(f"Stop when: confirmed>={skill.min_confirmed}, rigor>={skill.min_rigor}")
         for reference in skill.references:
@@ -2681,6 +2681,7 @@ def _skill_payload(skill) -> dict[str, Any]:
         "max_screen_heads": skill.max_screen_heads,
         "promote_top_k": skill.promote_top_k,
         "seeds": skill.seeds,
+        "seed_policy": _skill_seed_label(skill),
         "budget": skill.budget,
         "stop": skill.stop,
         "references": skill.references,
@@ -2706,6 +2707,10 @@ def _skills_next_actions(skill=None, *, listed: list[Any] | None = None) -> list
         f"Run `mechferret discover --skill {skill.name}{model_flag} --backend transformer_lens --json` when local model dependencies are installed.",
         "Run `mechferret commands discover --json` to inspect discovery options.",
     ]
+
+
+def _skill_seed_label(skill) -> str:
+    return ", ".join(str(seed) for seed in skill.seeds) if skill.seeds else "run-specific generated seeds"
 
 
 def handle_modal(args) -> None:
