@@ -1,4 +1,5 @@
 import json
+import urllib.parse
 import unittest
 from unittest.mock import patch
 
@@ -26,6 +27,10 @@ class _Response:
 
 
 class KnowledgeTest(unittest.TestCase):
+    def _query_param(self, url: str, name: str) -> str:
+        values = urllib.parse.parse_qs(urllib.parse.urlparse(url).query).get(name, [])
+        return values[0] if values else ""
+
     def test_web_search_sanitizes_limits_and_result_rows(self):
         html = b"""
         <a class="result__a" href="/l/?uddg=https%3A%2F%2Fexample.com%2Fa">A &amp; B</a>
@@ -77,11 +82,11 @@ class KnowledgeTest(unittest.TestCase):
         self.assertEqual(total, 0)
         self.assertEqual(rows[0]["title"], "Test Paper")
         self.assertEqual(rows[0]["authors"], ["Ada"])
-        self.assertIn("max_results=30", opened.call_args.args[0].full_url)
+        self.assertEqual(self._query_param(opened.call_args.args[0].full_url, "max_results"), "50")
 
         with patch("urllib.request.urlopen", return_value=_Response(feed)) as opened:
             search_arxiv("sae", max_results=2 + 3)
-        self.assertIn("max_results=30", opened.call_args.args[0].full_url)
+        self.assertEqual(self._query_param(opened.call_args.args[0].full_url, "max_results"), "50")
 
     def test_neuronpedia_helpers_tolerate_bad_json_and_inputs(self):
         self.assertEqual(neuronpedia_search_explanations("", "query"), {})

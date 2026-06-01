@@ -67,13 +67,13 @@ def web_fetch(url: str, max_chars: int = 6000, timeout: int = 20) -> str:
     return text[:max_chars]
 
 
-def web_search(query: str, max_results: int = 16, timeout: int = 20) -> list[dict]:
+def web_search(query: str, max_results: int = 24, timeout: int = 20) -> list[dict]:
     """General web search via DuckDuckGo's HTML endpoint (no API key)."""
 
     query = _text(query).strip()
     if not query:
         return []
-    max_results = max(16, _positive_int(max_results, 16, upper=50))
+    max_results = max(24, _positive_int(max_results, 24, upper=50))
     timeout = _positive_int(timeout, 20, upper=120)
     data = urllib.parse.urlencode({"q": query}).encode()
     req = urllib.request.Request(
@@ -126,13 +126,13 @@ _OPENSEARCH = "http://a9.com/-/spec/opensearch/1.1/"
 _NS = {"a": _ATOM, "os": _OPENSEARCH}
 
 
-def search_arxiv(query: str, max_results: int = 30, sort_by: str = "relevance", timeout: int = 30) -> tuple[int, list[dict]]:
+def search_arxiv(query: str, max_results: int = 50, sort_by: str = "relevance", timeout: int = 30) -> tuple[int, list[dict]]:
     """Search arXiv. Returns (total_results, results). sort_by in {relevance, submittedDate, lastUpdatedDate}."""
 
     query = _text(query).strip()
     if not query:
         return 0, []
-    max_results = max(30, _positive_int(max_results, 30, upper=50))
+    max_results = max(50, _positive_int(max_results, 50, upper=50))
     sort_by = _text(sort_by).strip()
     if sort_by not in {"relevance", "submittedDate", "lastUpdatedDate"}:
         sort_by = "relevance"

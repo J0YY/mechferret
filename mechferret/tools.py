@@ -26,17 +26,17 @@ PERSIST_THRESHOLD = 16000  # results larger than this are written to disk, not t
 JSON_PREVIEW_FIELD_LIMIT = 2000
 CHECK_LIST_STRUCTURED_LIMIT = 480
 RESULTS_DIR = Path(".mechferret/tool_results")
-DEFAULT_WEB_RESULTS = 16
-DEFAULT_ARXIV_RESULTS = 30
+DEFAULT_WEB_RESULTS = 24
+DEFAULT_ARXIV_RESULTS = 50
 NOVELTY_RELATED_LIMIT = 24
 NOVELTY_FOCUSED_LIMIT = 10
-NOVELTY_QUERY_RESULT_LIMIT = 30
-NOVELTY_MAX_QUERY_PASSES = 16
+NOVELTY_QUERY_RESULT_LIMIT = 50
+NOVELTY_MAX_QUERY_PASSES = 20
 NOVELTY_CLOSEST_PRIOR_LIMIT = 8
-NOVELTY_WEB_RESULT_LIMIT = 16
-NOVELTY_WEB_MAX_QUERY_PASSES = 10
-NOVELTY_WEB_FETCH_LIMIT = 8
-NOVELTY_WEB_FETCH_CHARS = 1600
+NOVELTY_WEB_RESULT_LIMIT = 24
+NOVELTY_WEB_MAX_QUERY_PASSES = 12
+NOVELTY_WEB_FETCH_LIMIT = 10
+NOVELTY_WEB_FETCH_CHARS = 2400
 NOVELTY_RISKS = {
     "high_prior_art_risk",
     "medium_prior_art_risk",
@@ -1049,7 +1049,7 @@ def tool_verify_novelty(args: dict[str, Any]) -> str:
         "errors": errors,
         "novelty_questions": _novelty_questions(idea),
         "guidance": "Do not claim high novelty unless the idea survives relevance, submitted-date, "
-                    "updated-date, method, mechanism, evaluation, implementation, replication, failure-mode, and discovery searches. Compare against the closest "
+                    "updated-date, recent-discovery, architecture-variant, method, mechanism, evaluation, implementation, replication, failure-mode, and protocol searches. Compare against the closest "
                     "recent papers, name the exact delta, cite likely prior art, and downgrade any "
                     "direction that only renames an existing method.",
     })
@@ -1105,6 +1105,8 @@ def _novelty_search_plan(idea: str, queries: list[str] | None) -> list[dict[str,
             _novelty_plan_item(f"{compact} method design", "relevance", "method_relevance"),
             _novelty_plan_item(f"{compact} mechanism ablation causal evidence", "relevance", "mechanism_evidence"),
             _novelty_plan_item(f"{compact} benchmark evaluation negative results", "submittedDate", "recent_evaluation"),
+            _novelty_plan_item(f"{compact} recent discovery emerging method", "submittedDate", "recent_discovery"),
+            _novelty_plan_item(f"{compact} architecture variant empirical finding", "lastUpdatedDate", "architecture_variant"),
             _novelty_plan_item(f"{compact} replication reproduction failure analysis", "lastUpdatedDate", "replication_failure_modes"),
             _novelty_plan_item(f"{compact} dataset task protocol", "relevance", "evaluation_protocol"),
             _novelty_plan_item(f"{compact} limitations failure modes", "submittedDate", "recent_limitations"),
@@ -1139,6 +1141,8 @@ def _novelty_web_search_plan(idea: str, queries: list[str] | None) -> list[dict[
             _novelty_web_plan_item(f"{compact} benchmark evaluation leaderboard", "web_benchmark_evaluation"),
             _novelty_web_plan_item(f"{compact} implementation repository code", "web_code_prior"),
             _novelty_web_plan_item(f"{compact} project page technical report", "web_project_or_report"),
+            _novelty_web_plan_item(f"{compact} recent discovery technical report", "web_recent_discovery"),
+            _novelty_web_plan_item(f"{compact} architecture variant implementation", "web_architecture_variant"),
             _novelty_web_plan_item(f"{compact} replication reproduction results", "web_replication_results"),
             _novelty_web_plan_item(f"{compact} limitations failure modes", "web_failure_modes"),
             _novelty_web_plan_item(f"{compact} dataset benchmark protocol", "web_dataset_protocol"),
@@ -1173,6 +1177,8 @@ def _novelty_focus_is_deep(focus: Any) -> bool:
             "protocol",
             "survey",
             "benchmark",
+            "discovery",
+            "architecture",
         )
     )
 
@@ -1290,7 +1296,7 @@ def _novelty_assessment(
     arxiv_plan = arxiv_plan or []
     web_plan = web_plan or []
     coverage = {
-        "search_strategy": "deep_recent_method_mechanism_evaluation_implementation_replication",
+        "search_strategy": "deep_recent_discovery_method_mechanism_architecture_evaluation_implementation_replication",
         "arxiv_query_count": len(arxiv_plan),
         "web_query_count": len(web_plan),
         "arxiv_results_per_query": max((int(row.get("max_results", 0)) for row in arxiv_plan), default=0),
@@ -1390,6 +1396,8 @@ def _novelty_focus_coverage(arxiv_focuses: list[str], web_focuses: list[str]) ->
         "failure_modes": "failure" in text or "limitations" in text,
         "protocol": "protocol" in text or "dataset" in text,
         "survey": "survey" in text,
+        "recent_discovery": "discovery" in text,
+        "architecture": "architecture" in text,
     }
 
 
@@ -1398,11 +1406,21 @@ def _novelty_claim_readiness(risk: str, top_score: float, coverage: dict[str, An
     checks = {
         "deep_query_plan": coverage.get("arxiv_query_count", 0) >= 10
         and coverage.get("web_query_count", 0) >= 8
-        and coverage.get("arxiv_results_per_query", 0) >= 30
-        and coverage.get("web_results_per_query", 0) >= 16,
+        and coverage.get("arxiv_results_per_query", 0) >= 50
+        and coverage.get("web_results_per_query", 0) >= 24,
         "focus_breadth": all(
             bool(focus_coverage.get(name))
-            for name in ("method", "mechanism", "evaluation", "implementation", "replication", "failure_modes", "protocol")
+            for name in (
+                "recent_discovery",
+                "architecture",
+                "method",
+                "mechanism",
+                "evaluation",
+                "implementation",
+                "replication",
+                "failure_modes",
+                "protocol",
+            )
         ),
         "retrieved_prior_art": coverage.get("retrieved_evidence", 0) >= 8,
         "recent_prior_art": coverage.get("recent_evidence", 0) >= 1,
@@ -1438,7 +1456,7 @@ def _novelty_readiness_next_actions(status: str, missing: list[str]) -> list[str
     if status == "not_ready_prior_art_overlap":
         actions.append("Treat the direction as prior-art-overlapping until the exact method and evaluation delta is demonstrated.")
     if "focus_breadth" in missing:
-        actions.append("Run follow-up searches covering method, mechanism, evaluation, implementation, replication, failure modes, and protocol.")
+        actions.append("Run follow-up searches covering recent discoveries, architecture variants, method, mechanism, evaluation, implementation, replication, failure modes, and protocol.")
     if "retrieved_prior_art" in missing or "credible_source_diversity" in missing:
         actions.append("Collect more independent papers, benchmarks, code, or project reports before selecting this idea.")
     if "recent_prior_art" in missing:
@@ -2573,15 +2591,15 @@ TOOL_SPECS: list[dict[str, Any]] = [
      "parameters": _obj({"pattern": {"type": "string"}, "path": {"type": "string"}}, ["pattern"])},
     {"name": "grep", "description": "Search file contents by regex (ripgrep if available). Optional glob filter.",
      "parameters": _obj({"pattern": {"type": "string"}, "path": {"type": "string"}, "glob": {"type": "string"}}, ["pattern"])},
-    {"name": "web_search", "description": "Search the web (returns title + url results). Uses at least 16 results per query, even if a smaller max_results is requested. Use for current information and finding sources.",
+    {"name": "web_search", "description": "Search the web (returns title + url results). Uses at least 24 results per query, even if a smaller max_results is requested. Use for current information and finding sources.",
      "parameters": _obj({"query": {"type": "string"}, "max_results": {"type": "integer"}}, ["query"])},
     {"name": "web_fetch", "description": "Fetch a URL and return its readable text content.",
      "parameters": _obj({"url": {"type": "string"}}, ["url"])},
-    {"name": "arxiv_search", "description": "Search arXiv for papers. Uses at least 30 results per query, even if a smaller max_results is requested. sort_by: relevance | submittedDate | lastUpdatedDate. Use for literature grounding.",
+    {"name": "arxiv_search", "description": "Search arXiv for papers. Uses at least 50 results per query, even if a smaller max_results is requested. sort_by: relevance | submittedDate | lastUpdatedDate. Use for literature grounding.",
      "parameters": _obj({"query": {"type": "string", "description": "arXiv query, e.g. 'cat:cs.LG AND (abs:sparse autoencoder OR abs:linear probe)'"}, "max_results": {"type": "integer"}, "sort_by": {"type": "string", "enum": ["relevance", "submittedDate", "lastUpdatedDate"]}}, ["query"])},
     {"name": "neuronpedia_search", "description": "Semantic search over SAE-feature explanations for an explicit Neuronpedia model id.",
      "parameters": _obj({"model_id": {"type": "string"}, "query": {"type": "string"}}, ["model_id", "query"])},
-    {"name": "verify_novelty", "description": "Deep novelty check for a research idea using multi-pass arXiv and web searches across relevance, recency, method, mechanism, evaluation, implementation, replication, failure-mode, protocol, and recent-discovery angles. Call this for each proposed research direction before presenting it.",
+    {"name": "verify_novelty", "description": "Deep novelty check for a research idea using multi-pass arXiv and web searches across relevance, recency, recent discoveries, architecture variants, method, mechanism, evaluation, implementation, replication, failure-mode, and protocol angles. Call this for each proposed research direction before presenting it.",
      "parameters": _obj({"idea": {"type": "string", "description": "the research idea/direction to novelty-check"}, "queries": {"type": "array", "items": {"type": "string"}, "description": "optional arXiv queries to probe for prior work"}}, ["idea"])},
     {"name": "present_options", "description": "Present 2-5 research directions to the user as an interactive, expandable picker and return their choice. Use this instead of writing options as prose. Every option must include detail, citations, novelty_risk, novelty_verdict, closest_prior_art, claim_readiness, and required_delta from verify_novelty assessment.",
      "parameters": _obj({"options": {"type": "array", "items": {"type": "object", "properties": {

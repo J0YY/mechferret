@@ -815,8 +815,8 @@ class AgentToolTest(unittest.TestCase):
             tools.run_tool("arxiv_search", {"query": "sparse autoencoder", "max_results": shallow_count})
             tools.run_tool("web_search", {"query": "sparse autoencoder", "max_results": shallow_count})
 
-        self.assertEqual(arxiv_calls[0]["max_results"], 30)
-        self.assertEqual(web_calls[0]["max_results"], 16)
+        self.assertEqual(arxiv_calls[0]["max_results"], 50)
+        self.assertEqual(web_calls[0]["max_results"], 24)
 
     def test_verify_novelty_runs_deep_recent_method_search(self):
         from mechferret import tools
@@ -857,7 +857,7 @@ class AgentToolTest(unittest.TestCase):
                 },
             ]
 
-        def fake_web_fetch(url, max_chars=1600):
+        def fake_web_fetch(url, max_chars=2400):
             fetch_calls.append({"url": url, "max_chars": max_chars})
             return (
                 "Fetched page text describing sparse autoencoder method for vision language action policies, "
@@ -878,22 +878,26 @@ class AgentToolTest(unittest.TestCase):
                     },
                 )
             )
+        if payload.get("tool_output_truncated"):
+            payload = json.loads(Path(payload["full_output_path"]).read_text(encoding="utf-8"))
 
         self.assertGreaterEqual(len(calls), 10)
-        self.assertTrue(all(call["max_results"] == 30 for call in calls))
+        self.assertTrue(all(call["max_results"] == 50 for call in calls))
         self.assertIn("submittedDate", {call["sort_by"] for call in calls})
         self.assertIn("lastUpdatedDate", {call["sort_by"] for call in calls})
         self.assertTrue(any("method" in call["query"].lower() for call in calls))
         self.assertTrue(any("mechanism" in call["query"].lower() for call in calls))
         self.assertTrue(any("evaluation" in call["query"].lower() for call in calls))
+        self.assertTrue(any("recent discovery" in call["query"].lower() for call in calls))
+        self.assertTrue(any("architecture variant" in call["query"].lower() for call in calls))
         self.assertTrue(any("replication" in call["query"].lower() for call in calls))
         self.assertEqual(len(payload["search_plan"]), len(calls))
         self.assertEqual(payload["arxiv_search_plan"], payload["search_plan"])
         self.assertGreaterEqual(len(web_calls), 8)
-        self.assertTrue(all(call["max_results"] == 16 for call in web_calls))
+        self.assertTrue(all(call["max_results"] == 24 for call in web_calls))
         self.assertGreaterEqual(len(fetch_calls), 1)
-        self.assertLessEqual(len(fetch_calls), 8)
-        self.assertTrue(all(call["max_chars"] == 1600 for call in fetch_calls))
+        self.assertLessEqual(len(fetch_calls), 10)
+        self.assertTrue(all(call["max_chars"] == 2400 for call in fetch_calls))
         self.assertIn("web_search_plan", payload)
         self.assertEqual(payload["web_results"][0]["source"], "web")
         self.assertEqual(payload["web_results"][0]["source_domain"], "example.org")
@@ -915,12 +919,16 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn(payload["assessment"]["evidence_strength"], {"strong_multi_source_overlap", "strong_but_narrow_overlap"})
         self.assertEqual(payload["assessment"]["source_diversity"], "broad_independent")
         self.assertIn("recent_window", payload["assessment"]["coverage"])
-        self.assertEqual(payload["assessment"]["coverage"]["arxiv_results_per_query"], 30)
-        self.assertEqual(payload["assessment"]["coverage"]["web_results_per_query"], 16)
+        self.assertEqual(payload["assessment"]["coverage"]["arxiv_results_per_query"], 50)
+        self.assertEqual(payload["assessment"]["coverage"]["web_results_per_query"], 24)
         self.assertGreaterEqual(payload["assessment"]["coverage"]["arxiv_query_count"], 10)
         self.assertGreaterEqual(payload["assessment"]["coverage"]["web_query_count"], 8)
         self.assertIn("replication_failure_modes", payload["assessment"]["coverage"]["arxiv_focuses"])
         self.assertIn("web_replication_results", payload["assessment"]["coverage"]["web_focuses"])
+        self.assertIn("recent_discovery", payload["assessment"]["coverage"]["arxiv_focuses"])
+        self.assertIn("architecture_variant", payload["assessment"]["coverage"]["arxiv_focuses"])
+        self.assertIn("web_recent_discovery", payload["assessment"]["coverage"]["web_focuses"])
+        self.assertIn("web_architecture_variant", payload["assessment"]["coverage"]["web_focuses"])
         self.assertGreaterEqual(payload["assessment"]["coverage"]["web_results"], 1)
         self.assertGreaterEqual(payload["assessment"]["coverage"]["web_results_with_snippets"], 1)
         self.assertGreaterEqual(payload["assessment"]["coverage"]["web_pages_fetched"], 1)
@@ -937,9 +945,12 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(payload["assessment"]["claim_readiness"]["status"], "not_ready_prior_art_overlap")
         self.assertIn("focus_coverage", payload["assessment"]["coverage"])
         self.assertTrue(payload["assessment"]["coverage"]["focus_coverage"]["method"])
+        self.assertTrue(payload["assessment"]["coverage"]["focus_coverage"]["recent_discovery"])
+        self.assertTrue(payload["assessment"]["coverage"]["focus_coverage"]["architecture"])
         self.assertTrue(payload["assessment"]["coverage"]["focus_coverage"]["replication"])
         self.assertGreaterEqual(payload["assessment"]["coverage"]["recent_evidence"], 1)
-        self.assertIn("method, mechanism, evaluation", payload["guidance"])
+        self.assertIn("recent-discovery", payload["guidance"])
+        self.assertIn("architecture-variant", payload["guidance"])
 
     def test_verify_novelty_search_plan_uses_idea_terms_without_fixed_architectures(self):
         from mechferret import tools
