@@ -1022,6 +1022,7 @@ class AgentToolTest(unittest.TestCase):
         shallow_search_audit = _option_search_audit()
         shallow_search_audit["pass_count"] = 4
         shallow_search_audit["focus_summary"] = shallow_search_audit["focus_summary"][:4]
+        shallow_search_audit["passes"] = shallow_search_audit["passes"][:4]
         bad_shallow_search = json.loads(
             tools.run_tool(
                 "present_options",
@@ -1064,6 +1065,8 @@ class AgentToolTest(unittest.TestCase):
 
         unfocused_search_audit = _option_search_audit()
         for index, row in enumerate(unfocused_search_audit["focus_summary"]):
+            row["focus"] = f"generic_focus_{index}"
+        for index, row in enumerate(unfocused_search_audit["passes"]):
             row["focus"] = f"generic_focus_{index}"
         bad_unfocused_search = json.loads(
             tools.run_tool(
@@ -1108,6 +1111,9 @@ class AgentToolTest(unittest.TestCase):
         failed_search_audit = _option_search_audit()
         failed_search_audit["failed_passes"] = 1
         failed_search_audit["failed_focuses"] = [{"source": "web", "focus": "web_claim_collision"}]
+        for row in failed_search_audit["passes"]:
+            if row["source"] == "web" and row["focus"] == "web_claim_collision":
+                row["failed"] = True
         bad_failed_search = json.loads(
             tools.run_tool(
                 "present_options",
@@ -1150,6 +1156,9 @@ class AgentToolTest(unittest.TestCase):
 
         no_web_unique_search_audit = _option_search_audit()
         for row in no_web_unique_search_audit["focus_summary"]:
+            if row["source"] == "web":
+                row["unique_added"] = 0
+        for row in no_web_unique_search_audit["passes"]:
             if row["source"] == "web":
                 row["unique_added"] = 0
         no_web_unique = _validated_option("No web evidence")
@@ -1221,6 +1230,33 @@ class AgentToolTest(unittest.TestCase):
         self.assertFalse(bad_forged_source_axis["ok"])
         self.assertEqual(bad_forged_source_axis["expected"], "objects with search_audit from verify_novelty assessment")
 
+        forged_focus_search_audit = _option_search_audit()
+        forged_focus_search_audit["passes"] = [
+            {
+                **row,
+                "focus": f"generic_focus_{index}",
+            }
+            for index, row in enumerate(forged_focus_search_audit["passes"])
+        ]
+        forged_focus_search_audit["focus_coverage"] = {
+            key: True for key in forged_focus_search_audit["focus_coverage"]
+        }
+        forged_focus_search_audit["evidence_focus_coverage"] = {
+            key: True for key in forged_focus_search_audit["evidence_focus_coverage"]
+        }
+        forged_focus_search_audit["missing_focus_coverage"] = []
+        forged_focus_search_audit["missing_evidence_focus_coverage"] = []
+        forged_focus = _validated_option("Forged focus evidence")
+        forged_focus["search_audit"] = forged_focus_search_audit
+        bad_forged_focus = json.loads(
+            tools.run_tool(
+                "present_options",
+                {"options": [forged_focus]},
+            )
+        )
+        self.assertFalse(bad_forged_focus["ok"])
+        self.assertEqual(bad_forged_focus["expected"], "objects with search_audit from verify_novelty assessment")
+
         missing_recent = _validated_option("No recent evidence")
         missing_recent["recent_pressure"] = {
             "status": "missing_recent_prior_art",
@@ -1283,8 +1319,8 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(ok["option_details"][0]["novelty_threat_model"][1]["representative_prior"]["source_type"], "paper")
         self.assertEqual(ok["option_details"][0]["disqualifying_overlap_tests"][1]["test"], "claim_collision")
         self.assertFalse(ok["option_details"][0]["disqualifying_overlap_tests"][1]["passed"])
-        self.assertEqual(ok["option_details"][0]["search_audit"]["pass_count"], 26)
-        self.assertEqual(ok["option_details"][0]["search_audit"]["empty_search_passes"], 2)
+        self.assertEqual(ok["option_details"][0]["search_audit"]["pass_count"], 27)
+        self.assertEqual(ok["option_details"][0]["search_audit"]["empty_search_passes"], 0)
         self.assertEqual(ok["option_details"][0]["search_audit"]["focus_summary"][0]["requested_results_max"], 50)
         self.assertTrue(ok["option_details"][0]["search_audit"]["focus_coverage"]["claim_collision"])
         self.assertEqual(ok["option_details"][0]["recent_pressure"]["status"], "recent_prior_present")
@@ -2643,12 +2679,12 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(selected["selected_option"]["comparison_matrix"][1]["axis"], "evaluation")
         self.assertEqual(selected["selected_option"]["novelty_threat_model"][1]["threat"], "claim_collision")
         self.assertEqual(selected["selected_option"]["disqualifying_overlap_tests"][0]["test"], "exact_phrase_overlap")
-        self.assertEqual(selected["selected_option"]["search_audit"]["pass_count"], 26)
+        self.assertEqual(selected["selected_option"]["search_audit"]["pass_count"], 27)
         self.assertIn("causal ablation", picked[0][0]["required_delta"])
         self.assertEqual(picked[0][0]["comparison_matrix"][1]["axis"], "evaluation")
         self.assertEqual(picked[0][0]["novelty_threat_model"][1]["risk"], "needs_delta_review")
         self.assertFalse(picked[0][0]["disqualifying_overlap_tests"][1]["passed"])
-        self.assertEqual(picked[0][0]["search_audit"]["duplicate_only_search_passes"], 3)
+        self.assertEqual(picked[0][0]["search_audit"]["duplicate_only_search_passes"], 0)
         self.assertEqual(picked[0][0]["recent_pressure"]["status"], "recent_prior_present")
 
     def test_agent_dispatch_preserves_deferred_option_selection_payload(self):
@@ -2676,7 +2712,7 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(selected["option_details"][0]["title"], "Novelty audit")
         self.assertEqual(selected["option_details"][0]["novelty_threat_model"][0]["threat"], "exact_phrase_overlap")
         self.assertEqual(selected["option_details"][0]["disqualifying_overlap_tests"][1]["test"], "claim_collision")
-        self.assertEqual(selected["option_details"][0]["search_audit"]["empty_search_passes"], 2)
+        self.assertEqual(selected["option_details"][0]["search_audit"]["empty_search_passes"], 0)
         self.assertNotIn("selected_option", selected)
 
     def test_large_output_persisted(self):

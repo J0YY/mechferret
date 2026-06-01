@@ -2942,15 +2942,32 @@ def _option_search_audit(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         return {}
     audit: dict[str, Any] = {}
-    for key in (
-        "pass_count",
-        "failed_passes",
-        "empty_search_passes",
-        "empty_arxiv_passes",
-        "empty_web_passes",
-        "duplicate_only_search_passes",
-    ):
-        audit[key] = _safe_int(value.get(key))
+    passes = _option_search_passes(value.get("passes"))
+    if passes:
+        audit["pass_count"] = len(passes)
+        audit["failed_passes"] = sum(1 for row in passes if row.get("failed"))
+        audit["empty_search_passes"] = sum(1 for row in passes if _safe_int(row.get("retrieved")) == 0)
+        audit["empty_arxiv_passes"] = sum(
+            1 for row in passes if row.get("source") == "arxiv" and _safe_int(row.get("retrieved")) == 0
+        )
+        audit["empty_web_passes"] = sum(
+            1 for row in passes if row.get("source") == "web" and _safe_int(row.get("retrieved")) == 0
+        )
+        audit["duplicate_only_search_passes"] = sum(
+            1
+            for row in passes
+            if _safe_int(row.get("retrieved")) > 0 and _safe_int(row.get("unique_added")) == 0
+        )
+    else:
+        for key in (
+            "pass_count",
+            "failed_passes",
+            "empty_search_passes",
+            "empty_arxiv_passes",
+            "empty_web_passes",
+            "duplicate_only_search_passes",
+        ):
+            audit[key] = _safe_int(value.get(key))
     focus_coverage = value.get("focus_coverage")
     if isinstance(focus_coverage, dict):
         audit["focus_coverage"] = {
@@ -2958,7 +2975,6 @@ def _option_search_audit(value: Any) -> dict[str, Any]:
             for key, flag in focus_coverage.items()
             if isinstance(key, str) and type(flag) is bool
         }
-    passes = _option_search_passes(value.get("passes"))
     source_type_counts, source_domain_counts = _source_counts_from_option_passes(passes)
     if source_type_counts:
         audit["source_type_counts"] = source_type_counts
@@ -2975,16 +2991,35 @@ def _option_search_audit(value: Any) -> dict[str, Any]:
     ]
     if missing_source_axis_coverage:
         audit["missing_source_axis_coverage"] = missing_source_axis_coverage[:16]
-    missing_focus_coverage = _option_strings(value.get("missing_focus_coverage", []))
-    if missing_focus_coverage:
-        audit["missing_focus_coverage"] = missing_focus_coverage[:16]
     for key in ("empty_focuses", "failed_focuses"):
         rows = _option_search_focus_rows(value.get(key))
         if rows:
             audit[key] = rows[:8]
-    focus_summary = _option_search_focus_summary(value.get("focus_summary"))
+    focus_summary = _focus_summary_from_option_passes(passes) if passes else _option_search_focus_summary(value.get("focus_summary"))
     if focus_summary:
         audit["focus_summary"] = focus_summary
+        empty_focuses = [
+            {"source": row["source"], "focus": row["focus"]}
+            for row in focus_summary
+            if _safe_int(row.get("retrieved")) == 0
+        ]
+        if empty_focuses:
+            audit["empty_focuses"] = empty_focuses[:8]
+        failed_focuses = [
+            {"source": row["source"], "focus": row["focus"]}
+            for row in focus_summary
+            if _safe_int(row.get("failed_passes")) > 0
+        ]
+        if failed_focuses:
+            audit["failed_focuses"] = failed_focuses[:8]
+        focus_coverage = _option_search_focus_coverage(focus_summary)
+        audit["focus_coverage"] = focus_coverage
+        missing_focus_coverage = [
+            focus for focus in sorted(NOVELTY_REQUIRED_OPTION_SEARCH_FOCUS)
+            if not focus_coverage.get(focus)
+        ]
+        if missing_focus_coverage:
+            audit["missing_focus_coverage"] = missing_focus_coverage[:16]
         evidence_coverage = _option_search_focus_coverage(
             [row for row in focus_summary if _safe_int(row.get("unique_added")) > 0]
         )
@@ -3080,6 +3115,36 @@ def _source_counts_from_option_passes(rows: list[dict[str, Any]]) -> tuple[dict[
         dict(sorted(source_type_counts.items())),
         dict(sorted(source_domain_counts.items(), key=lambda item: (-item[1], item[0]))),
     )
+
+
+def _focus_summary_from_option_passes(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    focus_summary: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in rows:
+        source = str(row.get("source", "")).strip()
+        focus = str(row.get("focus", "")).strip()
+        if not source or not focus:
+            continue
+        target = focus_summary.setdefault(
+            (source, focus),
+            {
+                "source": source,
+                "focus": focus,
+                "passes": 0,
+                "failed_passes": 0,
+                "retrieved": 0,
+                "unique_added": 0,
+                "requested_results_max": 0,
+            },
+        )
+        target["passes"] += 1
+        target["failed_passes"] += 1 if row.get("failed") else 0
+        target["retrieved"] += _safe_int(row.get("retrieved"))
+        target["unique_added"] += _safe_int(row.get("unique_added"))
+        target["requested_results_max"] = max(
+            _safe_int(target.get("requested_results_max")),
+            _safe_int(row.get("requested_results")),
+        )
+    return sorted(focus_summary.values(), key=lambda item: (item["source"], item["focus"]))
 
 
 def _option_search_focus_summary(value: Any) -> list[dict[str, Any]]:
