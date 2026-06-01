@@ -11,9 +11,15 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import shlex
 import sys
+import threading
+import time
+from contextlib import nullcontext
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, Callable
 
 from .commands import COMMAND_WORDS
 
@@ -58,6 +64,104 @@ class Session:
         self.run_count = 0
         self.goal = ""
         self.step = ""
+
+
+@dataclass(slots=True)
+class PromptJob:
+    id: int
+    text: str
+    kind: str = "prompt"
+    status: str = "queued"
+    reply: str | None = None
+    error: str = ""
+    created_at: float = field(default_factory=time.time)
+
+
+class ChatJobRunner:
+    def __init__(
+        self,
+        agent: Any,
+        session: Session,
+        *,
+        chat_fn: Callable[..., str | None] | None = None,
+    ) -> None:
+        self.agent = agent
+        self.session = session
+        self._chat_fn = chat_fn or _chat
+        self._queue: queue.Queue[PromptJob | None] = queue.Queue()
+        self._jobs: list[PromptJob] = []
+        self._active: PromptJob | None = None
+        self._next_id = 1
+        self._lock = threading.Lock()
+        self._stopped = False
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def submit(self, text: str, *, kind: str = "prompt") -> PromptJob:
+        with self._lock:
+            job = PromptJob(id=self._next_id, text=text, kind=kind)
+            self._next_id += 1
+            self._jobs.append(job)
+        self._queue.put(job)
+        return job
+
+    def active(self) -> PromptJob | None:
+        with self._lock:
+            return self._active
+
+    def queued(self) -> list[PromptJob]:
+        with self._lock:
+            return [job for job in self._jobs if job.status == "queued"]
+
+    def recent(self, limit: int = 8) -> list[PromptJob]:
+        with self._lock:
+            return list(self._jobs[-limit:])
+
+    def is_busy(self) -> bool:
+        with self._lock:
+            return self._active is not None or any(job.status == "queued" for job in self._jobs)
+
+    def wait_idle(self, timeout: float = 10.0) -> bool:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if not self.is_busy():
+                return True
+            time.sleep(0.01)
+        return False
+
+    def stop(self, *, wait: bool = False) -> None:
+        if self._stopped:
+            return
+        self._stopped = True
+        self._queue.put(None)
+        if wait:
+            self._thread.join(timeout=2)
+
+    def _set_active(self, job: PromptJob | None) -> None:
+        with self._lock:
+            self._active = job
+
+    def _run(self) -> None:
+        while True:
+            job = self._queue.get()
+            try:
+                if job is None:
+                    return
+                job.status = "running"
+                self._set_active(job)
+                print(_c(f"  ▶ queued #{job.id} {job.kind}: {_short_job_text(job.text)}", "2"))
+                reply = self._chat_fn(self.agent, self.session, job.text, background=True)
+                job.reply = reply
+                job.status = "done"
+                print(_c(f"  ✓ finished #{job.id}", "32"))
+            except Exception as exc:  # noqa: BLE001 - background work should not kill the prompt
+                if job is not None:
+                    job.status = "error"
+                    job.error = str(exc)
+                    print(_c(f"  error in queued #{job.id}: {exc}", "31"))
+            finally:
+                self._set_active(None)
+                self._queue.task_done()
 
 
 # --- welcome screen ------------------------------------------------------------------
@@ -116,12 +220,24 @@ def _welcome(session: Session) -> str:
     return _two_column_box(left, right)
 
 
-def _print_status_and_bar(agent, session) -> None:
+def _short_job_text(text: str, limit: int = 60) -> str:
+    compact = " ".join(text.split())
+    return compact if len(compact) <= limit else compact[: limit - 1] + "…"
+
+
+def _print_status_and_bar(agent, session, runner: ChatJobRunner | None = None) -> None:
     mode = getattr(agent, "permission_mode", "auto")
     bits = [_c(agent.model, PURPLE) if agent.configured else _c("offline", "2")]
     if agent.configured and agent.cost.usd:
         bits.append(_c(agent.cost.format_total(), "2"))
     bits.append(_c(f"mode:{mode}" + (" ⏸" if mode == "plan" else ""), "33" if mode == "plan" else "2"))
+    if runner is not None:
+        active = runner.active()
+        queued = len(runner.queued())
+        if active is not None:
+            bits.append(_c(f"running:#{active.id}", PURPLE))
+        if queued:
+            bits.append(_c(f"queued:{queued}", "33"))
     print(_c("─" * WIDTH, "2"))
     print("  " + _c(" · ", "2").join(bits))
     # sticky tl;dr line: research goal + current step
@@ -232,23 +348,28 @@ def run_repl() -> None:
 
     session = Session()
     agent = Agent()
+    runner = ChatJobRunner(agent, session)
     _setup_history()
     _ferret_walk()
     print(_welcome(session))
     print()
 
     while True:
-        _print_status_and_bar(agent, session)
+        _print_status_and_bar(agent, session, runner)
         try:
-            line = input(_c("❯ ", "1;36")).strip()
+            prompt = "queued ❯ " if runner.is_busy() else "❯ "
+            line = input(_c(prompt, "1;36")).strip()
         except (EOFError, KeyboardInterrupt):
             # Ctrl-C / Ctrl-D at the prompt quits.
             print()
             break
         if not line:
             # Empty enter mid-conversation = "keep going" (accept the proposed next step).
-            if agent.configured and agent.messages:
-                _chat(agent, session, "Proceed with the next step you proposed. Keep building.")
+            if runner.is_busy():
+                _print_queue(runner)
+            elif agent.configured and agent.messages:
+                job = runner.submit("Proceed with the next step you proposed. Keep building.")
+                print(_c(f"  queued #{job.id}", "2"))
             continue
 
         try:
@@ -262,6 +383,22 @@ def run_repl() -> None:
             break
         if bare == "help":
             _print_help()
+            continue
+        if bare == "queue":
+            _print_queue(runner)
+            continue
+        if bare == "btw":
+            text = _line_after_command(line)
+            if not text:
+                print(_c("  usage: /btw <side prompt>", "33"))
+                continue
+            if not agent.configured:
+                print(_c("  No model connected yet — let's fix that.", "2"))
+                if not onboard():
+                    continue
+                agent.reload()
+            job = runner.submit(_btw_prompt(text), kind="btw")
+            print(_c(f"  queued #{job.id} btw", "2"))
             continue
         if bare == "clear":
             os.system("cls" if os.name == "nt" else "clear")
@@ -378,21 +515,78 @@ def run_repl() -> None:
             continue
 
         # Plain text => talk to the model.
-        _chat(agent, session, line)
+        if not agent.configured:
+            print(_c("  No model connected yet — let's fix that.", "2"))
+            if not onboard():
+                continue
+            agent.reload()
+        job = runner.submit(line)
+        print(_c(f"  queued #{job.id}", "2"))
 
+    runner.stop(wait=False)
     _save_history()
     print(_c("bye 👋", "2"))
 
 
-def _chat(agent, session, text: str) -> str | None:
+def _line_after_command(line: str) -> str:
+    parts = line.strip().split(maxsplit=1)
+    return parts[1].strip() if len(parts) > 1 else ""
+
+
+def _btw_prompt(text: str) -> str:
+    return (
+        "Side request entered with /btw while another prompt was running. "
+        "Answer it as a compact aside unless it changes the active work:\n\n"
+        + text
+    )
+
+
+def _print_queue(runner: ChatJobRunner) -> None:
+    active = runner.active()
+    queued = runner.queued()
+    recent = runner.recent()
+    if active is None and not queued:
+        print(_c("  queue empty", "2"))
+    else:
+        if active is not None:
+            print(_c(f"  running #{active.id} {active.kind}: {_short_job_text(active.text)}", PURPLE))
+        for job in queued:
+            print(_c(f"  queued  #{job.id} {job.kind}: {_short_job_text(job.text)}", "2"))
+    done = [job for job in recent if job.status in {"done", "error"}]
+    for job in done[-3:]:
+        status = "error" if job.status == "error" else "done"
+        detail = f" ({job.error})" if job.error else ""
+        print(_c(f"  {status:7} #{job.id} {job.kind}{detail}", "31" if job.error else "2"))
+
+
+class _BackgroundPrinter:
+    enabled = False
+
+    def pause(self):
+        return nullcontext()
+
+    def log(self, text: str) -> None:
+        print(text)
+
+    def __enter__(self) -> "_BackgroundPrinter":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        return None
+
+
+def _chat(agent, session, text: str, *, background: bool = False) -> str | None:
     from .spinner import Spinner
 
     if not agent.configured:
+        if background:
+            print(_c("  queued prompt needs a model; run /login, then submit it again.", "33"))
+            return None
         print(_c("  No model connected yet — let's fix that.", "2"))
         if not onboard():
             return None
         agent.reload()
-    spinner = Spinner()
+    spinner = _BackgroundPrinter() if background else Spinner()
     session.step = "thinking…"
 
     def _on_tool(name, args):
@@ -404,6 +598,9 @@ def _chat(agent, session, text: str) -> str | None:
     def _confirm(name, args, reason):
         from .picker import select
 
+        if background:
+            spinner.log(_c(f"  skipped {name}: approval needed; rerun in foreground or turn plan mode off", "33"))
+            return False
         with spinner.pause():
             print(_c(f"  ⚠ {name} — {reason or 'approval needed'}", "33"))
             try:
@@ -416,6 +613,9 @@ def _chat(agent, session, text: str) -> str | None:
     def _on_options(options):
         from .picker import select_rich
 
+        if background:
+            spinner.log(_c("  skipped interactive option picker in queued mode", "33"))
+            return "none"
         with spinner.pause():
             choice = select_rich(_c("  Pick a direction  (↑/↓ move · → expand · enter select · esc skip)", "1"), options)
         spinner.log(_c(f"  ✓ selected: {choice}", "32") if choice != "none" else _c("  (skipped)", "2"))
@@ -446,8 +646,9 @@ def _chat(agent, session, text: str) -> str | None:
         print()
         print(_render_reply(reply))
     print(_c(f"  ({agent.cost.format_total()})", "2"))
-    print(_c("  ↵ press enter to continue · or type to redirect", "38;5;141"))
-    print()
+    if not background:
+        print(_c("  ↵ press enter to continue · or type to redirect", "38;5;141"))
+        print()
     first_line = next((ln for ln in (reply or "").strip().splitlines() if ln.strip()), "")
     session.step = (first_line[:60] + "…") if len(first_line) > 60 else (first_line or "ready")
     return reply

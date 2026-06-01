@@ -400,7 +400,7 @@ class AgentStackTest(unittest.TestCase):
         names = " ".join(c.name for _title, cmds in commands.SECTIONS for c in cmds)
         for handled in (
             "login", "model", "plan", "cost", "compact", "resume", "memory",
-            "tool-results", "export", "init", "goal", "why", "arch", "paper",
+            "tool-results", "export", "init", "btw", "queue", "goal", "why", "arch", "paper",
             "audit", "bundle", "verify-bundle", "sae", "quickstart", "status", "next",
             "runs", "open", "version", "commands", "completion", "api",
         ):
@@ -420,8 +420,49 @@ class AgentStackTest(unittest.TestCase):
         with redirect_stdout(out):
             repl._print_help()
         rendered_help = out.getvalue()
+        self.assertIn("/btw <text>", rendered_help)
+        self.assertIn("/queue", rendered_help)
         self.assertIn("/commands --workflow first_run", rendered_help)
         self.assertIn("/commands --workflow first_run  show a runnable workflow recipe", rendered_help)
+
+    def test_repl_chat_job_runner_queues_prompts_and_btw(self):
+        from mechferret import repl
+
+        calls = []
+
+        def fake_chat(agent, session, text, *, background=False):
+            calls.append((text, background))
+            session.step = f"handled {len(calls)}"
+            return f"reply {len(calls)}"
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat)
+            first = runner.submit("first prompt")
+            side = runner.submit(repl._btw_prompt("side question"), kind="btw")
+            self.assertTrue(runner.wait_idle(timeout=2))
+            repl._print_queue(runner)
+            runner.stop(wait=True)
+
+        self.assertEqual(first.status, "done")
+        self.assertEqual(side.status, "done")
+        self.assertEqual(first.reply, "reply 1")
+        self.assertEqual(side.reply, "reply 2")
+        self.assertEqual([background for _text, background in calls], [True, True])
+        self.assertIn("first prompt", calls[0][0])
+        self.assertIn("Side request entered with /btw", calls[1][0])
+        rendered = out.getvalue()
+        self.assertIn("queued #1", rendered)
+        self.assertIn("queued #2", rendered)
+        self.assertIn("queue empty", rendered)
+
+    def test_repl_btw_parsing_preserves_prompt_text(self):
+        from mechferret import repl
+
+        self.assertEqual(repl._line_after_command("/btw explain this -- with flags"), "explain this -- with flags")
+        prompt = repl._btw_prompt("ask a clarifying question")
+        self.assertIn("compact aside", prompt)
+        self.assertTrue(prompt.endswith("ask a clarifying question"))
 
     def test_cli_command_index_primary_names_route_from_repl(self):
         from mechferret import commands
