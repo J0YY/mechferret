@@ -1188,6 +1188,36 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("saved side question", str(agent.messages[0]["content"]))
         self.assertEqual(agent.messages[1]["content"], "saved side answer")
 
+    def test_repl_queue_view_surfaces_saved_ready_btw_replies(self):
+        from mechferret import repl
+
+        queue_path = Path("btw-saved-ready-view.json")
+        repl._save_queue_jobs(queue_path, [
+            repl.PromptJob(
+                id=4,
+                text=repl._btw_prompt("saved side question"),
+                kind="btw",
+                status="done",
+                reply="saved side answer",
+            )
+        ])
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: "reply", queue_path=queue_path)
+            try:
+                prompt = repl._input_prompt(runner)
+                repl._print_queue(runner)
+            finally:
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("btw-saved-ready:1", prompt)
+        self.assertIn("saved   #4 btw: saved side question", rendered)
+        self.assertIn("/queue apply side", rendered)
+        self.assertIn("/queue show side", rendered)
+        self.assertNotIn("/queue restore", rendered)
+
     def test_repl_queue_apply_waits_for_main_prompt_to_finish(self):
         from mechferret import repl
 

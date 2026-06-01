@@ -941,6 +941,14 @@ def _display_job_text(job: PromptJob) -> str:
     return job.text
 
 
+def _ready_saved_side_jobs(jobs: list[PromptJob]) -> list[PromptJob]:
+    return [job for job in jobs if job.kind == "btw" and job.status == "done" and job.reply and not job.applied]
+
+
+def _restorable_saved_jobs(jobs: list[PromptJob]) -> list[PromptJob]:
+    return [job for job in jobs if job.status in {"queued", "running"}]
+
+
 def _print_status_and_bar(agent, session, runner: ChatJobRunner | None = None) -> None:
     mode = getattr(agent, "permission_mode", "auto")
     bits = [_c(agent.model, PURPLE) if agent.configured else _c("offline", "2")]
@@ -952,7 +960,9 @@ def _print_status_and_bar(agent, session, runner: ChatJobRunner | None = None) -
         side_active = len(runner.side_active())
         side_ready = len(runner.side_ready())
         queued = len(runner.queued())
-        saved = len(runner.saved_only())
+        saved_jobs = runner.saved_only()
+        saved = len(saved_jobs)
+        saved_side_ready = len(_ready_saved_side_jobs(saved_jobs))
         if runner.paused():
             bits.append(_c("paused", "33"))
         if active is not None:
@@ -961,6 +971,8 @@ def _print_status_and_bar(agent, session, runner: ChatJobRunner | None = None) -
             bits.append(_c(f"btw:{side_active}", PURPLE))
         if side_ready:
             bits.append(_c(f"btw-ready:{side_ready}", "33"))
+        if saved_side_ready:
+            bits.append(_c(f"btw-saved-ready:{saved_side_ready}", "33"))
         if queued:
             bits.append(_c(f"queued:{queued}", "33"))
         if saved:
@@ -980,7 +992,9 @@ def _input_prompt(runner: ChatJobRunner) -> str:
     side_active = len(runner.side_active())
     side_ready = len(runner.side_ready())
     queued = len(runner.queued())
-    saved = len(runner.saved_only())
+    saved_jobs = runner.saved_only()
+    saved = len(saved_jobs)
+    saved_side_ready = len(_ready_saved_side_jobs(saved_jobs))
     paused = runner.paused()
     if active is None and not side_active and not side_ready and not queued and not saved and not paused:
         return "❯ "
@@ -993,6 +1007,8 @@ def _input_prompt(runner: ChatJobRunner) -> str:
         parts.append(f"btw:{side_active}")
     if side_ready:
         parts.append(f"btw-ready:{side_ready}")
+    if saved_side_ready:
+        parts.append(f"btw-saved-ready:{saved_side_ready}")
     if queued:
         parts.append(f"q:{queued}")
     if saved:
@@ -1415,6 +1431,8 @@ def _print_queue(runner: ChatJobRunner) -> None:
     queued = runner.queued()
     recent = runner.recent()
     saved = runner.saved_only()
+    saved_side_ready = _ready_saved_side_jobs(saved)
+    saved_restorable = _restorable_saved_jobs(saved)
     if runner.paused():
         print(_c("  queue paused; queued prompts will wait for /queue resume", "33"))
     if active is None and not side_active and not side_ready and not queued and not saved:
@@ -1435,7 +1453,14 @@ def _print_queue(runner: ChatJobRunner) -> None:
                 print(_c("  run `/queue apply all` to add ready side replies to the main conversation", "2"))
             else:
                 print(_c("  run `/queue apply side` to add a ready side reply to the main conversation", "2"))
+        if saved_side_ready:
+            if len(saved_side_ready) > 1:
+                print(_c("  run `/queue apply all` to add saved ready side replies to the main conversation", "2"))
+            else:
+                print(_c("  run `/queue apply side` to add the saved ready side reply to the main conversation", "2"))
         if saved:
+            print(_c("  run `/queue show side` or `/queue show <id>` to inspect saved prompts and replies", "2"))
+        if saved_restorable:
             print(_c("  run `/queue restore` to enqueue saved prompts, or `/queue clear` to drop them", "2"))
     done = [job for job in recent if job.status in {"done", "error", "canceled"} and job not in side_ready]
     for job in done[-3:]:
@@ -1457,7 +1482,7 @@ def _print_queued(job: PromptJob, runner: ChatJobRunner) -> None:
 
 def _print_job_result_hint(job: PromptJob, *, background: bool = False) -> None:
     emit = _print_background if background else print
-    emit(_c(f"  use /queue show #{job.id} to view the prompt, reply, or error", "2"))
+    emit(_c(f"  use /queue show #{job.id} to view the prompt, live output, reply, or error", "2"))
     if job.kind == "btw" and job.status == "done" and not job.applied:
         emit(_c(f"  use /queue apply #{job.id} to add this side reply to the main conversation", "2"))
 
