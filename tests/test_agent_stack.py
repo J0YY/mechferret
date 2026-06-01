@@ -586,6 +586,43 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("retried #2 as #4", rendered)
         self.assertIn("retried #9 saved", rendered)
 
+    def test_repl_queue_retry_refuses_active_or_queued_jobs(self):
+        from mechferret import repl
+
+        started = []
+        release = threading.Event()
+
+        def fake_chat(agent, session, text, *, background=False):
+            started.append(text)
+            if text == "first":
+                self.assertTrue(release.wait(timeout=2))
+            return text
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-retry-active.json"))
+            try:
+                first = runner.submit("first")
+                second = runner.submit("second")
+                deadline = time.monotonic() + 2
+                while runner.active() is None and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertIsNotNone(runner.active())
+
+                repl._queue_retry(runner, [str(first.id)])
+                repl._queue_retry(runner, [str(second.id)])
+
+                self.assertEqual([job.id for job in runner.recent(10)], [first.id, second.id])
+            finally:
+                release.set()
+                runner.wait_idle(timeout=2)
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("job #1 is running", rendered)
+        self.assertIn("job #2 is queued", rendered)
+        self.assertEqual(started, ["first", "second"])
+
     def test_repl_chat_job_runner_cancels_pending_prompts(self):
         from mechferret import repl
 

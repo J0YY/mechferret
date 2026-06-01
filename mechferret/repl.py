@@ -196,6 +196,8 @@ class ChatJobRunner:
         original, saved = self.find_job(target)
         if original is None:
             return None, None, False
+        if not saved and original.status in {"queued", "running"}:
+            return original, None, saved
         if original.kind == "btw":
             retried = self.submit_side(original.text)
         else:
@@ -853,8 +855,11 @@ def _queue_retry(runner: ChatJobRunner, args: list[str]) -> None:
         print(_c("  usage: /queue retry <job id>", "33"))
         return
     original, retried, saved = runner.retry(target)
-    if original is None or retried is None:
+    if original is None:
         print(_c(f"  no queue job matched {target!r}", "33"))
+        return
+    if retried is None:
+        print(_c(f"  job #{original.id} is {original.status}; wait or cancel it before retrying.", "33"))
         return
     saved_label = " saved" if saved else ""
     print(_c(f"  retried #{original.id}{saved_label} as #{retried.id}", "32"))
