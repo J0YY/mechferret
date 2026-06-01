@@ -74,6 +74,9 @@ def _select_rich_fallback(prompt, options):
         readiness = o.get("claim_readiness") or {}
         if isinstance(readiness, dict) and readiness.get("status"):
             out.write(f"      claim readiness: {readiness['status']}\n")
+        pressure = o.get("recent_pressure") or {}
+        if isinstance(pressure, dict) and pressure.get("status"):
+            out.write(f"      recent pressure: {pressure['status']} ({pressure.get('recent_window', '')})\n")
         if o.get("novelty"):
             out.write(f"      novelty: {o['novelty']}\n")
         closest = o.get("closest_prior_art") or []
@@ -123,6 +126,25 @@ def _select_rich_tty(prompt, options):
                     missing = readiness.get("missing_checks") or []
                     if missing:
                         rows.append("      missing checks: " + ", ".join(str(c) for c in missing[:5]))
+                pressure = o.get("recent_pressure") or {}
+                if isinstance(pressure, dict) and pressure.get("status"):
+                    rows.append(
+                        "      recent pressure: "
+                        + str(pressure["status"])
+                        + (" (" + str(pressure.get("recent_window", "")) + ")" if pressure.get("recent_window") else "")
+                    )
+                matrix = o.get("comparison_matrix") or []
+                if isinstance(matrix, list) and matrix:
+                    axis_bits = []
+                    for row in matrix[:6]:
+                        if not isinstance(row, dict):
+                            continue
+                        axis = str(row.get("axis", "")).replace("_", " ")
+                        mark = "ok" if row.get("covered") else "gap"
+                        if axis:
+                            axis_bits.append(f"{axis}:{mark}")
+                    if axis_bits:
+                        rows.append("      comparison axes: " + ", ".join(axis_bits))
                 closest = o.get("closest_prior_art") or []
                 if closest:
                     rows.append("      closest prior: " + "; ".join(str(c) for c in closest[:3]))

@@ -1897,7 +1897,7 @@ def tool_present_options(args: dict[str, Any]) -> str:
 
 
 def _validate_option_card(option: dict[str, Any], index: int) -> dict[str, Any] | None:
-    for key in ("title", "summary", "detail", "novelty_verdict", "required_delta"):
+    for key in ("title", "summary", "detail", "novelty_verdict"):
         value = option.get(key)
         if not isinstance(value, str) or not value.strip():
             return _invalid_object_list_payload(
@@ -1959,6 +1959,30 @@ def _validate_option_card(option: dict[str, Any], index: int) -> dict[str, Any] 
             index=index,
             expected="claim_readiness with missing_checks and next_actions lists",
         )
+    comparison_matrix = option.get("comparison_matrix")
+    if not _valid_option_comparison_matrix(comparison_matrix):
+        return _invalid_object_list_payload(
+            "options",
+            comparison_matrix,
+            index=index,
+            expected="objects with comparison_matrix from verify_novelty assessment",
+        )
+    recent_pressure = option.get("recent_pressure")
+    if not _valid_option_recent_pressure(recent_pressure):
+        return _invalid_object_list_payload(
+            "options",
+            recent_pressure,
+            index=index,
+            expected="objects with recent_pressure from verify_novelty assessment",
+        )
+    required_delta = option.get("required_delta")
+    if not _option_required_delta(required_delta):
+        return _invalid_object_list_payload(
+            "options",
+            required_delta,
+            index=index,
+            expected="objects with non-empty required_delta from verify_novelty assessment",
+        )
     return None
 
 
@@ -1968,10 +1992,13 @@ def _option_detail(option: dict[str, Any]) -> dict[str, Any]:
         "summary": str(option.get("summary", "")).strip(),
         "detail": str(option.get("detail", "")).strip(),
     }
-    for key in ("novelty_risk", "novelty_verdict", "novelty", "required_delta"):
+    for key in ("novelty_risk", "novelty_verdict", "novelty"):
         value = option.get(key)
         if isinstance(value, str) and value.strip():
             detail[key] = value.strip()
+    required_delta = _option_required_delta(option.get("required_delta"))
+    if required_delta:
+        detail["required_delta"] = required_delta
     citations = _option_strings(option.get("citations", []))[:4]
     if citations:
         detail["citations"] = citations
@@ -1986,7 +2013,99 @@ def _option_detail(option: dict[str, Any]) -> dict[str, Any]:
             "missing_checks": _option_strings(readiness.get("missing_checks", []))[:8],
             "next_actions": _option_strings(readiness.get("next_actions", []))[:4],
         }
+    comparison = _option_comparison_matrix(option.get("comparison_matrix"))
+    if comparison:
+        detail["comparison_matrix"] = comparison
+    recent_pressure = _option_recent_pressure(option.get("recent_pressure"))
+    if recent_pressure:
+        detail["recent_pressure"] = recent_pressure
     return detail
+
+
+def _option_required_delta(value: Any) -> str:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    if isinstance(value, list):
+        parts = [str(item).strip() for item in value if isinstance(item, str) and item.strip()]
+        return " ".join(parts[:3]).strip()
+    return ""
+
+
+def _valid_option_comparison_matrix(value: Any) -> bool:
+    if not isinstance(value, list):
+        return False
+    valid_raw = [
+        item
+        for item in value
+        if isinstance(item, dict)
+        and isinstance(item.get("axis"), str)
+        and item.get("axis", "").strip()
+        and type(item.get("covered")) is bool
+    ]
+    if len(valid_raw) != len(value):
+        return False
+    rows = _option_comparison_matrix(value)
+    if not rows:
+        return False
+    axes = {row["axis"] for row in rows}
+    return bool({"method", "evaluation"} & axes) and all("covered" in row for row in rows)
+
+
+def _option_comparison_matrix(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    rows: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        axis = str(item.get("axis", "")).strip()
+        if not axis:
+            continue
+        row: dict[str, Any] = {
+            "axis": axis,
+            "covered": item.get("covered") if type(item.get("covered")) is bool else False,
+            "evidence_count": _safe_int(item.get("evidence_count")),
+            "next_action": str(item.get("next_action", "")).strip(),
+        }
+        prior = item.get("representative_prior")
+        if isinstance(prior, dict):
+            title = str(prior.get("title", "")).strip()
+            url = str(prior.get("url", "")).strip()
+            if title or url:
+                row["representative_prior"] = " ".join(part for part in (title, url) if part)
+        rows.append(row)
+    return rows[:9]
+
+
+def _valid_option_recent_pressure(value: Any) -> bool:
+    pressure = _option_recent_pressure(value)
+    return bool(pressure.get("status") and pressure.get("recent_window"))
+
+
+def _option_recent_pressure(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    status = str(value.get("status", "")).strip()
+    recent_window = str(value.get("recent_window", "")).strip()
+    if not status or not recent_window:
+        return {}
+    return {
+        "status": status,
+        "recent_window": recent_window,
+        "recent_evidence_count": _safe_int(value.get("recent_evidence_count")),
+        "latest_year": _safe_int(value.get("latest_year")),
+        "recent_prior_titles": _option_strings(value.get("recent_prior_titles", []))[:5],
+    }
+
+
+def _safe_int(value: Any) -> int:
+    if type(value) is bool:
+        return 0
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return parsed
 
 
 def _option_strings(value: Any) -> list[str]:
@@ -2820,7 +2939,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
      "parameters": _obj({"model_id": {"type": "string"}, "query": {"type": "string"}}, ["model_id", "query"])},
     {"name": "verify_novelty", "description": "Deep novelty check for a research idea using multi-pass arXiv and web searches across relevance, recency, recent discoveries, architecture variants, method, mechanism, evaluation, implementation, replication, failure-mode, and protocol angles. Call this for each proposed research direction before presenting it.",
      "parameters": _obj({"idea": {"type": "string", "description": "the research idea/direction to novelty-check"}, "queries": {"type": "array", "items": {"type": "string"}, "description": "optional arXiv queries to probe for prior work"}}, ["idea"])},
-    {"name": "present_options", "description": "Present 2-5 research directions to the user as an interactive, expandable picker and return their choice. Use this instead of writing options as prose. Every option must include detail, citations, novelty_risk, novelty_verdict, closest_prior_art, claim_readiness, and required_delta from verify_novelty assessment.",
+    {"name": "present_options", "description": "Present 2-5 research directions to the user as an interactive, expandable picker and return their choice. Use this instead of writing options as prose. Every option must include detail, citations, novelty_risk, novelty_verdict, closest_prior_art, claim_readiness, comparison_matrix, recent_pressure, and required_delta from verify_novelty assessment.",
      "parameters": _obj({"options": {"type": "array", "items": {"type": "object", "properties": {
          "title": {"type": "string"},
          "summary": {"type": "string", "description": "one line"},
@@ -2831,8 +2950,22 @@ TOOL_SPECS: list[dict[str, Any]] = [
          "novelty_verdict": {"type": "string", "description": "assessment.verdict from verify_novelty"},
          "closest_prior_art": {"type": "array", "items": {"type": "string"}, "description": "nearest prior paper titles/URLs from assessment.closest_prior_art"},
          "claim_readiness": {"type": "object", "description": "assessment.claim_readiness from verify_novelty; include status, can_claim_high_novelty, missing_checks, and next_actions."},
-         "required_delta": {"type": "string", "description": "specific delta needed to justify novelty"},
-     }, "required": ["title", "summary", "detail", "citations", "novelty_risk", "novelty_verdict", "closest_prior_art", "claim_readiness", "required_delta"]}}}, ["options"])},
+         "comparison_matrix": {"type": "array", "items": {"type": "object", "properties": {
+             "axis": {"type": "string"},
+             "covered": {"type": "boolean"},
+             "evidence_count": {"type": "integer"},
+             "representative_prior": {"type": "object"},
+             "next_action": {"type": "string"},
+         }}, "description": "assessment.comparison_matrix from verify_novelty; include per-axis covered/evidence_count/next_action fields."},
+         "recent_pressure": {"type": "object", "properties": {
+             "status": {"type": "string"},
+             "recent_window": {"type": "string"},
+             "recent_evidence_count": {"type": "integer"},
+             "latest_year": {"type": "integer"},
+             "recent_prior_titles": {"type": "array", "items": {"type": "string"}},
+         }, "description": "assessment.recent_pressure from verify_novelty; include status, recent_window, recent_evidence_count, latest_year, and recent_prior_titles."},
+         "required_delta": {"type": "string", "description": "specific deltas from assessment.required_delta; join multiple entries into one concise string"},
+     }, "required": ["title", "summary", "detail", "citations", "novelty_risk", "novelty_verdict", "closest_prior_art", "claim_readiness", "comparison_matrix", "recent_pressure", "required_delta"]}}}, ["options"])},
     {"name": "run_research", "description": "Run the general prompt-to-dossier literature/research pipeline over explicit sources, URLs, memory, or a configured provider.",
      "parameters": _obj({
          "question": {"type": "string"},
