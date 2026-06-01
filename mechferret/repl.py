@@ -597,7 +597,7 @@ def _pop_saved_queue_jobs(jobs: list[PromptJob], target: str) -> tuple[list[Prom
     match = _find_saved_queue_job(jobs, target)
     if match is None:
         return [], list(jobs)
-    return [match], [job for job in jobs if job.id != match.id]
+    return [match], [job for job in jobs if job is not match]
 
 
 def _find_saved_queue_job(jobs: list[PromptJob], target: str) -> PromptJob | None:

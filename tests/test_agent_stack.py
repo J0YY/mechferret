@@ -1944,6 +1944,49 @@ class AgentStackTest(unittest.TestCase):
 
         self.assertEqual([job.text for job in persisted], ["live queued prompt", "different saved prompt"])
 
+    def test_repl_restore_one_saved_preserves_distinct_saved_id_collisions(self):
+        from mechferret import repl
+
+        queue_path = Path("restore-one-saved-collision.json")
+
+        repl._save_queue_jobs(queue_path, [
+            repl.PromptJob(id=3, text="selected saved", created_at=1.0),
+            repl.PromptJob(id=3, text="other saved with same id", created_at=2.0),
+        ])
+
+        with redirect_stdout(StringIO()):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: "reply", queue_path=queue_path)
+            try:
+                restored = runner.restore_saved("3")
+                self.assertTrue(runner.wait_idle(timeout=2))
+                saved = runner.saved()
+            finally:
+                runner.stop(wait=True)
+
+        self.assertEqual([job.text for job in restored], ["selected saved"])
+        self.assertEqual([job.text for job in saved], ["other saved with same id"])
+
+    def test_repl_cancel_one_saved_preserves_distinct_saved_id_collisions(self):
+        from mechferret import repl
+
+        queue_path = Path("cancel-one-saved-collision.json")
+
+        repl._save_queue_jobs(queue_path, [
+            repl.PromptJob(id=3, text="selected saved", created_at=1.0),
+            repl.PromptJob(id=3, text="other saved with same id", created_at=2.0),
+        ])
+
+        with redirect_stdout(StringIO()):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: None, queue_path=queue_path)
+            try:
+                canceled = runner.cancel("3")
+                saved = runner.saved()
+            finally:
+                runner.stop(wait=True)
+
+        self.assertEqual([job.text for job in canceled], ["selected saved"])
+        self.assertEqual([job.text for job in saved], ["other saved with same id"])
+
     def test_repl_chat_job_runner_saves_and_restores_pending_prompts(self):
         from mechferret import repl
 
