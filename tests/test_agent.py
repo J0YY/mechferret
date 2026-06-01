@@ -131,6 +131,39 @@ def _option_search_audit():
     }
 
 
+def _validated_option(title: str = "Novelty audit") -> dict:
+    return {
+        "title": title,
+        "summary": "Check the delta",
+        "detail": "Use retrieved evidence before choosing.",
+        "citations": ["Closest Paper https://arxiv.org/abs/2501.0001"],
+        "novelty_risk": "medium_prior_art_risk",
+        "novelty_verdict": "Related work exists.",
+        "closest_prior_art": ["Closest Paper https://arxiv.org/abs/2501.0001"],
+        "claim_readiness": {
+            "status": "delta_review_required",
+            "can_claim_high_novelty": False,
+            "missing_checks": [],
+            "next_actions": ["Write the delta."],
+        },
+        "comparison_matrix": [
+            {"axis": "method", "covered": True, "evidence_count": 1, "next_action": "Compare method."},
+            {"axis": "evaluation", "covered": False, "evidence_count": 0, "next_action": "Add benchmark."},
+        ],
+        "novelty_threat_model": _option_threat_model(),
+        "disqualifying_overlap_tests": _option_disqualifying_tests(),
+        "search_audit": _option_search_audit(),
+        "recent_pressure": {
+            "status": "recent_prior_present",
+            "recent_window": "2024-2026",
+            "recent_evidence_count": 1,
+            "latest_year": 2025,
+            "recent_prior_titles": ["Closest Paper"],
+        },
+        "required_delta": ["Show a causal ablation that differs from prior work."],
+    }
+
+
 class AgentToolTest(unittest.TestCase):
     def test_tool_schemas_are_well_formed(self):
         from mechferret import tools
@@ -182,7 +215,10 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("selection", next(tool for tool in tools.TOOL_SPECS if tool["name"] == "verify_bundle")["parameters"]["properties"])
         write_props = next(tool for tool in tools.TOOL_SPECS if tool["name"] == "write_paper")["parameters"]["properties"]
         self.assertEqual(write_props["compile_timeout"]["type"], "integer")
-        option_schema = next(tool for tool in tools.TOOL_SPECS if tool["name"] == "present_options")["parameters"]["properties"]["options"]["items"]
+        option_list_schema = next(tool for tool in tools.TOOL_SPECS if tool["name"] == "present_options")["parameters"]["properties"]["options"]
+        self.assertEqual(option_list_schema["minItems"], 2)
+        self.assertEqual(option_list_schema["maxItems"], 5)
+        option_schema = option_list_schema["items"]
         self.assertIn("novelty_threat_model", option_schema["required"])
         self.assertIn("disqualifying_overlap_tests", option_schema["required"])
         self.assertIn("search_audit", option_schema["required"])
@@ -1005,57 +1041,22 @@ class AgentToolTest(unittest.TestCase):
         self.assertFalse(bad_failed_search["ok"])
         self.assertEqual(bad_failed_search["expected"], "objects with search_audit from verify_novelty assessment")
 
+        too_few_options = json.loads(
+            tools.run_tool(
+                "present_options",
+                {"options": [_validated_option("Only direction")]},
+            )
+        )
+        self.assertFalse(too_few_options["ok"])
+        self.assertEqual(too_few_options["expected"], "2-5 validated research direction objects")
+
         ok = json.loads(
             tools.run_tool(
                 "present_options",
-                {
-                    "options": [
-                        {
-                            "title": "Run audit",
-                            "summary": "...",
-                            "detail": "Audit a candidate direction against retrieved papers and required experimental deltas.",
-                            "citations": ["Closest Paper https://arxiv.org/abs/2501.0001"],
-                            "novelty_risk": "medium_prior_art_risk",
-                            "novelty_verdict": "Related work exists; specify the delta.",
-                            "closest_prior_art": ["Closest Paper https://arxiv.org/abs/2501.0001"],
-                            "claim_readiness": {
-                                "status": "delta_review_required",
-                                "can_claim_high_novelty": False,
-                                "missing_checks": [],
-                                "next_actions": ["Write a precise delta before claiming novelty."],
-                            },
-                            "comparison_matrix": [
-                                {
-                                    "axis": "method",
-                                    "covered": True,
-                                    "evidence_count": 2,
-                                    "representative_prior": {"title": "Closest Paper", "url": "https://arxiv.org/abs/2501.0001"},
-                                    "next_action": "Compare method details.",
-                                },
-                                {
-                                    "axis": "evaluation",
-                                    "covered": False,
-                                    "evidence_count": 0,
-                                    "next_action": "Run targeted evaluation search.",
-                                },
-                            ],
-                            "novelty_threat_model": _option_threat_model(),
-                            "disqualifying_overlap_tests": _option_disqualifying_tests(),
-                            "search_audit": _option_search_audit(),
-                            "recent_pressure": {
-                                "status": "recent_prior_present",
-                                "recent_window": "2024-2026",
-                                "recent_evidence_count": 1,
-                                "latest_year": 2025,
-                                "recent_prior_titles": ["Closest Paper"],
-                            },
-                            "required_delta": ["Show a causal ablation that differs from prior work."],
-                        }
-                    ]
-                },
+                {"options": [_validated_option("Run audit"), _validated_option("Run audit 2")]},
             )
         )
-        self.assertEqual(ok["options"], ["Run audit"])
+        self.assertEqual(ok["options"], ["Run audit", "Run audit 2"])
         self.assertEqual(ok["option_details"][0]["novelty_risk"], "medium_prior_art_risk")
         self.assertIn("Closest Paper", ok["option_details"][0]["citations"][0])
         self.assertIn("Closest Paper", ok["option_details"][0]["closest_prior_art"][0])
@@ -1986,36 +1987,8 @@ class AgentToolTest(unittest.TestCase):
         a.provider, a.model, a._key = "anthropic", "claude-sonnet-4-6", "x"
         args = {
             "options": [
-                {
-                    "title": "Novelty audit",
-                    "summary": "Check the delta",
-                    "detail": "Use retrieved evidence before choosing.",
-                    "citations": ["Closest Paper https://arxiv.org/abs/2501.0001"],
-                    "novelty_risk": "medium_prior_art_risk",
-                    "novelty_verdict": "Related work exists.",
-                    "closest_prior_art": ["Closest Paper https://arxiv.org/abs/2501.0001"],
-                    "claim_readiness": {
-                        "status": "delta_review_required",
-                        "can_claim_high_novelty": False,
-                        "missing_checks": [],
-                        "next_actions": ["Write the delta."],
-                    },
-                    "comparison_matrix": [
-                        {"axis": "method", "covered": True, "evidence_count": 1, "next_action": "Compare method."},
-                        {"axis": "evaluation", "covered": False, "evidence_count": 0, "next_action": "Add benchmark."},
-                    ],
-                    "novelty_threat_model": _option_threat_model(),
-                    "disqualifying_overlap_tests": _option_disqualifying_tests(),
-                    "search_audit": _option_search_audit(),
-                    "recent_pressure": {
-                        "status": "recent_prior_present",
-                        "recent_window": "2024-2026",
-                        "recent_evidence_count": 1,
-                        "latest_year": 2025,
-                        "recent_prior_titles": ["Closest Paper"],
-                    },
-                    "required_delta": "Show a causal ablation.",
-                }
+                _validated_option("Novelty audit"),
+                _validated_option("Second audit"),
             ]
         }
 
@@ -2028,7 +2001,7 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(selected["selected_option"]["novelty_threat_model"][1]["threat"], "claim_collision")
         self.assertEqual(selected["selected_option"]["disqualifying_overlap_tests"][0]["test"], "exact_phrase_overlap")
         self.assertEqual(selected["selected_option"]["search_audit"]["pass_count"], 18)
-        self.assertEqual(picked[0][0]["required_delta"], "Show a causal ablation.")
+        self.assertIn("causal ablation", picked[0][0]["required_delta"])
         self.assertEqual(picked[0][0]["comparison_matrix"][1]["axis"], "evaluation")
         self.assertEqual(picked[0][0]["novelty_threat_model"][1]["risk"], "needs_delta_review")
         self.assertFalse(picked[0][0]["disqualifying_overlap_tests"][1]["passed"])
@@ -2047,36 +2020,8 @@ class AgentToolTest(unittest.TestCase):
         a.provider, a.model, a._key = "anthropic", "claude-sonnet-4-6", "x"
         args = {
             "options": [
-                {
-                    "title": "Novelty audit",
-                    "summary": "Check the delta",
-                    "detail": "Use retrieved evidence before choosing.",
-                    "citations": ["Closest Paper https://arxiv.org/abs/2501.0001"],
-                    "novelty_risk": "medium_prior_art_risk",
-                    "novelty_verdict": "Related work exists.",
-                    "closest_prior_art": ["Closest Paper https://arxiv.org/abs/2501.0001"],
-                    "claim_readiness": {
-                        "status": "delta_review_required",
-                        "can_claim_high_novelty": False,
-                        "missing_checks": [],
-                        "next_actions": ["Write the delta."],
-                    },
-                    "comparison_matrix": [
-                        {"axis": "method", "covered": True, "evidence_count": 1, "next_action": "Compare method."},
-                        {"axis": "evaluation", "covered": False, "evidence_count": 0, "next_action": "Add benchmark."},
-                    ],
-                    "novelty_threat_model": _option_threat_model(),
-                    "disqualifying_overlap_tests": _option_disqualifying_tests(),
-                    "search_audit": _option_search_audit(),
-                    "recent_pressure": {
-                        "status": "recent_prior_present",
-                        "recent_window": "2024-2026",
-                        "recent_evidence_count": 1,
-                        "latest_year": 2025,
-                        "recent_prior_titles": ["Closest Paper"],
-                    },
-                    "required_delta": "Show a causal ablation.",
-                }
+                _validated_option("Novelty audit"),
+                _validated_option("Second audit"),
             ]
         }
 

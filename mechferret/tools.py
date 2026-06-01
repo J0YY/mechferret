@@ -2250,6 +2250,15 @@ def tool_present_options(args: dict[str, Any]) -> str:
         if invalid:
             return json.dumps(invalid)
         titles.append(str(option.get("title", "")).strip())
+    if not 2 <= len(options) <= 5:
+        return json.dumps(
+            _invalid_object_list_payload(
+                "options",
+                len(options),
+                index=None,
+                expected="2-5 validated research direction objects",
+            )
+        )
     return json.dumps({"options": titles, "option_details": [_option_detail(option) for option in options]})
 
 
@@ -3586,7 +3595,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {"name": "verify_novelty", "description": "Deep novelty check for a research idea using multi-pass arXiv and web searches across relevance, recency, recent discoveries, architecture variants, method, mechanism, evaluation, implementation, replication, failure-mode, and protocol angles. Call this for each proposed research direction before presenting it.",
      "parameters": _obj({"idea": {"type": "string", "description": "the research idea/direction to novelty-check"}, "queries": {"type": "array", "items": {"type": "string"}, "description": "optional arXiv queries to probe for prior work"}}, ["idea"])},
     {"name": "present_options", "description": "Present 2-5 research directions to the user as an interactive, expandable picker and return their choice. Use this instead of writing options as prose. Every option must include detail, citations, novelty_risk, novelty_verdict, closest_prior_art, claim_readiness, comparison_matrix, novelty_threat_model, disqualifying_overlap_tests, search_audit, recent_pressure, and required_delta from verify_novelty assessment.",
-     "parameters": _obj({"options": {"type": "array", "items": {"type": "object", "properties": {
+     "parameters": _obj({"options": {"type": "array", "minItems": 2, "maxItems": 5, "items": {"type": "object", "properties": {
          "title": {"type": "string"},
          "summary": {"type": "string", "description": "one line"},
          "detail": {"type": "string", "description": "a fuller paragraph: what the project is about"},
