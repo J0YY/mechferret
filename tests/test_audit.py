@@ -7,6 +7,7 @@ from pathlib import Path
 
 from mechferret.audit import audit_run_artifact, latest_run_json, load_run_artifact
 from mechferret.cli import main
+from mechferret.provenance import run_ledger_digest
 
 
 def _payload(readiness=0.8):
@@ -129,6 +130,17 @@ class AuditTest(unittest.TestCase):
             newer.write_text("{}", encoding="utf-8")
             newer.touch()
             self.assertEqual(latest_run_json(root), newer)
+
+    def test_missing_source_created_at_loads_stably(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "run.json"
+            path.write_text(json.dumps(_payload()), encoding="utf-8")
+
+            first = load_run_artifact(path)
+            second = load_run_artifact(path)
+
+            self.assertEqual([source.created_at for source in first.sources], ["", "", ""])
+            self.assertEqual(run_ledger_digest(first), run_ledger_digest(second))
 
     def test_audit_reports_missing_paper_as_next_action_for_ready_run(self):
         with tempfile.TemporaryDirectory() as tmp:

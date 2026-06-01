@@ -373,6 +373,8 @@ def _float(value: Any) -> float:
 def _field_default(field) -> Any:
     if field.default is not MISSING:
         return field.default
+    if field.name == "created_at":
+        return ""
     if field.default_factory is not MISSING:  # type: ignore[attr-defined]
         return field.default_factory()  # type: ignore[misc]
     if field.name in LIST_FIELDS:
