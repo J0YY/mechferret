@@ -1240,25 +1240,30 @@ def _btw_prompt(text: str) -> str:
 def _print_queue(runner: ChatJobRunner) -> None:
     active = runner.active()
     side_active = runner.side_active()
+    side_ready = runner.side_ready()
     queued = runner.queued()
     recent = runner.recent()
     saved = runner.saved_only()
     if runner.paused():
         print(_c("  queue paused; queued prompts will wait for /queue resume", "33"))
-    if active is None and not side_active and not queued and not saved:
+    if active is None and not side_active and not side_ready and not queued and not saved:
         print(_c("  queue empty", "2"))
     else:
         if active is not None:
             print(_c(f"  running #{active.id} {active.kind}: {_short_job_text(_display_job_text(active))}", PURPLE))
         for job in side_active:
             print(_c(f"  side    #{job.id} {job.kind}: {_short_job_text(_display_job_text(job))}", PURPLE))
+        for job in side_ready:
+            print(_c(f"  ready   #{job.id} {job.kind}: {_short_job_text(_display_job_text(job))}", "33"))
         for job in queued:
             print(_c(f"  queued  #{job.id} {job.kind}: {_short_job_text(_display_job_text(job))}", "2"))
         for job in saved:
             print(_c(f"  saved   #{job.id} {job.kind}: {_short_job_text(_display_job_text(job))}", "33"))
+        if side_ready:
+            print(_c("  run `/queue apply side` to add a ready side reply to the main conversation", "2"))
         if saved:
             print(_c("  run `/queue restore` to enqueue saved prompts, or `/queue clear` to drop them", "2"))
-    done = [job for job in recent if job.status in {"done", "error", "canceled"}]
+    done = [job for job in recent if job.status in {"done", "error", "canceled"} and job not in side_ready]
     for job in done[-3:]:
         status = job.status
         detail = f" ({job.error})" if job.error else (" (applied)" if job.applied else "")

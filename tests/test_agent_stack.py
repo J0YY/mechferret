@@ -472,9 +472,11 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("side #2", rendered)
         self.assertIn("use /queue show #1", rendered)
         self.assertIn("use /queue show #2", rendered)
-        self.assertIn("queue empty", rendered)
+        self.assertNotIn("queue empty", rendered)
+        self.assertIn("ready   #2 btw: side question", rendered)
+        self.assertIn("/queue apply side", rendered)
         self.assertIn("done     #1 prompt: first prompt", rendered)
-        self.assertIn("done     #2 btw: side question", rendered)
+        self.assertNotIn("done     #2 btw: side question", rendered)
 
     def test_repl_chat_job_runner_prints_show_hint_for_errors(self):
         from mechferret import repl
@@ -750,6 +752,28 @@ class AgentStackTest(unittest.TestCase):
                 runner.stop(wait=True)
 
         self.assertIn("btw-ready:1", out.getvalue())
+
+    def test_repl_queue_view_shows_ready_side_replies(self):
+        from mechferret import repl
+
+        def fake_chat(agent, session, text, *, background=False):
+            return "side answer"
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-view-side-ready.json"))
+            try:
+                runner.submit_side(repl._btw_prompt("side question"))
+                self.assertTrue(runner.wait_idle(timeout=2))
+                repl._print_queue(runner)
+            finally:
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertNotIn("queue empty", rendered)
+        self.assertIn("ready   #1 btw: side question", rendered)
+        self.assertIn("/queue apply side", rendered)
+        self.assertNotIn("done     #1 btw: side question", rendered)
 
     def test_repl_queue_view_does_not_duplicate_live_queued_jobs_as_saved(self):
         from mechferret import repl
