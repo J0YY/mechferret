@@ -352,13 +352,14 @@ class ChatJobRunner:
                 job.reply = reply
                 job.status = "done"
                 self.save_pending()
-                print(_c(f"  ✓ finished #{job.id}", "32"))
+                _print_finished(job)
             except Exception as exc:  # noqa: BLE001 - background work should not kill the prompt
                 if job is not None:
                     job.status = "error"
                     job.error = str(exc)
                     self.save_pending()
                     print(_c(f"  error in queued #{job.id}: {exc}", "31"))
+                    _print_job_result_hint(job)
             finally:
                 self._set_active(None)
                 self._queue.task_done()
@@ -372,12 +373,13 @@ class ChatJobRunner:
             job.reply = reply
             job.status = "done"
             self.save_pending()
-            print(_c(f"  ✓ finished side #{job.id}", "32"))
+            _print_finished(job, label="side")
         except Exception as exc:  # noqa: BLE001 - side work should not kill the prompt
             job.status = "error"
             job.error = str(exc)
             self.save_pending()
             print(_c(f"  error in side #{job.id}: {exc}", "31"))
+            _print_job_result_hint(job)
 
 
 def _job_to_dict(job: PromptJob) -> dict[str, Any]:
@@ -930,6 +932,16 @@ def _print_queued(job: PromptJob, runner: ChatJobRunner) -> None:
     else:
         print(_c(f"  queued #{job.id}", "2"))
     print(_c(f"  use /queue edit #{job.id} <prompt>, /queue move #{job.id} first, or /queue cancel #{job.id}", "2"))
+
+
+def _print_job_result_hint(job: PromptJob) -> None:
+    print(_c(f"  use /queue show #{job.id} to view the prompt, reply, or error", "2"))
+
+
+def _print_finished(job: PromptJob, *, label: str = "queued") -> None:
+    prefix = f"finished {label}" if label != "queued" else "finished"
+    print(_c(f"  ✓ {prefix} #{job.id}", "32"))
+    _print_job_result_hint(job)
 
 
 def _print_canceled(canceled: list[PromptJob]) -> None:

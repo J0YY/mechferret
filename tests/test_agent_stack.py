@@ -467,7 +467,30 @@ class AgentStackTest(unittest.TestCase):
         rendered = out.getvalue()
         self.assertIn("queued #1", rendered)
         self.assertIn("side #2", rendered)
+        self.assertIn("use /queue show #1", rendered)
+        self.assertIn("use /queue show #2", rendered)
         self.assertIn("queue empty", rendered)
+
+    def test_repl_chat_job_runner_prints_show_hint_for_errors(self):
+        from mechferret import repl
+
+        def fake_chat(agent, session, text, *, background=False):
+            raise RuntimeError("boom")
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-error-hint.json"))
+            try:
+                job = runner.submit("broken prompt")
+                self.assertTrue(runner.wait_idle(timeout=2))
+            finally:
+                runner.stop(wait=True)
+
+        self.assertEqual(job.status, "error")
+        self.assertEqual(job.error, "boom")
+        rendered = out.getvalue()
+        self.assertIn("error in queued #1: boom", rendered)
+        self.assertIn("use /queue show #1", rendered)
 
     def test_repl_print_queued_shows_position_and_controls(self):
         from mechferret import repl
