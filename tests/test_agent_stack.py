@@ -819,6 +819,37 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("canceled #3", rendered)
         self.assertIn("canceled #8", rendered)
 
+    def test_repl_queue_move_reorders_saved_queued_prompts(self):
+        from mechferret import repl
+
+        queue_path = Path("queue-saved-move.json")
+        old = repl.PromptJob(id=3, text="older saved prompt", created_at=100.0)
+        mid = repl.PromptJob(id=5, text="middle saved prompt", created_at=150.0)
+        new = repl.PromptJob(id=8, text="newer saved prompt", created_at=200.0)
+        running = repl.PromptJob(id=9, text="running saved prompt", status="running", created_at=300.0)
+        repl._save_queue_jobs(queue_path, [old, mid, new, running])
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: "reply", queue_path=queue_path)
+            try:
+                repl._queue_move(runner, [str(new.id), "first"])
+                self.assertEqual([job.id for job in runner.saved()], [new.id, old.id, mid.id, running.id])
+                repl._queue_move(runner, ["next", "after", "5"])
+                self.assertEqual([job.id for job in runner.saved()], [old.id, mid.id, new.id, running.id])
+                repl._queue_move(runner, ["latest", "last"])
+                self.assertEqual([job.id for job in runner.saved()], [old.id, mid.id, new.id, running.id])
+                repl._queue_move(runner, [str(old.id), "last"])
+                self.assertEqual([job.id for job in runner.saved()], [mid.id, new.id, old.id, running.id])
+            finally:
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("moved #8 first", rendered)
+        self.assertIn("moved #8 after #5", rendered)
+        self.assertIn("job #9 is running; only queued prompts can be moved.", rendered)
+        self.assertIn("moved #3 last", rendered)
+
     def test_repl_queue_latest_targets_most_recent_live_job(self):
         from mechferret import repl
 

@@ -274,39 +274,43 @@ class ChatJobRunner:
 
     def move(self, target: str, where: str, anchor: str = "") -> tuple[PromptJob | None, str]:
         where = where.strip().lower()
+        target = target.strip().lower().lstrip("#")
+        anchor = anchor.strip().lower().lstrip("#")
         with self._lock:
             job = self._find_live_job_locked(target)
-            if job is None:
-                return None, "missing"
-            if job.status != "queued":
-                return job, job.status
-            queued = [item for item in self._jobs if item.status == "queued"]
-            if where not in {"first", "last", "before", "after"}:
-                return job, "usage"
-            if where in {"before", "after"}:
-                anchor_job = self._find_live_job_locked(anchor)
-                if anchor_job is None:
-                    return job, "anchor"
-                if anchor_job.status != "queued":
-                    return job, "anchor"
-                if anchor_job is job:
-                    return job, "same"
-                queued.remove(job)
-                index = queued.index(anchor_job)
-                if where == "after":
-                    index += 1
-                queued.insert(index, job)
-            else:
-                queued.remove(job)
-                if where == "first":
-                    queued.insert(0, job)
-                else:
-                    queued.append(job)
+            if job is not None:
+                if job.status != "queued":
+                    return job, job.status
+                queued = [item for item in self._jobs if item.status == "queued"]
+                status = _move_queue_job(queued, job, where, self._find_live_job_locked(anchor))
+                if status != "moved":
+                    return job, status
+                queued_iter = iter(queued)
+                self._jobs = [next(queued_iter) if item.status == "queued" else item for item in self._jobs]
+        if job is not None:
+            self.save_pending()
+            return job, "moved"
 
-            queued_iter = iter(queued)
-            self._jobs = [next(queued_iter) if item.status == "queued" else item for item in self._jobs]
-        self.save_pending()
-        return job, "moved"
+        saved_jobs = self.saved()
+        saved_job = _find_saved_queue_job(saved_jobs, target)
+        if saved_job is None:
+            return None, "missing"
+        if saved_job.status != "queued":
+            return saved_job, saved_job.status
+        anchor_job = _find_saved_queue_job(saved_jobs, anchor) if where in {"before", "after"} else None
+        queued_saved = [job for job in saved_jobs if job.status == "queued"]
+        status = _move_queue_job(queued_saved, saved_job, where, anchor_job)
+        if status != "moved":
+            return saved_job, status
+        queued_iter = iter(queued_saved)
+        saved_jobs = [next(queued_iter) if job.status == "queued" else job for job in saved_jobs]
+        with self._lock:
+            live_ids = {job.id for job in self._jobs}
+            pending = [job for job in self._jobs if job.status == "queued"]
+        pending.extend(job for job in saved_jobs if job.id not in live_ids)
+        self._preserved_saved_ids.update(job.id for job in saved_jobs)
+        _save_queue_jobs(self._queue_path, pending)
+        return saved_job, "moved"
 
     def recent(self, limit: int = 8) -> list[PromptJob]:
         with self._lock:
@@ -528,6 +532,28 @@ def _find_saved_queue_job(jobs: list[PromptJob], target: str) -> PromptJob | Non
     if target == "next":
         return jobs[0]
     return next((job for job in jobs if str(job.id) == target), None)
+
+
+def _move_queue_job(jobs: list[PromptJob], job: PromptJob, where: str, anchor_job: PromptJob | None = None) -> str:
+    if where not in {"first", "last", "before", "after"}:
+        return "usage"
+    if where in {"before", "after"}:
+        if anchor_job is None or anchor_job.status != "queued":
+            return "anchor"
+        if anchor_job is job:
+            return "same"
+        jobs.remove(job)
+        index = jobs.index(anchor_job)
+        if where == "after":
+            index += 1
+        jobs.insert(index, job)
+        return "moved"
+    jobs.remove(job)
+    if where == "first":
+        jobs.insert(0, job)
+    else:
+        jobs.append(job)
+    return "moved"
 
 
 def _queue_file_lock(path: Path) -> threading.Lock:
