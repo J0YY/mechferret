@@ -425,6 +425,7 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("/btw <text>", rendered_help)
         self.assertIn("/queue", rendered_help)
         self.assertIn("/queue show <id>", rendered_help)
+        self.assertIn("/queue retry <id>", rendered_help)
         self.assertIn("/queue restore", rendered_help)
         self.assertIn("/queue wait [seconds]", rendered_help)
         self.assertIn("/cancel <id|all>", rendered_help)
@@ -552,6 +553,38 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("reply for full prompt text", rendered)
         self.assertIn("job #9 saved", rendered)
         self.assertIn("saved prompt", rendered)
+
+    def test_repl_queue_retry_requeues_main_side_and_saved_jobs(self):
+        from mechferret import repl
+
+        calls = []
+
+        def fake_chat(agent, session, text, *, background=False):
+            calls.append(text)
+            return f"reply for {text}"
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-retry.json"))
+            try:
+                main = runner.submit("main retry prompt")
+                side = runner.submit_side(repl._btw_prompt("side retry prompt"))
+                self.assertTrue(runner.wait_idle(timeout=2))
+                repl._queue_retry(runner, [str(main.id)])
+                repl._queue_retry(runner, [str(side.id)])
+                repl._save_queue_jobs(Path("queue-retry.json"), [repl.PromptJob(id=9, text="saved retry prompt", kind="prompt")])
+                repl._queue_retry(runner, ["9"])
+                self.assertTrue(runner.wait_idle(timeout=2))
+            finally:
+                runner.stop(wait=True)
+
+        self.assertGreaterEqual(calls.count("main retry prompt"), 2)
+        self.assertGreaterEqual(calls.count("saved retry prompt"), 1)
+        self.assertGreaterEqual(sum("side retry prompt" in call for call in calls), 2)
+        rendered = out.getvalue()
+        self.assertIn("retried #1 as #3", rendered)
+        self.assertIn("retried #2 as #4", rendered)
+        self.assertIn("retried #9 saved", rendered)
 
     def test_repl_chat_job_runner_cancels_pending_prompts(self):
         from mechferret import repl

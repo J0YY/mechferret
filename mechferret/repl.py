@@ -192,6 +192,16 @@ class ChatJobRunner:
                 return job, True
         return None, False
 
+    def retry(self, target: str) -> tuple[PromptJob | None, PromptJob | None, bool]:
+        original, saved = self.find_job(target)
+        if original is None:
+            return None, None, False
+        if original.kind == "btw":
+            retried = self.submit_side(original.text)
+        else:
+            retried = self.submit(original.text, kind=original.kind)
+        return original, retried, saved
+
     def is_busy(self) -> bool:
         with self._lock:
             return self._active is not None or any(job.status in {"queued", "running"} for job in self._jobs)
@@ -581,6 +591,8 @@ def run_repl() -> None:
                 _queue_wait(runner, tokens[2:])
             elif len(tokens) > 1 and tokens[1].lower() == "show":
                 _queue_show(runner, tokens[2:])
+            elif len(tokens) > 1 and tokens[1].lower() == "retry":
+                _queue_retry(runner, tokens[2:])
             else:
                 _print_queue(runner)
             continue
@@ -833,6 +845,19 @@ def _queue_show(runner: ChatJobRunner, args: list[str]) -> None:
     if job.reply:
         print(_c("  reply:", "1"))
         print(_render_reply(job.reply))
+
+
+def _queue_retry(runner: ChatJobRunner, args: list[str]) -> None:
+    target = args[0] if args else ""
+    if not target:
+        print(_c("  usage: /queue retry <job id>", "33"))
+        return
+    original, retried, saved = runner.retry(target)
+    if original is None or retried is None:
+        print(_c(f"  no queue job matched {target!r}", "33"))
+        return
+    saved_label = " saved" if saved else ""
+    print(_c(f"  retried #{original.id}{saved_label} as #{retried.id}", "32"))
 
 
 def _guard_agent_idle(runner: ChatJobRunner, action: str) -> bool:
