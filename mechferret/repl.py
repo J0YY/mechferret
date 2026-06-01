@@ -101,6 +101,7 @@ class ChatJobRunner:
         self._chat_fn = chat_fn or _chat
         self._side_agent_factory = side_agent_factory or _clone_agent_for_side_chat
         self._queue_path = queue_path or QUEUE_FILE
+        self._preserved_saved_ids = {job.id for job in _load_saved_queue(self._queue_path)}
         self._queue: queue.Queue[PromptJob | None] = queue.Queue()
         self._jobs: list[PromptJob] = []
         self._active: PromptJob | None = None
@@ -160,6 +161,7 @@ class ChatJobRunner:
 
     def clear_saved(self) -> int:
         saved = self.saved()
+        self._preserved_saved_ids.clear()
         with _queue_file_lock(self._queue_path):
             try:
                 self._queue_path.unlink()
@@ -364,7 +366,10 @@ class ChatJobRunner:
                 pending = [self._active, *pending]
             if include_active:
                 pending.extend(job for job in self._jobs if job.kind == "btw" and job.status == "running")
-        preserved = [job for job in _load_saved_queue(self._queue_path) if job.id not in live_ids]
+        preserved = [
+            job for job in _load_saved_queue(self._queue_path)
+            if job.id in self._preserved_saved_ids and job.id not in live_ids
+        ]
         pending.extend(preserved)
         return _save_queue_jobs(self._queue_path, pending)
 
