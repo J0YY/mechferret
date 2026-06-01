@@ -1038,13 +1038,13 @@ def _queue_join(runner: ChatJobRunner, args: list[str]) -> None:
     target = args[0] if args else ""
     timeout = 3600.0
     if not target:
-        print(_c("  usage: /queue join <job id> [seconds]", "33"))
+        print(_c("  usage: /queue join <job id|latest|active|next> [seconds]", "33"))
         return
     if len(args) > 1:
         try:
             timeout = float(args[1])
         except ValueError:
-            print(_c("  usage: /queue join <job id> [seconds]", "33"))
+            print(_c("  usage: /queue join <job id|latest|active|next> [seconds]", "33"))
             return
         if timeout <= 0:
             print(_c("  join timeout must be positive", "33"))
@@ -1076,7 +1076,7 @@ def _queue_join(runner: ChatJobRunner, args: list[str]) -> None:
 def _queue_show(runner: ChatJobRunner, args: list[str]) -> None:
     target = args[0] if args else ""
     if not target:
-        print(_c("  usage: /queue show <job id>", "33"))
+        print(_c("  usage: /queue show <job id|latest|active|next>", "33"))
         return
     job, saved = runner.find_job(target)
     if job is None:
@@ -1097,7 +1097,7 @@ def _queue_show(runner: ChatJobRunner, args: list[str]) -> None:
 def _queue_retry(runner: ChatJobRunner, args: list[str]) -> None:
     target = args[0] if args else ""
     if not target:
-        print(_c("  usage: /queue retry <job id>", "33"))
+        print(_c("  usage: /queue retry <job id|latest>", "33"))
         return
     original, retried, saved = runner.retry(target)
     if original is None:
@@ -1113,7 +1113,7 @@ def _queue_retry(runner: ChatJobRunner, args: list[str]) -> None:
 def _queue_edit(runner: ChatJobRunner, args: list[str], text: str) -> None:
     target = args[0] if args else ""
     if not target or not text:
-        print(_c("  usage: /queue edit <job id|latest> <new prompt>", "33"))
+        print(_c("  usage: /queue edit <job id|latest|next> <new prompt>", "33"))
         return
     job, status = runner.edit(target, text)
     if job is None:
@@ -1130,14 +1130,14 @@ def _queue_move(runner: ChatJobRunner, args: list[str]) -> None:
     where = args[1].lower() if len(args) > 1 else ""
     anchor = args[2] if len(args) > 2 else ""
     if not target or where not in {"first", "last", "before", "after"} or (where in {"before", "after"} and not anchor):
-        print(_c("  usage: /queue move <job id|latest> first|last|before <job id|latest>|after <job id|latest>", "33"))
+        print(_c("  usage: /queue move <job id|latest|next> first|last|before <job id|latest|next>|after <job id|latest|next>", "33"))
         return
     job, status = runner.move(target, where, anchor)
     if job is None:
         print(_c(f"  no queued job matched {target!r}", "33"))
         return
     if status == "usage":
-        print(_c("  usage: /queue move <job id|latest> first|last|before <job id|latest>|after <job id|latest>", "33"))
+        print(_c("  usage: /queue move <job id|latest|next> first|last|before <job id|latest|next>|after <job id|latest|next>", "33"))
         return
     if status == "anchor":
         print(_c(f"  no queued anchor matched {anchor!r}", "33"))

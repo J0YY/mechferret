@@ -707,6 +707,28 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("second", rendered)
         self.assertIn("retried #2 as #3", rendered)
 
+    def test_repl_queue_usage_mentions_supported_aliases(self):
+        from mechferret import repl
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: None, queue_path=Path("queue-usage.json"))
+            try:
+                repl._queue_show(runner, [])
+                repl._queue_retry(runner, [])
+                repl._queue_edit(runner, [], "")
+                repl._queue_move(runner, [])
+                repl._queue_join(runner, [])
+            finally:
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("/queue show <job id|latest|active|next>", rendered)
+        self.assertIn("/queue retry <job id|latest>", rendered)
+        self.assertIn("/queue edit <job id|latest|next> <new prompt>", rendered)
+        self.assertIn("/queue move <job id|latest|next>", rendered)
+        self.assertIn("/queue join <job id|latest|active|next> [seconds]", rendered)
+
     def test_repl_queue_latest_targets_live_mutations(self):
         from mechferret import repl
 
