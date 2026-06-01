@@ -1226,8 +1226,13 @@ def _queue_join(runner: ChatJobRunner, args: list[str]) -> None:
         print(_c(f"  no queue job matched {target!r}", "33"))
         return
     if saved:
-        print(_c(f"  job #{job.id} is saved; run /queue restore before joining it.", "33"))
-        return
+        restored = runner.restore_saved(str(job.id))
+        if not restored:
+            print(_c(f"  job #{job.id} is saved but could not be restored.", "33"))
+            return
+        job = restored[0]
+        target = str(job.id)
+        print(_c(f"  restored #{job.id}", "32"))
     if runner.paused() and job.status == "queued":
         print(_c("  queue paused; use /queue resume before joining queued work", "33"))
         return

@@ -835,7 +835,7 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("second side", rendered)
         self.assertIn("retried #2 as #3", rendered)
 
-    def test_repl_queue_join_times_out_or_refuses_saved_and_paused_jobs(self):
+    def test_repl_queue_join_times_out_or_refuses_paused_jobs(self):
         from mechferret import repl
 
         release = threading.Event()
@@ -857,9 +857,6 @@ class AgentStackTest(unittest.TestCase):
                 queued = runner.submit("queued")
                 runner.pause()
                 repl._queue_join(runner, [str(queued.id), "1"])
-
-                repl._save_queue_jobs(Path("queue-join-timeout.json"), [repl.PromptJob(id=9, text="saved")])
-                repl._queue_join(runner, ["9"])
             finally:
                 runner.resume()
                 release.set()
@@ -869,7 +866,39 @@ class AgentStackTest(unittest.TestCase):
         rendered = out.getvalue()
         self.assertIn("job #1 still running after timeout", rendered)
         self.assertIn("queue paused; use /queue resume", rendered)
-        self.assertIn("job #9 is saved", rendered)
+
+    def test_repl_queue_join_restores_saved_job_and_waits(self):
+        from mechferret import repl
+
+        queue_path = Path("queue-join-saved.json")
+        release = threading.Event()
+        started = []
+
+        def fake_chat(agent, session, text, *, background=False):
+            started.append(text)
+            self.assertTrue(release.wait(timeout=2))
+            return f"reply for {text}"
+
+        repl._save_queue_jobs(queue_path, [repl.PromptJob(id=9, text="saved join prompt")])
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=queue_path)
+            try:
+                releaser = threading.Thread(target=lambda: (time.sleep(0.05), release.set()))
+                releaser.start()
+                repl._queue_join(runner, ["9", "2"])
+                releaser.join(timeout=2)
+            finally:
+                release.set()
+                runner.stop(wait=True)
+
+        self.assertEqual(started, ["saved join prompt"])
+        self.assertEqual(runner.saved(), [])
+        rendered = out.getvalue()
+        self.assertIn("restored #9", rendered)
+        self.assertIn("waiting for job #9", rendered)
+        self.assertIn("job #9 done", rendered)
 
     def test_repl_queue_wait_allows_running_work_while_paused_without_queued_jobs(self):
         from mechferret import repl
