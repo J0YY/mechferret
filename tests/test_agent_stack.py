@@ -432,7 +432,7 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("/queue clear [queued|saved|all]", rendered_help)
         self.assertIn("/queue pause", rendered_help)
         self.assertIn("/queue resume", rendered_help)
-        self.assertIn("/queue restore", rendered_help)
+        self.assertIn("/queue restore [id|latest|next|all]", rendered_help)
         self.assertIn("/queue wait [seconds]", rendered_help)
         self.assertIn("/queue join <id|latest|active|next> [seconds]", rendered_help)
         self.assertIn("/cancel <id|latest|next|all>", rendered_help)
@@ -733,8 +733,8 @@ class AgentStackTest(unittest.TestCase):
         rendered = out.getvalue()
         self.assertIn("job #8 saved", rendered)
         self.assertIn("newer saved prompt", rendered)
-        self.assertIn("retried #8 saved as #1", rendered)
-        self.assertIn("retried #3 saved as #2", rendered)
+        self.assertIn("retried #8 saved as #9", rendered)
+        self.assertIn("retried #3 saved as #10", rendered)
 
     def test_repl_saved_queue_preserves_pending_statuses(self):
         from mechferret import repl
@@ -1470,6 +1470,38 @@ class AgentStackTest(unittest.TestCase):
         self.assertEqual([job.text for job in restored], ["saved one", "saved eight"])
         self.assertEqual([job.id for job in restored], [2, 8])
         self.assertEqual(followup.id, 9)
+
+    def test_repl_restore_saved_queue_can_target_one_prompt(self):
+        from mechferret import repl
+
+        queue_path = Path("restore-one-saved.json")
+        started = []
+
+        def fake_chat(agent, session, text, *, background=False):
+            started.append(text)
+            return text
+
+        repl._save_queue_jobs(queue_path, [
+            repl.PromptJob(id=3, text="old saved", created_at=1.0),
+            repl.PromptJob(id=8, text="new saved", created_at=2.0),
+        ])
+
+        with redirect_stdout(StringIO()):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=queue_path)
+            try:
+                restored = runner.restore_saved("next")
+                self.assertTrue(runner.wait_idle(timeout=2))
+                followup = runner.submit("fresh")
+                self.assertTrue(runner.wait_idle(timeout=2))
+                saved = runner.saved()
+            finally:
+                runner.stop(wait=True)
+
+        self.assertEqual([job.text for job in restored], ["old saved"])
+        self.assertEqual([job.id for job in restored], [3])
+        self.assertEqual(followup.id, 9)
+        self.assertEqual(started, ["old saved", "fresh"])
+        self.assertEqual([job.text for job in saved], ["new saved"])
 
     def test_repl_chat_job_runner_saves_active_prompt_on_fast_shutdown(self):
         from mechferret import repl

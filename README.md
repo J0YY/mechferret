@@ -344,7 +344,7 @@ You can do things like:
 /queue clear queued|saved|all clear live or saved queue state
 /queue pause   hold queued prompts after the active reply finishes
 /queue resume  resume held queued prompts
-/queue restore  restore saved queued/running prompts from the last session
+/queue restore [id|latest|next|all] restore saved queued/running prompts from the last session
 /queue wait     wait until active queued and side work finishes
 /queue join <id|latest|active|next> wait for one queued or side job to finish
 /cancel <id|latest|next|all> remove queued prompts before they start

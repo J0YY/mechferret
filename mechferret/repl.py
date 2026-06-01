@@ -101,12 +101,13 @@ class ChatJobRunner:
         self._chat_fn = chat_fn or _chat
         self._side_agent_factory = side_agent_factory or _clone_agent_for_side_chat
         self._queue_path = queue_path or QUEUE_FILE
-        self._preserved_saved_ids = {job.id for job in _load_saved_queue(self._queue_path)}
+        saved_ids = {job.id for job in _load_saved_queue(self._queue_path)}
+        self._preserved_saved_ids = set(saved_ids)
         self._queue: queue.Queue[PromptJob | None] = queue.Queue()
         self._jobs: list[PromptJob] = []
         self._active: PromptJob | None = None
         self._side_threads: list[threading.Thread] = []
-        self._next_id = 1
+        self._next_id = max(saved_ids, default=0) + 1
         self._lock = threading.Lock()
         self._stopped = False
         self._paused = False
@@ -146,13 +147,26 @@ class ChatJobRunner:
     def saved(self) -> list[PromptJob]:
         return _load_saved_queue(self._queue_path)
 
-    def restore_saved(self) -> list[PromptJob]:
+    def restore_saved(self, target: str = "all") -> list[PromptJob]:
         saved_jobs = self.saved()
         if not saved_jobs:
             return []
-        self.clear_saved()
+        restored_jobs, remaining_jobs = _pop_saved_queue_jobs(saved_jobs, target)
+        if not restored_jobs:
+            return []
+        restored_ids = {job.id for job in restored_jobs}
+        self._preserved_saved_ids.difference_update(restored_ids)
+        self._preserved_saved_ids.update(job.id for job in remaining_jobs)
+        if remaining_jobs:
+            with self._lock:
+                live_ids = {job.id for job in self._jobs}
+                pending = [job for job in self._jobs if job.status == "queued"]
+            pending.extend(job for job in remaining_jobs if job.id not in live_ids)
+            _save_queue_jobs(self._queue_path, pending)
+        else:
+            self.clear_saved()
         restored: list[PromptJob] = []
-        for saved in saved_jobs:
+        for saved in restored_jobs:
             if saved.kind == "btw":
                 restored.append(self.submit_side(saved.text, preferred_id=saved.id))
             else:
@@ -835,7 +849,7 @@ def run_repl() -> None:
             continue
         if bare == "queue":
             if len(tokens) > 1 and tokens[1].lower() == "restore":
-                restored = runner.restore_saved()
+                restored = runner.restore_saved(tokens[2] if len(tokens) > 2 else "all")
                 if restored:
                     ids = ", ".join(f"#{job.id}" for job in restored)
                     print(_c(f"  restored {ids}", "32"))
