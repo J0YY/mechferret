@@ -322,6 +322,29 @@ def _sanitize_assistant_text(user_text: str, text: str) -> str:
     )
 
 
+def _sanitize_loaded_messages(messages: list[dict[str, Any]], provider: str) -> list[dict[str, Any]]:
+    sanitized: list[dict[str, Any]] = []
+    last_user_text = ""
+    for message in messages:
+        role = message.get("role")
+        if role == "system":
+            continue
+        if role not in {"user", "assistant", "tool"}:
+            continue
+        clean = dict(message)
+        if role == "user":
+            last_user_text = _extract_provider_text(clean.get("content"))
+        elif role == "assistant":
+            text = _extract_provider_text(clean.get("content"))
+            replacement = _sanitize_assistant_text(last_user_text, text)
+            if replacement != text:
+                clean["content"] = replacement
+        sanitized.append(clean)
+    if provider == "openai":
+        return [{"role": "system", "content": build_system_prompt()}, *sanitized]
+    return sanitized
+
+
 def _extract_anthropic_content(data: Any) -> tuple[Any | None, str | None]:
     if not isinstance(data, dict):
         return None, "response is not a JSON object"
@@ -498,7 +521,8 @@ class Agent:
         if isinstance(model, str) and model and provider in {"anthropic", "openai"}:
             self.model = model
         messages = data.get("messages", [])
-        self.messages = [message for message in messages if isinstance(message, dict)] if isinstance(messages, list) else []
+        loaded_messages = [message for message in messages if isinstance(message, dict)] if isinstance(messages, list) else []
+        self.messages = _sanitize_loaded_messages(loaded_messages, self.provider)
         self._key = configured_api_key(self.provider) or self._key
         c = data.get("cost", {})
         c = c if isinstance(c, dict) else {}

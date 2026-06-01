@@ -181,6 +181,43 @@ class AgentStackTest(unittest.TestCase):
         self.assertEqual(a.cost.input_tokens, 0)
         self.assertEqual(a.cost.output_tokens, 3)
 
+    def test_agent_load_session_refreshes_stale_system_prompt_and_scaffold(self):
+        from mechferret import agent, sessions
+
+        stale_system = (
+            "NEVER end a turn flat. Always finish with NEXT STEP and "
+            "press " + "enter to proceed."
+        )
+        stale_reply = (
+            "The minimal experiment should be:\n"
+            "1. Target behavior: duplicate-token/name-mover behavior in GPT-2 small.\n"
+            "2. Start modules: heads 5.0, 5.2, 5.6, 5.11, 4.8, 6.8, 4.11, 4.3.\n"
+            "Next: " + "press " + "enter to proceed."
+        )
+        sessions.save_session(
+            "stale",
+            "openai",
+            "gpt-test",
+            [
+                {"role": "system", "content": stale_system},
+                {"role": "user", "content": "keep going"},
+                {"role": "assistant", "content": stale_reply},
+            ],
+            {},
+        )
+
+        a = agent.Agent()
+        a.provider, a.model, a._key = "openai", "gpt-test", "x"
+        a.load_session("stale")
+
+        self.assertEqual(a.messages[0]["role"], "system")
+        self.assertNotIn("NEVER end a turn flat", a.messages[0]["content"])
+        self.assertNotIn("press " + "enter", a.messages[0]["content"].lower())
+        self.assertEqual(a.messages[1], {"role": "user", "content": "keep going"})
+        self.assertIn("which model and behavior/task", a.messages[2]["content"])
+        self.assertNotIn("GPT-2", a.messages[2]["content"])
+        self.assertNotIn("5.0", a.messages[2]["content"])
+
     def test_agent_load_session_rejects_embedded_bad_id_and_provider(self):
         from mechferret import agent, sessions
 
