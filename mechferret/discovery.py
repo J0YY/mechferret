@@ -30,6 +30,7 @@ from typing import Any
 from .agents import ClaimExtractor, Critic, Planner
 from .config import load_config
 from .coordinator import Coordinator, default_workers
+from .defaults import DEFAULT_INTERP_MODEL
 from .hooks import Budget, BudgetGuard
 from .interp.critic import ExperimentCritic
 from .interp.engine import InterpEngine
@@ -238,7 +239,7 @@ def request_alignment_issue(
             continue
         unsupported_hits.append((signal, reason))
     unsupported = [reason for _signal, reason in unsupported_hits]
-    if unsupported and model.lower() == "gpt2":
+    if unsupported:
         signals = ", ".join(signal for signal, _reason in unsupported_hits[:4])
         return (
             f"Discovery request is not aligned with the available {model}/{task_name} workflow: "
@@ -278,7 +279,7 @@ class DiscoveryController:
         *,
         skill: str | Skill | None = None,
         task: str | None = None,
-        model: str = "gpt2",
+        model: str = DEFAULT_INTERP_MODEL,
         backend: str = "auto",
         source_paths: list[str] | None = None,
         urls: list[str] | None = None,
@@ -292,7 +293,7 @@ class DiscoveryController:
     ) -> ResearchRun:
         question = _text(question).strip()
         task = _text(task).strip() or None
-        model = _text(model).strip() or "gpt2"
+        model = _text(model).strip() or DEFAULT_INTERP_MODEL
         backend = _text(backend).strip() or "auto"
         source_paths = _path_list(source_paths)
         urls = _path_list(urls)

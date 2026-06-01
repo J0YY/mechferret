@@ -22,6 +22,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from .defaults import DEFAULT_INTERP_MODEL
+
 try:
     import modal
 except ImportError:  # pragma: no cover - Modal is an optional dependency
@@ -63,7 +65,7 @@ if modal is not None:
     app = modal.App(APP_NAME, image=image)
 
     @app.function(gpu=GPU_TYPE, timeout=1800)
-    def run_interp_remote(spec_dicts: list[dict], model: str = "gpt2") -> list[dict]:
+    def run_interp_remote(spec_dicts: list[dict], model: str = DEFAULT_INTERP_MODEL) -> list[dict]:
         """Run a batch of experiment specs on a real model on a GPU."""
 
         from dataclasses import asdict
@@ -80,7 +82,7 @@ if modal is not None:
         question: str = "",
         skill: str | None = None,
         task: str | None = None,
-        model: str = "gpt2",
+        model: str = DEFAULT_INTERP_MODEL,
     ) -> dict:
         """Run the full discovery loop on a real model on a GPU."""
 
@@ -113,7 +115,7 @@ def dispatch_discovery(
     question: str = "",
     skill: str | None = None,
     task: str | None = None,
-    model: str = "gpt2",
+    model: str = DEFAULT_INTERP_MODEL,
     out_dir: str | Path = "runs/modal",
 ) -> dict[str, Any]:
     """Run the discovery loop on Modal if available; otherwise locally.

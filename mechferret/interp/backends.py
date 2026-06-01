@@ -16,6 +16,7 @@ from __future__ import annotations
 import importlib.util
 import os
 
+from ..defaults import DEFAULT_INTERP_MODEL
 from .synthetic import SyntheticBackend
 from .tasks import get_task
 
@@ -57,11 +58,11 @@ class TransformerLensBackend:  # pragma: no cover - exercised only with torch in
     name = "transformer_lens"
     available = True
 
-    def __init__(self, model: str = "gpt2") -> None:
+    def __init__(self, model: str = DEFAULT_INTERP_MODEL) -> None:
         import torch  # noqa: F401
         from transformer_lens import HookedTransformer
 
-        self.model_name = (model or "gpt2").lower()
+        self.model_name = (model or DEFAULT_INTERP_MODEL).lower()
         self.model = HookedTransformer.from_pretrained(self.model_name)
         self.model.eval()
         self.n_layers = self.model.cfg.n_layers

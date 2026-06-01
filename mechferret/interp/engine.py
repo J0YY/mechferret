@@ -18,6 +18,7 @@ import math
 import statistics
 from typing import Any
 
+from ..defaults import DEFAULT_INTERP_MODEL
 from ..models import ExperimentResult, ExperimentSpec
 from ..text import stable_id
 from .backends import resolve_backend
@@ -87,8 +88,8 @@ def _items(value: Any) -> list[Any]:
 
 
 class InterpEngine:
-    def __init__(self, model: str = "gpt2", backend: str = "auto") -> None:
-        self.model = _text(model).strip() or "gpt2"
+    def __init__(self, model: str = DEFAULT_INTERP_MODEL, backend: str = "auto") -> None:
+        self.model = _text(model).strip() or DEFAULT_INTERP_MODEL
         self.requested_backend = _text(backend).strip() or "auto"
         self._backends: dict[tuple[str, str], object] = {}
 

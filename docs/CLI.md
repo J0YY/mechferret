@@ -483,7 +483,7 @@ Options:
 - `-h`, `--help`: show this help message and exit
 - `--skill`: Named skill/playbook (see `mechferret /skills`) or a path to a skill JSON.
 - `--task`: choices: `ioi`, `induction`, `greater_than`, `factual_recall`; Interpretability task.
-- `--model`: Model to investigate (e.g. gpt2, pythia-160m).
+- `--model`: Model to investigate (e.g. pythia-160m, gpt2).
 - `--backend`: choices: `auto`, `synthetic`, `transformer_lens`; Experiment backend for interpretability probes.
 - `--source`: Prior-art documents to ground hypotheses.
 - `--url`: URL to fetch as prior art.

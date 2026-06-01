@@ -24,6 +24,7 @@ import math
 import random
 from dataclasses import dataclass, field
 
+from ..defaults import DEFAULT_INTERP_MODEL
 from .tasks import Task, get_task
 
 # Standard small interpretability models and their shapes.
@@ -44,7 +45,7 @@ def _seeded_rng(*parts: object) -> random.Random:
 
 
 def _shape(model: str) -> tuple[int, int, int]:
-    return MODEL_SHAPES.get((model or "gpt2").lower(), (12, 12, 768))
+    return MODEL_SHAPES.get((model or DEFAULT_INTERP_MODEL).lower(), (12, 12, 768))
 
 
 @dataclass(slots=True)
@@ -126,8 +127,8 @@ class SyntheticBackend:
     name = "synthetic"
     available = True
 
-    def __init__(self, model: str = "gpt2", run_salt: object | None = None) -> None:
-        self.model = (model or "gpt2").lower()
+    def __init__(self, model: str = DEFAULT_INTERP_MODEL, run_salt: object | None = None) -> None:
+        self.model = (model or DEFAULT_INTERP_MODEL).lower()
         self.n_layers, self.n_heads, self.d_model = _shape(self.model)
         self.run_salt = run_salt if run_salt is not None else random.SystemRandom().getrandbits(64)
         self._circuits: dict[str, GroundTruthCircuit] = {}

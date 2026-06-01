@@ -14,6 +14,7 @@ from .audit import audit_run_artifact, latest_run_json, print_audit
 from .config import PROVIDERS, configure_provider, default_config_path, load_config, prompt_api_key, save_config
 from .controller import MechFerret
 from .costs import estimate_run_cost
+from .defaults import DEFAULT_INTERP_MODEL
 from .discovery import DiscoveryController
 from .goal_loop import GoalLoop
 from .hooks import Budget
@@ -272,7 +273,7 @@ def build_parser() -> argparse.ArgumentParser:
     discover.add_argument("question", nargs="?", default="", help="Research question (optional if --skill is given).")
     discover.add_argument("--skill", help="Named skill/playbook (see `mechferret /skills`) or a path to a skill JSON.")
     discover.add_argument("--task", choices=["ioi", "induction", "greater_than", "factual_recall"], help="Interpretability task.")
-    discover.add_argument("--model", default="gpt2", help="Model to investigate (e.g. gpt2, pythia-160m).")
+    discover.add_argument("--model", default=DEFAULT_INTERP_MODEL, help="Model to investigate (e.g. pythia-160m, gpt2).")
     discover.add_argument("--backend", choices=["auto", "synthetic", "transformer_lens"], default="auto", help="Experiment backend for interpretability probes.")
     discover.add_argument("--source", action="append", default=[], help="Prior-art documents to ground hypotheses.")
     discover.add_argument("--url", action="append", default=[], help="URL to fetch as prior art.")
@@ -297,7 +298,7 @@ def build_parser() -> argparse.ArgumentParser:
     modal_cmd.add_argument("question", nargs="?", default="", help="Question for remote run actions.")
     modal_cmd.add_argument("--skill", help="Skill to run remotely (e.g. ioi-circuit).")
     modal_cmd.add_argument("--task", choices=["ioi", "induction", "greater_than", "factual_recall"], help="Interpretability task for remote experiments.")
-    modal_cmd.add_argument("--model", default="gpt2", help="Model to investigate remotely.")
+    modal_cmd.add_argument("--model", default=DEFAULT_INTERP_MODEL, help="Model to investigate remotely.")
     modal_cmd.add_argument("--out", default="runs/modal", help="Output directory for Modal artifacts.")
     modal_cmd.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
 
@@ -306,7 +307,7 @@ def build_parser() -> argparse.ArgumentParser:
     cluster_cmd.add_argument("question", nargs="?", default="", help="Question for remote run actions.")
     cluster_cmd.add_argument("--skill", help="Skill to run remotely (e.g. ioi-circuit).")
     cluster_cmd.add_argument("--task", choices=["ioi", "induction", "greater_than", "factual_recall"], help="Interpretability task for cluster experiments.")
-    cluster_cmd.add_argument("--model", default="gpt2", help="Model to investigate on the cluster.")
+    cluster_cmd.add_argument("--model", default=DEFAULT_INTERP_MODEL, help="Model to investigate on the cluster.")
     cluster_cmd.add_argument("--out", default="runs/cluster", help="Output directory for cluster artifacts.")
     cluster_cmd.add_argument("--dry-run", action="store_true", help="Print the ssh+srun command without executing.")
     cluster_cmd.add_argument("--json", action="store_true", help="Print machine-readable JSON.")

@@ -3,6 +3,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from mechferret import agent
 
@@ -550,6 +551,45 @@ class AgentToolTest(unittest.TestCase):
 
         ok = json.loads(tools.run_tool("present_options", {"options": [{"title": "Run audit", "summary": "..."}]}))
         self.assertEqual(ok["options"], ["Run audit"])
+
+    def test_verify_novelty_runs_deep_recent_architecture_search(self):
+        from mechferret import tools
+
+        calls = []
+
+        def fake_search(query, max_results=20, sort_by="relevance"):
+            calls.append({"query": query, "max_results": max_results, "sort_by": sort_by})
+            index = len(calls)
+            return 99, [
+                {
+                    "title": f"{sort_by} paper {index}",
+                    "url": f"https://arxiv.org/abs/2501.{index:04d}",
+                    "published": "2025-01-01T00:00:00Z",
+                    "authors": ["A. Researcher"],
+                }
+            ]
+
+        with patch("mechferret.knowledge.search_arxiv", side_effect=fake_search):
+            payload = json.loads(
+                tools.run_tool(
+                    "verify_novelty",
+                    {
+                        "idea": "sparse autoencoder architecture for vision language action policies",
+                        "queries": ["VLA sparse autoencoder mechanisms"],
+                    },
+                )
+            )
+
+        self.assertGreaterEqual(len(calls), 6)
+        self.assertTrue(all(call["max_results"] == 20 for call in calls))
+        self.assertIn("submittedDate", {call["sort_by"] for call in calls})
+        self.assertIn("lastUpdatedDate", {call["sort_by"] for call in calls})
+        self.assertTrue(any("architecture" in call["query"].lower() for call in calls))
+        self.assertTrue(any("discovery" in call["query"].lower() for call in calls))
+        self.assertEqual(len(payload["search_plan"]), len(calls))
+        self.assertIn("recent_papers", payload)
+        self.assertIn("architecture_papers", payload)
+        self.assertIn("Do not claim high novelty", payload["guidance"])
 
     def test_tools_validate_boolean_values(self):
         from mechferret import tools

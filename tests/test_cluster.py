@@ -118,7 +118,7 @@ class ClusterTest(unittest.TestCase):
 
         self.assertIn("cd ''", cmd)
         self.assertIn("python3 -m mechferret", cmd)
-        self.assertIn("--model gpt2", cmd)
+        self.assertIn("--model pythia-160m", cmd)
         self.assertEqual(inv[1], "")
         self.assertIn("--cpus-per-task 8", inv[2])
         self.assertIn("--mem 32G", inv[2])

@@ -61,11 +61,12 @@ class KnowledgeTest(unittest.TestCase):
           </entry>
         </feed>
         """
-        with patch("urllib.request.urlopen", return_value=_Response(feed)):
+        with patch("urllib.request.urlopen", return_value=_Response(feed)) as opened:
             total, rows = search_arxiv("sae", max_results="bad", sort_by="invalid", timeout="bad")
         self.assertEqual(total, 0)
         self.assertEqual(rows[0]["title"], "Test Paper")
         self.assertEqual(rows[0]["authors"], ["Ada"])
+        self.assertIn("max_results=20", opened.call_args.args[0].full_url)
 
     def test_neuronpedia_helpers_tolerate_bad_json_and_inputs(self):
         self.assertEqual(neuronpedia_search_explanations("", "query"), {})

@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .defaults import DEFAULT_INTERP_MODEL
 from .hooks import Budget
 
 SKILLS_DIR = Path(__file__).resolve().parent / "skills"
@@ -27,7 +28,7 @@ class Skill:
     name: str
     description: str
     task: str
-    model: str = "gpt2"
+    model: str = DEFAULT_INTERP_MODEL
     question: str = ""
     max_screen_heads: int = 96
     promote_top_k: int = 5
@@ -134,7 +135,7 @@ def _from_payload(payload: dict[str, Any]) -> Skill:
         name=name,
         description=_string(payload.get("description")),
         task=task,
-        model=_string(payload.get("model"), "gpt2"),
+        model=_string(payload.get("model"), DEFAULT_INTERP_MODEL),
         question=_string(payload.get("question")),
         max_screen_heads=_int(payload.get("max_screen_heads", 96), 96, min_value=1),
         promote_top_k=_int(payload.get("promote_top_k", 5), 5, min_value=1),

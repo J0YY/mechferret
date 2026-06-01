@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from mechferret.defaults import DEFAULT_INTERP_MODEL
 from mechferret.discovery import DiscoveryController, request_alignment_issue
 from mechferret.hooks import Budget, BudgetGuard
 from mechferret.coordinator import Coordinator, default_workers
@@ -96,7 +97,7 @@ class SkillTest(unittest.TestCase):
                 self.assertEqual([skill.name for skill in listed], ["good"])
                 skill = skills_mod.load_skill("good")
                 self.assertEqual(skill.task, "ioi")
-                self.assertEqual(skill.model, "gpt2")
+                self.assertEqual(skill.model, DEFAULT_INTERP_MODEL)
                 self.assertEqual(skill.max_screen_heads, 96)
                 self.assertEqual(skill.promote_top_k, 5)
                 self.assertEqual(skill.seeds, [0, 2])
@@ -136,7 +137,7 @@ class HypothesisFlowTest(unittest.TestCase):
         gen = HypothesisGenerator(["bad"], seeds=["2", "bad", -1, True, 2])
         hyps, specs = gen.screen(b"find ioi", [], max_heads="bad", source_ids=[" src ", None, b"bytes"])
 
-        self.assertEqual(gen.model, "gpt2")
+        self.assertEqual(gen.model, DEFAULT_INTERP_MODEL)
         self.assertEqual(gen.seeds, [2])
         self.assertEqual(hyps[0].task, "ioi")
         self.assertEqual(specs[0].seeds, [2])

@@ -19,11 +19,19 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
+from .defaults import DEFAULT_INTERP_MODEL
+
 MAX_OUTPUT = 12000
 PERSIST_THRESHOLD = 16000  # results larger than this are written to disk, not truncated
 JSON_PREVIEW_FIELD_LIMIT = 2000
 CHECK_LIST_STRUCTURED_LIMIT = 480
 RESULTS_DIR = Path(".mechferret/tool_results")
+DEFAULT_WEB_RESULTS = 12
+DEFAULT_ARXIV_RESULTS = 20
+NOVELTY_RELATED_LIMIT = 24
+NOVELTY_FOCUSED_LIMIT = 10
+NOVELTY_QUERY_RESULT_LIMIT = 20
+NOVELTY_MAX_QUERY_PASSES = 12
 
 
 def _truncate(text: str, limit: int = MAX_OUTPUT) -> str:
@@ -482,7 +490,7 @@ def tool_web_search(args: dict[str, Any]) -> str:
     query, invalid = _string_arg(args, "query")
     if invalid:
         return json.dumps(invalid)
-    max_results, invalid = _int_arg(args, "max_results", 8, min_value=1)
+    max_results, invalid = _int_arg(args, "max_results", DEFAULT_WEB_RESULTS, min_value=1)
     if invalid:
         return json.dumps(invalid)
     results = web_search(query, max_results=max_results)
@@ -507,7 +515,7 @@ def tool_arxiv_search(args: dict[str, Any]) -> str:
     query, invalid = _string_arg(args, "query")
     if invalid:
         return json.dumps(invalid)
-    max_results, invalid = _int_arg(args, "max_results", 8, min_value=1)
+    max_results, invalid = _int_arg(args, "max_results", DEFAULT_ARXIV_RESULTS, min_value=1)
     if invalid:
         return json.dumps(invalid)
     sort_by, invalid = _enum_arg(args, "sort_by", "relevance", ARXIV_SORTS)
@@ -730,7 +738,7 @@ def tool_run_discovery(args: dict[str, Any]) -> str:
     task, invalid = _optional_string_arg(args, "task")
     if invalid:
         return json.dumps(invalid)
-    model, invalid = _optional_string_arg(args, "model", "gpt2")
+    model, invalid = _optional_string_arg(args, "model", DEFAULT_INTERP_MODEL)
     if invalid:
         return json.dumps(invalid)
     llm_model, invalid = _optional_string_arg(args, "llm_model")
@@ -779,7 +787,7 @@ def tool_run_discovery(args: dict[str, Any]) -> str:
         question=question or "",
         skill=skill,
         task=task,
-        model=model or "gpt2",
+        model=model or DEFAULT_INTERP_MODEL,
         backend=backend,
         source_paths=source_paths,
         urls=urls,
@@ -890,25 +898,166 @@ def tool_verify_novelty(args: dict[str, Any]) -> str:
     queries, invalid = _optional_string_list_arg(args, "queries")
     if invalid:
         return json.dumps(invalid)
-    queries = queries or [idea]
+    plan = _novelty_search_plan(idea, queries)
     seen: set[str] = set()
-    related = []
-    for q in queries[:3]:
+    related: list[dict[str, Any]] = []
+    recent: list[dict[str, Any]] = []
+    architecture: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
+    for item in plan:
+        query = item["query"]
+        sort_by = item["sort_by"]
         try:
-            _, papers = search_arxiv(q, max_results=5)
-        except Exception:  # noqa: BLE001
+            _, papers = search_arxiv(query, max_results=item["max_results"], sort_by=sort_by)
+        except Exception as exc:  # noqa: BLE001
             papers = []
+            errors.append({"query": query, "error": str(exc)})
         for p in papers:
-            if p["title"] in seen:
+            row = _novelty_paper_row(p, focus=item["focus"])
+            key = _novelty_paper_key(row)
+            if not key or key in seen:
                 continue
-            seen.add(p["title"])
-            related.append({"title": p["title"], "url": p["url"], "published": p.get("published", "")})
+            seen.add(key)
+            related.append(row)
+            if sort_by in {"submittedDate", "lastUpdatedDate"} and len(recent) < NOVELTY_FOCUSED_LIMIT:
+                recent.append(row)
+            if "architecture" in item["focus"] and len(architecture) < NOVELTY_FOCUSED_LIMIT:
+                architecture.append(row)
     return json.dumps({
         "idea": idea,
-        "related_papers": related[:8],
-        "guidance": "If multiple related papers already do essentially this, novelty is LOW; "
-                    "if the specific angle is unaddressed, novelty is HIGHER. State a verdict.",
+        "search_plan": plan,
+        "related_papers": related[:NOVELTY_RELATED_LIMIT],
+        "recent_papers": recent,
+        "architecture_papers": architecture,
+        "errors": errors,
+        "novelty_questions": _novelty_questions(idea),
+        "guidance": "Do not claim high novelty unless the idea survives relevance, submitted-date, "
+                    "updated-date, architecture, and discovery searches. Compare against the closest "
+                    "recent papers, name the exact delta, cite likely prior art, and downgrade any "
+                    "direction that only renames an existing method.",
     })
+
+
+_NOVELTY_STOPWORDS = {
+    "about",
+    "after",
+    "against",
+    "already",
+    "and",
+    "are",
+    "based",
+    "between",
+    "could",
+    "from",
+    "have",
+    "into",
+    "model",
+    "models",
+    "novel",
+    "novelty",
+    "paper",
+    "papers",
+    "research",
+    "should",
+    "that",
+    "the",
+    "their",
+    "this",
+    "through",
+    "using",
+    "with",
+    "would",
+}
+
+
+def _novelty_search_plan(idea: str, queries: list[str] | None) -> list[dict[str, Any]]:
+    seeds = _unique_strings([*(queries or []), idea])
+    terms = _novelty_terms(idea)
+    compact = " ".join(terms[:8]) or idea
+    architecture_terms = " ".join(terms[:5]) or idea
+    candidates = []
+    for query in seeds[:3]:
+        candidates.append(_novelty_plan_item(query, "relevance", "provided_relevance"))
+        candidates.append(_novelty_plan_item(query, "submittedDate", "provided_recent_submitted"))
+    candidates.extend(
+        [
+            _novelty_plan_item(compact, "relevance", "core_relevance"),
+            _novelty_plan_item(compact, "submittedDate", "recent_submitted"),
+            _novelty_plan_item(compact, "lastUpdatedDate", "recent_updated"),
+            _novelty_plan_item(f"{architecture_terms} architecture transformer", "relevance", "architecture_relevance"),
+            _novelty_plan_item(f"{architecture_terms} circuit sparse autoencoder", "relevance", "architecture_mechanism"),
+            _novelty_plan_item(f"{architecture_terms} discovery benchmark state of the art", "submittedDate", "recent_discovery"),
+        ]
+    )
+    plan: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in candidates:
+        key = (item["query"].lower(), item["sort_by"])
+        if key in seen:
+            continue
+        seen.add(key)
+        plan.append(item)
+    return plan[:NOVELTY_MAX_QUERY_PASSES]
+
+
+def _novelty_plan_item(query: str, sort_by: str, focus: str) -> dict[str, Any]:
+    return {
+        "query": query,
+        "sort_by": sort_by,
+        "max_results": NOVELTY_QUERY_RESULT_LIMIT,
+        "focus": focus,
+    }
+
+
+def _unique_strings(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        text = str(value).strip()
+        key = " ".join(text.lower().split())
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        result.append(text)
+    return result
+
+
+def _novelty_terms(idea: str) -> list[str]:
+    words = [word.lower() for word in idea.replace("-", " ").split()]
+    terms: list[str] = []
+    for word in words:
+        cleaned = "".join(ch for ch in word if ch.isalnum())
+        if len(cleaned) < 3 or cleaned in _NOVELTY_STOPWORDS:
+            continue
+        if cleaned not in terms:
+            terms.append(cleaned)
+    return terms
+
+
+def _novelty_paper_row(paper: dict[str, Any], *, focus: str) -> dict[str, Any]:
+    return {
+        "title": str(paper.get("title", "")).strip(),
+        "url": str(paper.get("url", "")).strip(),
+        "published": str(paper.get("published", "")).strip(),
+        "authors": paper.get("authors", []) if isinstance(paper.get("authors"), list) else [],
+        "focus": focus,
+    }
+
+
+def _novelty_paper_key(row: dict[str, Any]) -> str:
+    title = " ".join(str(row.get("title", "")).lower().split())
+    url = " ".join(str(row.get("url", "")).lower().split())
+    return title or url
+
+
+def _novelty_questions(idea: str) -> list[str]:
+    terms = ", ".join(_novelty_terms(idea)[:5]) or "the core mechanism"
+    return [
+        f"Which 2024-2026 papers already combine {terms}?",
+        "What is the nearest architecture or training-pipeline ancestor, and what exact component changes?",
+        "Which benchmark, ablation, or negative result would distinguish this from adjacent work?",
+        "Does the contribution depend on a new mechanism, a new measurement, or only a new application domain?",
+    ]
 
 
 def tool_present_options(args: dict[str, Any]) -> str:
@@ -1747,11 +1896,11 @@ TOOL_SPECS: list[dict[str, Any]] = [
      "parameters": _obj({"query": {"type": "string"}, "max_results": {"type": "integer"}}, ["query"])},
     {"name": "web_fetch", "description": "Fetch a URL and return its readable text content.",
      "parameters": _obj({"url": {"type": "string"}}, ["url"])},
-    {"name": "arxiv_search", "description": "Search arXiv for papers. sort_by: relevance | submittedDate | lastUpdatedDate. Use for literature grounding.",
+    {"name": "arxiv_search", "description": "Search arXiv for papers. Defaults to 20 results. sort_by: relevance | submittedDate | lastUpdatedDate. Use for literature grounding.",
      "parameters": _obj({"query": {"type": "string", "description": "arXiv query, e.g. 'cat:cs.LG AND (abs:sparse autoencoder OR abs:linear probe)'"}, "max_results": {"type": "integer"}, "sort_by": {"type": "string", "enum": ["relevance", "submittedDate", "lastUpdatedDate"]}}, ["query"])},
     {"name": "neuronpedia_search", "description": "Semantic search over SAE-feature explanations for a model on Neuronpedia (e.g. model_id 'gpt2-small').",
      "parameters": _obj({"model_id": {"type": "string"}, "query": {"type": "string"}}, ["model_id", "query"])},
-    {"name": "verify_novelty", "description": "Check whether prior papers already pursued an idea (searches arXiv). Call this for each proposed research direction before presenting it.",
+    {"name": "verify_novelty", "description": "Deep novelty check for a research idea using multi-pass arXiv searches across relevance, recency, architecture, and recent-discovery angles. Call this for each proposed research direction before presenting it.",
      "parameters": _obj({"idea": {"type": "string", "description": "the research idea/direction to novelty-check"}, "queries": {"type": "array", "items": {"type": "string"}, "description": "optional arXiv queries to probe for prior work"}}, ["idea"])},
     {"name": "present_options", "description": "Present 2-5 research directions to the user as an interactive, expandable picker and return their choice. Use this instead of writing options as prose.",
      "parameters": _obj({"options": {"type": "array", "items": {"type": "object", "properties": {
