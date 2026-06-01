@@ -167,6 +167,8 @@ def _persisted_json_summary(name: str, payload: Any, path: Path, result: str) ->
         "evidence_strength",
         "source_diversity",
         "required_delta",
+        "comparison_matrix",
+        "recent_pressure",
         "closest_prior_art",
         "claim_readiness",
     ):
@@ -208,6 +210,8 @@ def _essential_novelty_summary(payload: dict[str, Any]) -> dict[str, Any]:
             "evidence_strength",
             "source_diversity",
             "required_delta",
+            "comparison_matrix",
+            "recent_pressure",
             "claim_readiness",
         ):
             if key in assessment:
@@ -323,6 +327,8 @@ def _compact_json_value(value: Any) -> Any:
             "evidence_strength",
             "source_diversity",
             "required_delta",
+            "comparison_matrix",
+            "recent_pressure",
             "closest_prior_art",
             "claim_readiness",
         ):
@@ -1418,6 +1424,8 @@ def _novelty_assessment(
         "recent_window": _novelty_recent_window_label(),
     }
     coverage["focus_coverage"] = _novelty_focus_coverage(coverage["arxiv_focuses"], coverage["web_focuses"])
+    comparison_matrix = _novelty_comparison_matrix(scored, coverage)
+    recent_pressure = _novelty_recent_pressure(rows)
     if not rows and errors:
         risk = "unknown_search_incomplete"
         verdict = "Novelty is not assessable because one or more retrieval passes failed."
@@ -1441,11 +1449,9 @@ def _novelty_assessment(
         "closest_prior_art": closest,
         "claim_readiness": _novelty_claim_readiness(risk, top_score, coverage),
         "coverage": coverage,
-        "required_delta": [
-            "Name the nearest prior paper and the exact method component that differs.",
-            "Show a benchmark, ablation, or causal test where the idea behaves differently.",
-            "Downgrade novelty if the contribution is only a new wording of an existing method, probe, or experiment.",
-        ],
+        "comparison_matrix": comparison_matrix,
+        "recent_pressure": recent_pressure,
+        "required_delta": _novelty_required_delta(idea, closest, comparison_matrix, coverage),
     }
 
 
@@ -1494,6 +1500,124 @@ def _novelty_focus_coverage(arxiv_focuses: list[str], web_focuses: list[str]) ->
         "recent_discovery": "discovery" in text,
         "architecture": "architecture" in text,
     }
+
+
+_NOVELTY_COMPARISON_AXES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
+    ("recency", ("recent", "submitted", "updated", "discovery"), ()),
+    ("method", ("method", "design", "approach"), ()),
+    ("mechanism", ("mechanism", "ablation", "causal", "probe"), ()),
+    ("architecture", ("architecture", "variant", "model"), ()),
+    ("evaluation", ("evaluation", "benchmark", "leaderboard", "metric"), ("benchmark",)),
+    ("implementation", ("implementation", "repository", "code"), ("code_repository",)),
+    ("replication", ("replication", "reproduction", "reproduce"), ()),
+    ("failure_modes", ("failure", "limitations", "negative"), ()),
+    ("protocol", ("protocol", "dataset", "task"), ()),
+)
+
+
+def _novelty_comparison_matrix(scored: list[dict[str, Any]], coverage: dict[str, Any]) -> list[dict[str, Any]]:
+    focus_coverage = coverage.get("focus_coverage") if isinstance(coverage.get("focus_coverage"), dict) else {}
+    matrix: list[dict[str, Any]] = []
+    for axis, focus_terms, source_types in _NOVELTY_COMPARISON_AXES:
+        matches = [row for row in scored if _novelty_prior_matches_axis(row, focus_terms, source_types)]
+        top = max(matches, key=lambda row: row.get("score", 0.0), default={})
+        covered = bool(focus_coverage.get(axis) or matches)
+        if axis == "recency":
+            covered = coverage.get("recent_evidence", 0) > 0
+        representative = _novelty_representative_prior(top)
+        matrix.append(
+            {
+                "axis": axis,
+                "covered": bool(covered),
+                "evidence_count": len(matches),
+                "recent_evidence_count": sum(1 for row in matches if _novelty_is_recent(row.get("published", ""))),
+                "strongest_score": round(float(top.get("score", 0.0) or 0.0), 3) if top else 0.0,
+                "representative_prior": representative,
+                "next_action": _novelty_axis_next_action(axis, bool(covered), representative),
+            }
+        )
+    return matrix
+
+
+def _novelty_prior_matches_axis(row: dict[str, Any], focus_terms: tuple[str, ...], source_types: tuple[str, ...]) -> bool:
+    focus = str(row.get("focus", "")).lower()
+    source_type = str(row.get("source_type", "")).lower()
+    reason = str(row.get("reason", "")).lower()
+    title = str(row.get("title", "")).lower()
+    haystack = f"{focus} {reason} {title}"
+    return any(term in haystack for term in focus_terms) or bool(source_types and source_type in source_types)
+
+
+def _novelty_representative_prior(row: dict[str, Any]) -> dict[str, Any]:
+    if not row:
+        return {}
+    return {
+        "title": row.get("title", ""),
+        "url": row.get("url", ""),
+        "source_type": row.get("source_type", ""),
+        "published": row.get("published", ""),
+        "matched_terms": row.get("matched_terms", []),
+    }
+
+
+def _novelty_axis_next_action(axis: str, covered: bool, representative: dict[str, Any]) -> str:
+    if not covered:
+        return f"Run a targeted {axis.replace('_', ' ')} search and add the closest counterexample before ranking this idea."
+    title = str(representative.get("title", "")).strip()
+    if title:
+        return f"Compare the idea against '{title}' on the {axis.replace('_', ' ')} axis."
+    return f"Summarize the strongest retrieved {axis.replace('_', ' ')} evidence and the remaining delta."
+
+
+def _novelty_recent_pressure(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    recent_rows = [row for row in rows if _novelty_is_recent(row.get("published", ""))]
+    years = sorted({year for row in rows if (year := _novelty_year(row.get("published", "")))}, reverse=True)
+    recent_titles = []
+    for row in recent_rows[:5]:
+        title = str(row.get("title", "")).strip()
+        if title:
+            recent_titles.append(title)
+    return {
+        "recent_window": _novelty_recent_window_label(),
+        "recent_evidence_count": len(recent_rows),
+        "latest_year": years[0] if years else None,
+        "recent_prior_titles": recent_titles,
+        "status": "recent_prior_present" if recent_rows else "missing_recent_prior_art",
+    }
+
+
+def _novelty_required_delta(
+    idea: str,
+    closest: list[dict[str, Any]],
+    comparison_matrix: list[dict[str, Any]],
+    coverage: dict[str, Any],
+) -> list[str]:
+    terms = _novelty_terms(idea)
+    actions: list[str] = []
+    if closest:
+        top = closest[0]
+        title = str(top.get("title", "")).strip() or str(top.get("url", "")).strip() or "the nearest retrieved prior"
+        matched = ", ".join(str(term) for term in top.get("matched_terms", [])[:6]) or "the core idea terms"
+        source_type = str(top.get("source_type", "")).strip() or "prior art"
+        actions.append(
+            f"Differentiate from '{title}' ({source_type}): matched {matched}; name the exact method, mechanism, architecture, or evaluation component that changes."
+        )
+    else:
+        term_preview = ", ".join(terms[:6]) or "the idea's core mechanism"
+        actions.append(
+            f"No close prior was retrieved for {term_preview}; repeat targeted expert/literature searches before treating absence as novelty evidence."
+        )
+    missing_axes = [str(row.get("axis", "")) for row in comparison_matrix if not row.get("covered")]
+    if missing_axes:
+        actions.append(
+            "Fill missing novelty comparison axes before selection: " + ", ".join(axis.replace("_", " ") for axis in missing_axes[:6]) + "."
+        )
+    if coverage.get("recent_evidence", 0) < 1:
+        actions.append("Add recent submitted-date and updated-date evidence; novelty cannot be judged from stale-only prior art.")
+    actions.append(
+        "Require an empirical delta: benchmark result, ablation, causal intervention, replication, or failure-mode test where the idea differs from the closest prior."
+    )
+    return actions
 
 
 def _novelty_claim_readiness(risk: str, top_score: float, coverage: dict[str, Any]) -> dict[str, Any]:
