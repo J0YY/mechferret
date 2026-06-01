@@ -147,6 +147,11 @@ class ChatJobRunner:
     def saved(self) -> list[PromptJob]:
         return _load_saved_queue(self._queue_path)
 
+    def saved_only(self) -> list[PromptJob]:
+        with self._lock:
+            live_ids = {job.id for job in self._jobs}
+        return [job for job in self.saved() if job.id not in live_ids]
+
     def restore_saved(self, target: str = "all") -> list[PromptJob]:
         saved_jobs = self.saved()
         if not saved_jobs:
@@ -690,7 +695,7 @@ def _print_status_and_bar(agent, session, runner: ChatJobRunner | None = None) -
         active = runner.active()
         side_active = len(runner.side_active())
         queued = len(runner.queued())
-        saved = len(runner.saved())
+        saved = len(runner.saved_only())
         if runner.paused():
             bits.append(_c("paused", "33"))
         if active is not None:
@@ -1080,7 +1085,7 @@ def _print_queue(runner: ChatJobRunner) -> None:
     side_active = runner.side_active()
     queued = runner.queued()
     recent = runner.recent()
-    saved = runner.saved()
+    saved = runner.saved_only()
     if runner.paused():
         print(_c("  queue paused; queued prompts will wait for /queue resume", "33"))
     if active is None and not side_active and not queued and not saved:

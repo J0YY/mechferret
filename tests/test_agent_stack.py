@@ -543,6 +543,27 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("/queue move #2 first", rendered)
         self.assertIn("/queue cancel #2", rendered)
 
+    def test_repl_queue_view_does_not_duplicate_live_queued_jobs_as_saved(self):
+        from mechferret import repl
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: None, queue_path=Path("queue-no-saved-dupes.json"))
+            try:
+                runner.pause()
+                runner.submit("one")
+                runner.submit("two")
+                repl._print_queue(runner)
+            finally:
+                runner.resume()
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("queued  #1", rendered)
+        self.assertIn("queued  #2", rendered)
+        self.assertNotIn("saved   #1", rendered)
+        self.assertNotIn("saved   #2", rendered)
+
     def test_repl_btw_runs_while_main_prompt_is_active(self):
         from mechferret import repl
 
