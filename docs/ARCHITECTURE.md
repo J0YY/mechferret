@@ -38,7 +38,7 @@ attention**.
 
 | Module | Role |
 |---|---|
-| `tasks.py` | Canonical tasks: IOI, induction, greater-than, factual recall (clean/corrupt prompts + answer pairs). |
+| `tasks.py` | Supported named text tasks: induction, greater-than, factual recall, and IOI (clean/corrupt prompts + answer pairs). |
 | `probes.py` | Backend-agnostic probes: `head_ablation`, `activation_patching`, `attention_pattern`, `direct_logit_attribution`, `logit_lens`. Each reports a signed **effect** and a matched **control**. |
 | `synthetic.py` | Explicit offline smoke backend. Provides structured probe results for tests and demos — **no torch, no GPU, no keys**. |
 | `backends.py` | Backend resolution + the real `TransformerLensBackend` (identical probe surface, measures a real `HookedTransformer`). Auto uses synthetic only when real deps are absent or `MECHFERRET_FORCE_SYNTHETIC=1`; real-model load failures do not silently downgrade. |

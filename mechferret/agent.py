@@ -439,7 +439,7 @@ def _tool_call_needs_explicit_benchmark_target(
 def _redact_rejected_benchmark_content(value: Any) -> Any:
     replacement = (
         "[Benchmark-specific prior context omitted for this turn because the current prompt rejected "
-        "default benchmark model/task context.]"
+        "that model/task context.]"
     )
     if isinstance(value, str):
         return replacement if _looks_like_benchmark_context(value) else value

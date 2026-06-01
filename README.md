@@ -452,7 +452,7 @@ pipeline has to be useful before every GPU job or full experiment is ready.
 | --- | --- | --- |
 | Local demo | Runs a complete source-to-dossier path without API keys or GPUs. | Sources, claims, gaps, report, audit, paper scaffold. |
 | Literature loop | Grounds a direction in sources and prior work. | Sources, claims, gaps, dossier. |
-| Discovery loop | Runs structured interp experiments for skills like IOI. | Experiments, discoveries, graph, evals. |
+| Discovery loop | Runs structured interp experiments for an explicitly selected task or skill. | Experiments, discoveries, graph, evals. |
 | Paper loop | Converts current findings into a draft and review cycle. | `runs/*/paper/main.tex`, optional PDF, reviewer scores. |
 | Modal path | Runs heavier experiment work on GPU infrastructure. | Same artifact contract, larger compute. |
 
@@ -652,12 +652,13 @@ Show one:
 mechferret /skills <skill>
 ```
 
-Built-in skills:
+Built-in skills, all requiring an explicitly chosen model unless the skill file
+declares one:
 
-- `ioi-circuit`
 - `find-induction-heads`
 - `logit-lens-sweep`
 - `factual-recall-trace`
+- `ioi-circuit`
 
 Skills are useful, but they are only one piece. The bigger value is that
 MechFerret wraps skills in memory, tracing, reports, paper generation, review,

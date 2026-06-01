@@ -2250,7 +2250,23 @@ class AgentToolTest(unittest.TestCase):
 
     def test_list_skills_tool(self):
         payload = json.loads(agent._run_tool("list_skills", {}))
-        self.assertTrue(any(s["name"] == "ioi-circuit" for s in payload))
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["count"], len(payload["skills"]))
+        self.assertTrue(any(s["name"] == "ioi-circuit" for s in payload["skills"]))
+        for skill in payload["skills"]:
+            self.assertIn("model_required", skill)
+            self.assertIn("declares_model", skill)
+        self.assertTrue(any("model" in action.lower() for action in payload["next_actions"]))
+        self.assertIn("No skill chooses", payload["model_policy"])
+
+    def test_environment_status_reports_skill_model_policy(self):
+        payload = json.loads(agent._run_tool("environment_status", {}))
+
+        self.assertIn("skills", payload)
+        self.assertEqual(payload["skill_count"], len(payload["skills"]))
+        self.assertTrue(any(skill["model_required"] for skill in payload["skills"]))
+        self.assertTrue(payload["skills_requiring_model"])
+        self.assertIn("explicitly selected model", payload["model_policy"])
 
     def test_unknown_tool_is_reported(self):
         payload = json.loads(agent._run_tool("nope", {}))

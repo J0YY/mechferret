@@ -2955,7 +2955,19 @@ def _option_strings(value: Any) -> list[str]:
 def tool_list_skills(_args: dict[str, Any]) -> str:
     from .skills import list_skills
 
-    return json.dumps([{"name": s.name, "task": s.task, "description": s.description} for s in list_skills()])
+    skills = [_skill_tool_payload(s) for s in list_skills()]
+    return json.dumps(
+        {
+            "ok": True,
+            "skills": skills,
+            "count": len(skills),
+            "model_policy": "No skill chooses an interpretability model unless its JSON explicitly declares one.",
+            "next_actions": [
+                "Ask the user which model to study before running a skill with model_required=true.",
+                "Pass model and backend explicitly to run_discovery; do not infer a benchmark model from the skill name.",
+            ],
+        }
+    )
 
 
 def tool_environment_status(_args: dict[str, Any]) -> str:
@@ -2963,11 +2975,41 @@ def tool_environment_status(_args: dict[str, Any]) -> str:
     from .modal_app import modal_status
     from .skills import list_skills
 
+    skills = [_skill_tool_payload(s) for s in list_skills()]
     return json.dumps({
-        "skills": [s.name for s in list_skills()],
+        "skills": skills,
+        "skill_count": len(skills),
+        "skills_requiring_model": [s["name"] for s in skills if s["model_required"]],
+        "model_policy": "Discovery requires an explicitly selected model unless a skill JSON declares one.",
         "modal": modal_status(),
         "cluster_configured": load_cluster_config().configured,
+        "next_actions": [
+            "Choose a skill/task, model, and backend explicitly before starting discovery.",
+            "Use run_research first when the model, behavior, or evidence scope is not yet specified.",
+        ],
     })
+
+
+def _skill_text(value: Any) -> str:
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _skill_tool_payload(skill: Any) -> dict[str, Any]:
+    model = _skill_text(getattr(skill, "model", ""))
+    seeds = getattr(skill, "seeds", [])
+    seeds = seeds if isinstance(seeds, list) else []
+    return {
+        "name": _skill_text(getattr(skill, "name", "")),
+        "task": _skill_text(getattr(skill, "task", "")),
+        "description": _skill_text(getattr(skill, "description", "")),
+        "model": model,
+        "declares_model": bool(model),
+        "model_required": not bool(model),
+        "question": _skill_text(getattr(skill, "question", "")),
+        "seed_policy": ", ".join(str(seed) for seed in seeds) if seeds else "run-specific generated seeds",
+        "budget": getattr(skill, "budget", {}) if isinstance(getattr(skill, "budget", {}), dict) else {},
+        "stop": getattr(skill, "stop", {}) if isinstance(getattr(skill, "stop", {}), dict) else {},
+    }
 
 
 def tool_project_status(args: dict[str, Any]) -> str:
