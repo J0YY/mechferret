@@ -939,6 +939,21 @@ class AgentToolTest(unittest.TestCase):
         self.assertFalse(bad_threat_model["ok"])
         self.assertEqual(bad_threat_model["expected"], "objects with novelty_threat_model from verify_novelty assessment")
 
+        unsearched_threat = _validated_option("Unsearched threat")
+        unsearched_threat["novelty_threat_model"][0] = {
+            **unsearched_threat["novelty_threat_model"][0],
+            "searched": False,
+            "risk": "not_searched",
+        }
+        bad_unsearched_threat = json.loads(
+            tools.run_tool(
+                "present_options",
+                {"options": [unsearched_threat]},
+            )
+        )
+        self.assertFalse(bad_unsearched_threat["ok"])
+        self.assertEqual(bad_unsearched_threat["expected"], "objects with novelty_threat_model from verify_novelty assessment")
+
         bad_disqualifying_tests = json.loads(
             tools.run_tool(
                 "present_options",
@@ -977,6 +992,23 @@ class AgentToolTest(unittest.TestCase):
         self.assertFalse(bad_disqualifying_tests["ok"])
         self.assertEqual(
             bad_disqualifying_tests["expected"],
+            "objects with disqualifying_overlap_tests from verify_novelty assessment",
+        )
+
+        unsearched_disqualifier = _validated_option("Unsearched disqualifier")
+        unsearched_disqualifier["disqualifying_overlap_tests"][0] = {
+            **unsearched_disqualifier["disqualifying_overlap_tests"][0],
+            "risk": "not_searched",
+        }
+        bad_unsearched_disqualifier = json.loads(
+            tools.run_tool(
+                "present_options",
+                {"options": [unsearched_disqualifier]},
+            )
+        )
+        self.assertFalse(bad_unsearched_disqualifier["ok"])
+        self.assertEqual(
+            bad_unsearched_disqualifier["expected"],
             "objects with disqualifying_overlap_tests from verify_novelty assessment",
         )
 

@@ -2808,8 +2808,12 @@ def _valid_option_threat_model(value: Any) -> bool:
     if len(valid_raw) != len(value):
         return False
     rows = _option_threat_model(value)
-    threats = {row["threat"] for row in rows}
-    return bool(rows) and NOVELTY_REQUIRED_THREATS <= threats
+    required = {row["threat"]: row for row in rows if row["threat"] in NOVELTY_REQUIRED_THREATS}
+    return (
+        bool(rows)
+        and NOVELTY_REQUIRED_THREATS <= set(required)
+        and all(row.get("searched") is True and row.get("risk") != "not_searched" for row in required.values())
+    )
 
 
 def _option_threat_model(value: Any) -> list[dict[str, Any]]:
@@ -2857,8 +2861,12 @@ def _valid_option_disqualifying_tests(value: Any) -> bool:
     if len(valid_raw) != len(value):
         return False
     rows = _option_disqualifying_tests(value)
-    tests = {row["test"] for row in rows}
-    return bool(rows) and NOVELTY_REQUIRED_THREATS <= tests
+    required = {row["test"]: row for row in rows if row["test"] in NOVELTY_REQUIRED_THREATS}
+    return (
+        bool(rows)
+        and NOVELTY_REQUIRED_THREATS <= set(required)
+        and all(row.get("risk") != "not_searched" for row in required.values())
+    )
 
 
 def _option_disqualifying_tests(value: Any) -> list[dict[str, Any]]:
