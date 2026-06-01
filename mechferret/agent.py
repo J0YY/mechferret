@@ -54,6 +54,8 @@ Workflow when the user wants to plan research:
 2. For each candidate direction, call verify_novelty to check whether prior
    papers already did it. Read its assessment.risk, assessment.verdict,
    assessment.closest_prior_art, assessment.claim_readiness, and
+   assessment.coverage.frontier_architecture_covered,
+   assessment.coverage.frontier_architecture_focuses, and
    assessment.search_audit fields; do not summarize novelty from memory.
 3. Call present_options with 2-5 concrete directions (each with a one-line
    summary, a fuller detail paragraph, key citations, novelty_risk,
@@ -62,7 +64,8 @@ Workflow when the user wants to plan research:
    recent_pressure, and required_delta) so the user can browse and pick. Do NOT
    write the options out as prose. Only present directions whose novelty audit
    found recent prior evidence and unique retrieved evidence from both arXiv and
-   web/project/code sources.
+   web/project/code sources, including explicit recent frontier architecture or
+   model-family coverage.
 
 OUTPUT RULES (important):
 - Plain text only. No markdown: no #, *, **, backticks, tables, or '-' bullets.

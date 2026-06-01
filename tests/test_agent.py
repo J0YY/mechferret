@@ -227,6 +227,11 @@ class AgentToolTest(unittest.TestCase):
         option_list_schema = next(tool for tool in tools.TOOL_SPECS if tool["name"] == "present_options")["parameters"]["properties"]["options"]
         self.assertEqual(option_list_schema["minItems"], 2)
         self.assertEqual(option_list_schema["maxItems"], 5)
+        novelty_description = next(tool for tool in tools.TOOL_SPECS if tool["name"] == "verify_novelty")["description"]
+        self.assertIn("frontier architectures", novelty_description)
+        self.assertIn("model-family discoveries", novelty_description)
+        options_description = next(tool for tool in tools.TOOL_SPECS if tool["name"] == "present_options")["description"]
+        self.assertIn("frontier_architecture coverage", options_description)
         option_schema = option_list_schema["items"]
         self.assertIn("novelty_threat_model", option_schema["required"])
         self.assertIn("disqualifying_overlap_tests", option_schema["required"])
@@ -1218,6 +1223,9 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("disqualifying_overlap_tests", prompt)
         self.assertIn("search_audit", prompt)
         self.assertIn("recent_pressure", prompt)
+        self.assertIn("frontier_architecture_covered", prompt)
+        self.assertIn("frontier architecture", prompt)
+        self.assertIn("model-family coverage", prompt)
 
     def test_assistant_text_sanitizes_stale_benchmark_scaffolds(self):
         stale = (
