@@ -35,6 +35,10 @@ WIDTH = 78
 PURPLE = "38;5;141"  # soft violet
 PURPLE_B = "1;38;5;141"
 TERMINAL_JOB_STATUSES = {"done", "error", "canceled"}
+BTW_PROMPT_PREFIX = (
+    "Side request entered with /btw while another prompt was running. "
+    "Answer it as a compact aside unless it changes the active work:\n\n"
+)
 _QUEUE_FILE_LOCKS_GUARD = threading.Lock()
 _QUEUE_FILE_LOCKS: dict[Path, threading.Lock] = {}
 
@@ -457,7 +461,7 @@ class ChatJobRunner:
                 job.status = "running"
                 self._set_active(job)
                 self.save_pending()
-                print(_c(f"  ▶ queued #{job.id} {job.kind}: {_short_job_text(job.text)}", "2"))
+                print(_c(f"  ▶ queued #{job.id} {job.kind}: {_short_job_text(_display_job_text(job))}", "2"))
                 reply = self._chat_fn(self.agent, self.session, job.text, background=True)
                 if reply is None:
                     raise RuntimeError("no reply produced")
@@ -478,7 +482,7 @@ class ChatJobRunner:
 
     def _run_side(self, job: PromptJob) -> None:
         try:
-            print(_c(f"  ▶ side #{job.id}: {_short_job_text(job.text)}", "2"))
+            print(_c(f"  ▶ side #{job.id}: {_short_job_text(_display_job_text(job))}", "2"))
             side_agent = self._side_agent_factory(self.agent)
             side_session = Session()
             reply = self._chat_fn(side_agent, side_session, job.text, background=True)
@@ -683,6 +687,12 @@ def _welcome(session: Session) -> str:
 def _short_job_text(text: str, limit: int = 60) -> str:
     compact = " ".join(text.split())
     return compact if len(compact) <= limit else compact[: limit - 1] + "…"
+
+
+def _display_job_text(job: PromptJob) -> str:
+    if job.kind == "btw" and job.text.startswith(BTW_PROMPT_PREFIX):
+        return job.text[len(BTW_PROMPT_PREFIX):]
+    return job.text
 
 
 def _print_status_and_bar(agent, session, runner: ChatJobRunner | None = None) -> None:
@@ -1073,11 +1083,7 @@ def _line_after_words(line: str, count: int) -> str:
 
 
 def _btw_prompt(text: str) -> str:
-    return (
-        "Side request entered with /btw while another prompt was running. "
-        "Answer it as a compact aside unless it changes the active work:\n\n"
-        + text
-    )
+    return BTW_PROMPT_PREFIX + text
 
 
 def _print_queue(runner: ChatJobRunner) -> None:
@@ -1092,13 +1098,13 @@ def _print_queue(runner: ChatJobRunner) -> None:
         print(_c("  queue empty", "2"))
     else:
         if active is not None:
-            print(_c(f"  running #{active.id} {active.kind}: {_short_job_text(active.text)}", PURPLE))
+            print(_c(f"  running #{active.id} {active.kind}: {_short_job_text(_display_job_text(active))}", PURPLE))
         for job in side_active:
-            print(_c(f"  side    #{job.id} {job.kind}: {_short_job_text(job.text)}", PURPLE))
+            print(_c(f"  side    #{job.id} {job.kind}: {_short_job_text(_display_job_text(job))}", PURPLE))
         for job in queued:
-            print(_c(f"  queued  #{job.id} {job.kind}: {_short_job_text(job.text)}", "2"))
+            print(_c(f"  queued  #{job.id} {job.kind}: {_short_job_text(_display_job_text(job))}", "2"))
         for job in saved:
-            print(_c(f"  saved   #{job.id} {job.kind}: {_short_job_text(job.text)}", "33"))
+            print(_c(f"  saved   #{job.id} {job.kind}: {_short_job_text(_display_job_text(job))}", "33"))
         if saved:
             print(_c("  run `/queue restore` to enqueue saved prompts, or `/queue clear` to drop them", "2"))
     done = [job for job in recent if job.status in {"done", "error", "canceled"}]
@@ -1243,7 +1249,7 @@ def _queue_show(runner: ChatJobRunner, args: list[str]) -> None:
         print(_c("  error:", "31"))
         print(_indent(job.error))
     print(_c("  prompt:", "1"))
-    print(_render_reply(job.text))
+    print(_render_reply(_display_job_text(job)))
     if job.reply:
         print(_c("  reply:", "1"))
         print(_render_reply(job.reply))

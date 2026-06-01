@@ -564,6 +564,37 @@ class AgentStackTest(unittest.TestCase):
         self.assertNotIn("saved   #1", rendered)
         self.assertNotIn("saved   #2", rendered)
 
+    def test_repl_btw_queue_views_show_user_prompt_not_internal_prefix(self):
+        from mechferret import repl
+
+        release = threading.Event()
+        calls = []
+
+        def fake_chat(agent, session, text, *, background=False):
+            calls.append(text)
+            self.assertTrue(release.wait(timeout=2))
+            return text
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("btw-display.json"))
+            try:
+                side = runner.submit_side(repl._btw_prompt("side question"))
+                deadline = time.monotonic() + 2
+                while not runner.side_active() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                repl._print_queue(runner)
+                repl._queue_show(runner, [str(side.id)])
+            finally:
+                release.set()
+                runner.wait_idle(timeout=2)
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("side question", rendered)
+        self.assertNotIn("Side request entered with /btw", rendered)
+        self.assertIn("Side request entered with /btw", calls[0])
+
     def test_repl_btw_runs_while_main_prompt_is_active(self):
         from mechferret import repl
 
