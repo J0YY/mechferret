@@ -202,6 +202,8 @@ class ClusterTest(unittest.TestCase):
                 )
             self.assertTrue(result["ok"])
             self.assertEqual(result["backend"], "local")
+            self.assertEqual(result["run"]["provenance"]["backend_requested"], "synthetic")
+            self.assertEqual(result["run"]["provenance"]["backend_used"], "synthetic")
             self.assertGreaterEqual(len(result["run"]["discoveries"]), 1)
 
 

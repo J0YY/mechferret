@@ -227,6 +227,6 @@ def _local_discovery(question, skill, task, model, out_dir) -> dict[str, Any]:
     from .discovery import DiscoveryController
 
     run = DiscoveryController().run(
-        question=question, skill=skill, task=task, model=model, backend="auto", out_dir=out_dir
+        question=question, skill=skill, task=task, model=model, backend="synthetic", out_dir=out_dir
     )
     return {"ok": True, "backend": "local", "run": run.to_dict(), "out_dir": str(out_dir)}
