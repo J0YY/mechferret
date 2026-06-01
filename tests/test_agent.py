@@ -549,8 +549,27 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(bad_title["expected"], "objects with non-empty string title")
         self.assertEqual(bad_title["index"], 0)
 
-        ok = json.loads(tools.run_tool("present_options", {"options": [{"title": "Run audit", "summary": "..."}]}))
+        ok = json.loads(
+            tools.run_tool(
+                "present_options",
+                {
+                    "options": [
+                        {
+                            "title": "Run audit",
+                            "summary": "...",
+                            "novelty_risk": "medium_prior_art_risk",
+                            "novelty_verdict": "Related work exists; specify the delta.",
+                            "closest_prior_art": ["Closest Paper https://arxiv.org/abs/2501.0001"],
+                            "required_delta": "Show a causal ablation that differs from prior work.",
+                        }
+                    ]
+                },
+            )
+        )
         self.assertEqual(ok["options"], ["Run audit"])
+        self.assertEqual(ok["option_details"][0]["novelty_risk"], "medium_prior_art_risk")
+        self.assertIn("Closest Paper", ok["option_details"][0]["closest_prior_art"][0])
+        self.assertIn("causal ablation", ok["option_details"][0]["required_delta"])
 
     def test_run_discovery_requires_explicit_model_without_modelled_skill(self):
         from mechferret import tools
@@ -577,6 +596,8 @@ class AgentToolTest(unittest.TestCase):
 
         self.assertNotIn("Previously confirmed mechanisms", prompt)
         self.assertNotIn("find the IOI circuit in gpt2", prompt)
+        self.assertIn("novelty_risk", prompt)
+        self.assertIn("closest_prior_art", prompt)
 
     def test_verify_novelty_runs_deep_recent_architecture_search(self):
         from mechferret import tools

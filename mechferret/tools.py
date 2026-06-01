@@ -1171,7 +1171,32 @@ def tool_present_options(args: dict[str, Any]) -> str:
                 )
             )
         titles.append(title)
-    return json.dumps({"options": titles})
+    return json.dumps({"options": titles, "option_details": [_option_detail(option) for option in options]})
+
+
+def _option_detail(option: dict[str, Any]) -> dict[str, Any]:
+    detail = {
+        "title": str(option.get("title", "")).strip(),
+        "summary": str(option.get("summary", "")).strip(),
+    }
+    for key in ("novelty_risk", "novelty_verdict", "novelty", "required_delta"):
+        value = option.get(key)
+        if isinstance(value, str) and value.strip():
+            detail[key] = value.strip()
+    closest = _option_strings(option.get("closest_prior_art", []))[:3]
+    if closest:
+        detail["closest_prior_art"] = closest
+    return detail
+
+
+def _option_strings(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    for item in value:
+        if isinstance(item, str) and item.strip():
+            result.append(item.strip())
+    return result
 
 
 def tool_list_skills(_args: dict[str, Any]) -> str:
@@ -1995,13 +2020,17 @@ TOOL_SPECS: list[dict[str, Any]] = [
      "parameters": _obj({"model_id": {"type": "string"}, "query": {"type": "string"}}, ["model_id", "query"])},
     {"name": "verify_novelty", "description": "Deep novelty check for a research idea using multi-pass arXiv searches across relevance, recency, architecture, and recent-discovery angles. Call this for each proposed research direction before presenting it.",
      "parameters": _obj({"idea": {"type": "string", "description": "the research idea/direction to novelty-check"}, "queries": {"type": "array", "items": {"type": "string"}, "description": "optional arXiv queries to probe for prior work"}}, ["idea"])},
-    {"name": "present_options", "description": "Present 2-5 research directions to the user as an interactive, expandable picker and return their choice. Use this instead of writing options as prose.",
+    {"name": "present_options", "description": "Present 2-5 research directions to the user as an interactive, expandable picker and return their choice. Use this instead of writing options as prose. Include novelty_risk, novelty_verdict, closest_prior_art, and required_delta from verify_novelty assessment.",
      "parameters": _obj({"options": {"type": "array", "items": {"type": "object", "properties": {
          "title": {"type": "string"},
          "summary": {"type": "string", "description": "one line"},
          "detail": {"type": "string", "description": "a fuller paragraph: what the project is about"},
          "citations": {"type": "array", "items": {"type": "string"}, "description": "key paper titles/URLs"},
-         "novelty": {"type": "string", "description": "novelty verdict from verify_novelty"},
+         "novelty": {"type": "string", "description": "legacy novelty summary from verify_novelty"},
+         "novelty_risk": {"type": "string", "description": "assessment.risk from verify_novelty"},
+         "novelty_verdict": {"type": "string", "description": "assessment.verdict from verify_novelty"},
+         "closest_prior_art": {"type": "array", "items": {"type": "string"}, "description": "nearest prior paper titles/URLs from assessment.closest_prior_art"},
+         "required_delta": {"type": "string", "description": "specific delta needed to justify novelty"},
      }, "required": ["title", "summary"]}}}, ["options"])},
     {"name": "run_research", "description": "Run the general prompt-to-dossier literature/research pipeline over explicit sources, URLs, memory, or a configured provider.",
      "parameters": _obj({

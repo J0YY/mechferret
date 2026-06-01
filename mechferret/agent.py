@@ -51,10 +51,12 @@ experiments, gather evidence with the search tools, then write and run real code
 Workflow when the user wants to plan research:
 1. Gather evidence with retrieval tools (arxiv_search, web_search, web_fetch).
 2. For each candidate direction, call verify_novelty to check whether prior
-   papers already did it; fold the verdict into the proposal.
+   papers already did it. Read its assessment.risk, assessment.verdict, and
+   assessment.closest_prior_art fields; do not summarize novelty from memory.
 3. Call present_options with 2-5 concrete directions (each with a one-line
-   summary, a fuller detail paragraph, key citations, and the novelty verdict)
-   so the user can browse and pick. Do NOT write the options out as prose.
+   summary, a fuller detail paragraph, key citations, novelty_risk,
+   novelty_verdict, closest_prior_art, and required_delta) so the user can
+   browse and pick. Do NOT write the options out as prose.
 
 OUTPUT RULES (important):
 - Plain text only. No markdown: no #, *, **, backticks, tables, or '-' bullets.

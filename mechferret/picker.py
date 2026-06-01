@@ -31,7 +31,7 @@ def select(prompt: str, options: Sequence, multi: bool = False):
 
 
 def select_rich(prompt: str, options: list[dict]):
-    """Expandable option picker. options: [{title, summary, detail, citations, novelty}].
+    """Expandable option picker for option dictionaries.
 
     Returns the chosen title, or "none" if cancelled. Up/Down move, Right/Tab/d
     expands detail for the highlighted option, Enter selects, Esc/q skips.
@@ -67,8 +67,15 @@ def _select_rich_fallback(prompt, options):
         out.write(prompt + "\n")
     for i, o in enumerate(options, 1):
         out.write(f"  {i}. {o.get('title', '')} — {o.get('summary', '')}\n")
+        if o.get("novelty_risk"):
+            out.write(f"      novelty risk: {o['novelty_risk']}\n")
+        if o.get("novelty_verdict"):
+            out.write(f"      novelty verdict: {o['novelty_verdict']}\n")
         if o.get("novelty"):
             out.write(f"      novelty: {o['novelty']}\n")
+        closest = o.get("closest_prior_art") or []
+        if closest:
+            out.write("      closest prior: " + "; ".join(str(c) for c in closest[:2]) + "\n")
     out.write("Enter number to select (blank to skip): ")
     out.flush()
     line = sys.stdin.readline()
@@ -103,6 +110,15 @@ def _select_rich_tty(prompt, options):
                     rows.append("      " + dl)
                 if o.get("novelty"):
                     rows.append("      novelty: " + str(o["novelty"]))
+                if o.get("novelty_risk"):
+                    rows.append("      novelty risk: " + str(o["novelty_risk"]))
+                if o.get("novelty_verdict"):
+                    rows.append("      novelty verdict: " + str(o["novelty_verdict"]))
+                closest = o.get("closest_prior_art") or []
+                if closest:
+                    rows.append("      closest prior: " + "; ".join(str(c) for c in closest[:3]))
+                if o.get("required_delta"):
+                    rows.append("      required delta: " + str(o["required_delta"]))
                 cites = o.get("citations") or []
                 if cites:
                     rows.append("      cite: " + "; ".join(str(c) for c in cites[:4]))
