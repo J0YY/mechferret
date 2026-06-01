@@ -958,7 +958,7 @@ def _clone_agent_for_side_chat(agent: Any) -> Any:
     from .agent import Agent
 
     side = Agent()
-    for name in ("provider", "model", "_key", "permission_mode"):
+    for name in ("provider", "model", "_key", "permission_mode", "_suppress_benchmark_context"):
         if hasattr(agent, name):
             setattr(side, name, getattr(agent, name))
     side.messages = deepcopy(getattr(agent, "messages", []))
@@ -973,7 +973,12 @@ def _append_side_result_to_main_context(agent: Any, job: PromptJob) -> None:
     if getattr(agent, "provider", "") == "openai" and not messages:
         from .agent import build_system_prompt
 
-        messages.append({"role": "system", "content": build_system_prompt()})
+        messages.append({
+            "role": "system",
+            "content": build_system_prompt(
+                suppress_benchmark_context=bool(getattr(agent, "_suppress_benchmark_context", False)),
+            ),
+        })
     messages.append({"role": "user", "content": f"[Applied /btw side question #{job.id}]\n{_display_job_text(job)}"})
     messages.append({"role": "assistant", "content": job.reply or ""})
 

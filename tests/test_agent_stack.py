@@ -736,6 +736,53 @@ class AgentStackTest(unittest.TestCase):
         self.assertTrue(any("reply to queued prompt" in line for line in emitted))
         self.assertTrue(any("$0.0000" in line for line in emitted))
 
+    def test_repl_btw_clone_preserves_benchmark_context_policy(self):
+        from mechferret import agent, repl
+
+        main = agent.Agent()
+        main.provider, main.model, main._key = "openai", "gpt-test", "x"
+        main.permission_mode = "plan"
+        main._suppress_benchmark_context = True
+        main.messages = [{"role": "user", "content": "why are defaults leaking?"}]
+
+        side = repl._clone_agent_for_side_chat(main)
+
+        self.assertEqual(side.provider, "openai")
+        self.assertEqual(side.model, "gpt-test")
+        self.assertEqual(side.permission_mode, "plan")
+        self.assertTrue(side._suppress_benchmark_context)
+        self.assertEqual(side.messages, main.messages)
+        self.assertIsNot(side.messages, main.messages)
+
+    def test_repl_apply_side_result_respects_benchmark_context_policy(self):
+        from mechferret import agent, repl
+
+        Path("MECHFERRET.md").write_text(
+            "- Model under study: gpt2\n- Task: IOI\n",
+            encoding="utf-8",
+        )
+        main = agent.Agent()
+        main.provider, main.model, main._key = "openai", "gpt-test", "x"
+        main._suppress_benchmark_context = True
+        main.messages = []
+        job = repl.PromptJob(
+            id=4,
+            text=repl._btw_prompt("side question"),
+            kind="btw",
+            status="done",
+            reply="side answer",
+        )
+
+        repl._append_side_result_to_main_context(main, job)
+
+        payload = json.dumps(main.messages)
+        self.assertEqual(main.messages[0]["role"], "system")
+        self.assertIn("Project notes (MECHFERRET.md) omitted", main.messages[0]["content"])
+        self.assertNotIn("gpt2", payload.lower())
+        self.assertNotIn("IOI", payload)
+        self.assertIn("side question", payload)
+        self.assertIn("side answer", payload)
+
     def test_repl_background_chat_uses_background_output_for_errors(self):
         from unittest.mock import patch
 
