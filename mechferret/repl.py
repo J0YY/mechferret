@@ -108,19 +108,28 @@ class ChatJobRunner:
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
-    def submit(self, text: str, *, kind: str = "prompt") -> PromptJob:
-        with self._lock:
-            job = PromptJob(id=self._next_id, text=text, kind=kind)
+    def _allocate_job_id_locked(self, preferred: int | None = None) -> int:
+        used = {job.id for job in self._jobs}
+        if preferred is not None and preferred > 0 and preferred not in used:
+            self._next_id = max(self._next_id, preferred + 1)
+            return preferred
+        while self._next_id in used:
             self._next_id += 1
+        job_id = self._next_id
+        self._next_id += 1
+        return job_id
+
+    def submit(self, text: str, *, kind: str = "prompt", preferred_id: int | None = None) -> PromptJob:
+        with self._lock:
+            job = PromptJob(id=self._allocate_job_id_locked(preferred_id), text=text, kind=kind)
             self._jobs.append(job)
         self._queue.put(job)
         self.save_pending()
         return job
 
-    def submit_side(self, text: str) -> PromptJob:
+    def submit_side(self, text: str, *, preferred_id: int | None = None) -> PromptJob:
         with self._lock:
-            job = PromptJob(id=self._next_id, text=text, kind="btw", status="running")
-            self._next_id += 1
+            job = PromptJob(id=self._allocate_job_id_locked(preferred_id), text=text, kind="btw", status="running")
             self._jobs.append(job)
         thread = threading.Thread(target=self._run_side, args=(job,), daemon=True)
         with self._lock:
@@ -140,9 +149,9 @@ class ChatJobRunner:
         restored: list[PromptJob] = []
         for saved in saved_jobs:
             if saved.kind == "btw":
-                restored.append(self.submit_side(saved.text))
+                restored.append(self.submit_side(saved.text, preferred_id=saved.id))
             else:
-                restored.append(self.submit(saved.text, kind=saved.kind))
+                restored.append(self.submit(saved.text, kind=saved.kind, preferred_id=saved.id))
         return restored
 
     def clear_saved(self) -> int:

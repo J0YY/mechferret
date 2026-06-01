@@ -1229,6 +1229,9 @@ class AgentStackTest(unittest.TestCase):
                 restored_runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=queue_path)
                 restored = restored_runner.restore_saved()
                 self.assertEqual([job.text for job in restored], [second.text])
+                self.assertEqual([job.id for job in restored], [second.id])
+                followup = restored_runner.submit("third")
+                self.assertEqual(followup.id, second.id + 1)
                 self.assertEqual(runner.cancel(str(second.id)), [second])
                 release.set()
                 self.assertTrue(restored_runner.wait_idle(timeout=2))
@@ -1240,7 +1243,37 @@ class AgentStackTest(unittest.TestCase):
                 if "restored_runner" in locals():
                     restored_runner.stop(wait=True)
 
-        self.assertEqual(sorted(started), ["first", "second"])
+        self.assertEqual(sorted(started), ["first", "second", "third"])
+
+    def test_repl_restore_saved_queue_ids_avoid_live_collisions(self):
+        from mechferret import repl
+
+        queue_path = Path("restore-id-collision.json")
+
+        def fake_chat(agent, session, text, *, background=False):
+            return text
+
+        with redirect_stdout(StringIO()):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=queue_path)
+            try:
+                runner.pause()
+                live = runner.submit("live")
+                self.assertEqual(live.id, 1)
+                repl._save_queue_jobs(queue_path, [
+                    repl.PromptJob(id=1, text="saved one"),
+                    repl.PromptJob(id=8, text="saved eight"),
+                ])
+                restored = runner.restore_saved()
+                followup = runner.submit("followup")
+                runner.resume()
+                self.assertTrue(runner.wait_idle(timeout=2))
+            finally:
+                runner.resume()
+                runner.stop(wait=True)
+
+        self.assertEqual([job.text for job in restored], ["saved one", "saved eight"])
+        self.assertEqual([job.id for job in restored], [2, 8])
+        self.assertEqual(followup.id, 9)
 
     def test_repl_chat_job_runner_saves_active_prompt_on_fast_shutdown(self):
         from mechferret import repl
