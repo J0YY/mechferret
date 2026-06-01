@@ -218,7 +218,17 @@ class ChatJobRunner:
         return job
 
     def saved(self) -> list[PromptJob]:
-        return _load_saved_queue(self._queue_path)
+        jobs = _load_saved_queue(self._queue_path)
+        if jobs or not self._preserved_saved_ids:
+            return jobs
+        # Another runner can be atomically refreshing the queue file while this
+        # runner is trying to restore it. Treat one empty read as inconclusive.
+        for _ in range(5):
+            time.sleep(0.02)
+            jobs = _load_saved_queue(self._queue_path)
+            if jobs:
+                return jobs
+        return jobs
 
     def saved_only(self) -> list[PromptJob]:
         with self._lock:
