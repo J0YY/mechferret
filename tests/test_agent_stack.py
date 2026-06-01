@@ -425,6 +425,7 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("/btw <text>", rendered_help)
         self.assertIn("/queue", rendered_help)
         self.assertIn("/queue restore", rendered_help)
+        self.assertIn("/queue wait [seconds]", rendered_help)
         self.assertIn("/cancel <id|all>", rendered_help)
         self.assertIn("/commands --workflow first_run", rendered_help)
         self.assertIn("/commands --workflow first_run  show a runnable workflow recipe", rendered_help)
@@ -494,6 +495,37 @@ class AgentStackTest(unittest.TestCase):
         self.assertEqual(len(started), 2)
         self.assertEqual(started[0], "main")
         self.assertIn("Side request entered with /btw", started[1])
+
+    def test_repl_queue_wait_waits_for_main_and_side_jobs(self):
+        from mechferret import repl
+
+        release = threading.Event()
+        started = []
+
+        def fake_chat(agent, session, text, *, background=False):
+            started.append(text)
+            self.assertTrue(release.wait(timeout=2))
+            return text
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-wait.json"))
+            try:
+                runner.submit("main")
+                runner.submit_side(repl._btw_prompt("side"))
+                releaser = threading.Thread(target=lambda: (time.sleep(0.05), release.set()))
+                releaser.start()
+                repl._queue_wait(runner, ["2"])
+                releaser.join(timeout=2)
+            finally:
+                release.set()
+                runner.stop(wait=True)
+
+        self.assertFalse(runner.is_busy())
+        self.assertEqual(len(started), 2)
+        rendered = out.getvalue()
+        self.assertIn("waiting for active queued work", rendered)
+        self.assertIn("queue idle", rendered)
 
     def test_repl_chat_job_runner_cancels_pending_prompts(self):
         from mechferret import repl

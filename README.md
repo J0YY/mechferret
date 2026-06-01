@@ -337,6 +337,7 @@ You can do things like:
 /btw <prompt>   run a compact side question while another reply is running
 /queue          show the active and queued prompts
 /queue restore  restore saved queued/running prompts from the last session
+/queue wait     wait until active queued and side work finishes
 /cancel <id>    remove a queued prompt before it starts
 /quickstart     show the recommended demo/OpenVLA/CI command path
 /selftest       run offline readiness checks and optionally verify demo artifacts

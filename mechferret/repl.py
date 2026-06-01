@@ -564,6 +564,8 @@ def run_repl() -> None:
             elif len(tokens) > 1 and tokens[1].lower() == "clear":
                 cleared = runner.clear_saved()
                 print(_c(f"  cleared {cleared} saved queued prompt(s)", "32" if cleared else "2"))
+            elif len(tokens) > 1 and tokens[1].lower() == "wait":
+                _queue_wait(runner, tokens[2:])
             else:
                 _print_queue(runner)
             continue
@@ -773,6 +775,28 @@ def _print_queue(runner: ChatJobRunner) -> None:
         status = job.status
         detail = f" ({job.error})" if job.error else ""
         print(_c(f"  {status:8} #{job.id} {job.kind}{detail}", "31" if job.error else "2"))
+
+
+def _queue_wait(runner: ChatJobRunner, args: list[str]) -> None:
+    timeout = 3600.0
+    if args:
+        try:
+            timeout = float(args[0])
+        except ValueError:
+            print(_c("  usage: /queue wait [seconds]", "33"))
+            return
+        if timeout <= 0:
+            print(_c("  wait timeout must be positive", "33"))
+            return
+    if not runner.is_busy():
+        print(_c("  queue already idle", "2"))
+        return
+    print(_c("  waiting for active queued work…", "2"))
+    if runner.wait_idle(timeout=timeout):
+        print(_c("  queue idle", "32"))
+    else:
+        print(_c("  queue still active after timeout", "33"))
+        _print_queue(runner)
 
 
 def _guard_agent_idle(runner: ChatJobRunner, action: str) -> bool:
