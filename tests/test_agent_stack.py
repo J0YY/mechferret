@@ -829,9 +829,47 @@ class AgentStackTest(unittest.TestCase):
         rendered = out.getvalue()
         self.assertIn("queued #1 (position 1/2)", rendered)
         self.assertIn("queued #2 (position 2/2)", rendered)
+        self.assertIn("prompt: first", rendered)
+        self.assertIn("prompt: second", rendered)
+        self.assertIn("use /queue show #1", rendered)
+        self.assertIn("use /queue tail #2", rendered)
         self.assertIn("/queue edit #1 <prompt>", rendered)
         self.assertIn("/queue move #2 first", rendered)
         self.assertIn("/queue cancel #2", rendered)
+
+    def test_repl_print_queued_shows_active_run_and_keep_typing_hint(self):
+        from mechferret import repl
+
+        release = threading.Event()
+
+        def fake_chat(agent, session, text, *, background=False):
+            self.assertTrue(release.wait(timeout=2))
+            return text
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-print-active.json"))
+            try:
+                active = runner.submit("active prompt")
+                deadline = time.monotonic() + 2
+                while runner.active() is None and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                queued = runner.submit("queued while active")
+
+                repl._print_queued(queued, runner)
+            finally:
+                release.set()
+                runner.stop(wait=True)
+
+        self.assertEqual(active.id, 1)
+        self.assertEqual(queued.id, 2)
+        rendered = out.getvalue()
+        self.assertIn("queued #2 (position 1/1)", rendered)
+        self.assertIn("prompt: queued while active", rendered)
+        self.assertIn("will run after active #1", rendered)
+        self.assertIn("keep typing to queue more prompts", rendered)
+        self.assertIn("use /queue show #2", rendered)
+        self.assertIn("use /queue tail #2", rendered)
 
     def test_repl_input_prompt_summarizes_live_work(self):
         from mechferret import repl

@@ -1625,11 +1625,19 @@ def _print_queue(runner: ChatJobRunner) -> None:
 
 def _print_queued(job: PromptJob, runner: ChatJobRunner) -> None:
     queued = runner.queued()
+    text = _short_job_text(_display_job_text(job), limit=72)
     if job in queued:
         position = queued.index(job) + 1
         print(_c(f"  queued #{job.id} (position {position}/{len(queued)})", "2"))
     else:
         print(_c(f"  queued #{job.id}", "2"))
+    if text:
+        print(_c(f"  prompt: {text}", "2"))
+    active = runner.active()
+    if active is not None and active.id != job.id and job.status == "queued":
+        print(_c(f"  will run after active #{active.id}; keep typing to queue more prompts", "2"))
+    print(_c(f"  use /queue show #{job.id} to inspect prompt, live output, reply, or error", "2"))
+    print(_c(f"  use /queue tail #{job.id} to follow output once it starts", "2"))
     print(_c(f"  use /queue edit #{job.id} <prompt>, /queue move #{job.id} first, or /queue cancel #{job.id}", "2"))
 
 
