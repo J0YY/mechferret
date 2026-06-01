@@ -65,6 +65,7 @@ NOVELTY_REQUIRED_OPTION_SEARCH_FOCUS = {
     "recency",
     "recent_discovery",
     "architecture",
+    "frontier_architecture",
     "method",
     "mechanism",
     "evaluation",
@@ -1287,10 +1288,14 @@ def tool_verify_novelty(args: dict[str, Any]) -> str:
         ),
         "errors": errors,
         "novelty_questions": _novelty_questions(idea),
-        "guidance": "Do not claim high novelty unless the idea survives relevance, submitted-date, "
-                    "updated-date, exact-phrase, claim-collision, recent-discovery, architecture-variant, method, mechanism, evaluation, implementation, replication, failure-mode, and protocol searches. Compare against the closest "
-                    "recent papers, name the exact delta, cite likely prior art, and downgrade any "
-                    "direction that only renames an existing method.",
+        "guidance": (
+            "Do not claim high novelty unless the idea survives relevance, submitted-date, "
+            "updated-date, exact-phrase, claim-collision, recent-discovery, architecture-variant, "
+            "frontier-architecture, model-family, method, mechanism, evaluation, implementation, "
+            "replication, failure-mode, and protocol searches. Compare against the closest "
+            "recent papers, name the exact delta, cite likely prior art, and downgrade any "
+            "direction that only renames an existing method."
+        ),
     })
 
 
@@ -1346,6 +1351,16 @@ def _novelty_search_plan(idea: str, queries: list[str] | None) -> list[dict[str,
             _novelty_plan_item(f"{compact} benchmark evaluation negative results", "submittedDate", "recent_evaluation"),
             _novelty_plan_item(f"{compact} recent discovery emerging method", "submittedDate", "recent_discovery"),
             _novelty_plan_item(f"{compact} architecture variant empirical finding", "lastUpdatedDate", "architecture_variant"),
+            _novelty_plan_item(
+                f"{compact} state of the art frontier architecture scaling law",
+                "lastUpdatedDate",
+                "frontier_architecture_recent",
+            ),
+            _novelty_plan_item(
+                f"{compact} new architecture model family capability discovery",
+                "submittedDate",
+                "frontier_model_family_discovery",
+            ),
             _novelty_plan_item(f"{compact} replication reproduction failure analysis", "lastUpdatedDate", "replication_failure_modes"),
             _novelty_plan_item(f"{compact} dataset task protocol", "relevance", "evaluation_protocol"),
             _novelty_plan_item(f"{compact} limitations failure modes", "submittedDate", "recent_limitations"),
@@ -1355,6 +1370,7 @@ def _novelty_search_plan(idea: str, queries: list[str] | None) -> list[dict[str,
     for phrase in phrases[:3]:
         candidates.append(_novelty_plan_item(f"{phrase} ablation evaluation", "relevance", "phrase_evaluation"))
         candidates.append(_novelty_plan_item(f"{phrase} recent benchmark", "submittedDate", "phrase_recent_benchmark"))
+        candidates.append(_novelty_plan_item(f"{phrase} frontier architecture", "lastUpdatedDate", "phrase_frontier_architecture"))
     for phrase in phrases[:4]:
         candidates.append(_novelty_plan_item(f'"{phrase}"', "relevance", "exact_phrase"))
         candidates.append(_novelty_plan_item(f'"{phrase}" same contribution', "relevance", "claim_collision"))
@@ -1386,6 +1402,14 @@ def _novelty_web_search_plan(idea: str, queries: list[str] | None) -> list[dict[
             _novelty_web_plan_item(f"{compact} project page technical report", "web_project_or_report"),
             _novelty_web_plan_item(f"{compact} recent discovery technical report", "web_recent_discovery"),
             _novelty_web_plan_item(f"{compact} architecture variant implementation", "web_architecture_variant"),
+            _novelty_web_plan_item(
+                f"{compact} frontier model architecture release technical report",
+                "web_frontier_architecture_release",
+            ),
+            _novelty_web_plan_item(
+                f"{compact} recent model family benchmark capability",
+                "web_frontier_model_family",
+            ),
             _novelty_web_plan_item(f"{compact} replication reproduction results", "web_replication_results"),
             _novelty_web_plan_item(f"{compact} limitations failure modes", "web_failure_modes"),
             _novelty_web_plan_item(f"{compact} dataset benchmark protocol", "web_dataset_protocol"),
@@ -1426,6 +1450,10 @@ def _novelty_focus_is_deep(focus: Any) -> bool:
             "benchmark",
             "discovery",
             "architecture",
+            "frontier",
+            "sota",
+            "scaling",
+            "model_family",
             "exact",
             "claim",
             "critique",
@@ -1550,7 +1578,7 @@ def _novelty_assessment(
     search_audit = search_audit or []
     audit_summary = _novelty_search_audit_summary(search_audit)
     coverage = {
-        "search_strategy": "deep_recent_discovery_method_mechanism_architecture_evaluation_implementation_replication_exact_claim_collision",
+        "search_strategy": "deep_recent_discovery_method_mechanism_architecture_frontier_model_family_evaluation_implementation_replication_exact_claim_collision",
         "arxiv_query_count": len(arxiv_plan),
         "web_query_count": len(web_plan),
         "arxiv_results_per_query": max((int(row.get("max_results", 0)) for row in arxiv_plan), default=0),
@@ -1583,6 +1611,11 @@ def _novelty_assessment(
         "idea_terms": terms,
         "recent_window": _novelty_recent_window_label(),
     }
+    coverage["frontier_architecture_focuses"] = _novelty_frontier_focuses(
+        coverage["arxiv_focuses"],
+        coverage["web_focuses"],
+    )
+    coverage["frontier_architecture_covered"] = bool(coverage["frontier_architecture_focuses"])
     coverage["focus_coverage"] = _novelty_focus_coverage(coverage["arxiv_focuses"], coverage["web_focuses"])
     coverage["threat_model_coverage"] = _novelty_threat_model_coverage(coverage["arxiv_focuses"], coverage["web_focuses"])
     comparison_matrix = _novelty_comparison_matrix(scored, coverage)
@@ -1741,6 +1774,7 @@ def _novelty_focus_coverage(arxiv_focuses: list[str], web_focuses: list[str]) ->
         "survey": "survey" in text,
         "recent_discovery": "discovery" in text,
         "architecture": "architecture" in text,
+        "frontier_architecture": _novelty_focus_text_has_frontier(text),
         "exact_phrase": "exact" in text,
         "claim_collision": "claim" in text,
         "peer_review": "peer" in text or "critique" in text,
@@ -1754,6 +1788,7 @@ _NOVELTY_COMPARISON_AXES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ..
     ("method", ("method", "design", "approach"), ()),
     ("mechanism", ("mechanism", "ablation", "causal", "probe"), ()),
     ("architecture", ("architecture", "variant", "model"), ()),
+    ("frontier_architecture", ("frontier", "sota", "state of the art", "model_family", "model family", "scaling"), ()),
     ("evaluation", ("evaluation", "benchmark", "leaderboard", "metric"), ("benchmark",)),
     ("implementation", ("implementation", "repository", "code"), ("code_repository",)),
     ("replication", ("replication", "reproduction", "reproduce"), ()),
@@ -1988,6 +2023,7 @@ def _novelty_claim_readiness(risk: str, top_score: float, coverage: dict[str, An
             for name in (
                 "recent_discovery",
                 "architecture",
+                "frontier_architecture",
                 "method",
                 "mechanism",
                 "evaluation",
@@ -2044,7 +2080,7 @@ def _novelty_readiness_next_actions(status: str, missing: list[str]) -> list[str
     if status == "not_ready_prior_art_overlap":
         actions.append("Treat the direction as prior-art-overlapping until the exact method and evaluation delta is demonstrated.")
     if "focus_breadth" in missing:
-        actions.append("Run follow-up searches covering recent discoveries, architecture variants, method, mechanism, evaluation, implementation, replication, failure modes, and protocol.")
+        actions.append("Run follow-up searches covering recent discoveries, frontier architectures, model families, method, mechanism, evaluation, implementation, replication, failure modes, and protocol.")
     if "retrieved_prior_art" in missing or "credible_source_diversity" in missing:
         actions.append("Collect more independent papers, benchmarks, code, or project reports before selecting this idea.")
     if "recent_prior_art" in missing:
@@ -2052,7 +2088,7 @@ def _novelty_readiness_next_actions(status: str, missing: list[str]) -> list[str
     if "web_page_enrichment" in missing:
         actions.append("Fetch the top credible web/code/project pages and compare their technical details.")
     if "threat_model_depth" in missing:
-        actions.append("Run exact-phrase, claim-collision, method, mechanism, architecture, evaluation, implementation, and critique searches before ranking novelty.")
+        actions.append("Run exact-phrase, claim-collision, method, mechanism, architecture, frontier model-family, evaluation, implementation, and critique searches before ranking novelty.")
     if not actions:
         actions.append("Use the closest prior art list to write a precise required delta; do not claim high novelty without expert review.")
     return actions
@@ -2716,6 +2752,7 @@ def _option_search_focus_coverage(rows: list[dict[str, Any]]) -> dict[str, bool]
         "recency": "recent" in text or "submitted" in text or "updated" in text,
         "recent_discovery": "discovery" in text,
         "architecture": "architecture" in text,
+        "frontier_architecture": _novelty_focus_text_has_frontier(text),
         "method": "method" in text,
         "mechanism": "mechanism" in text,
         "evaluation": "evaluation" in text or "benchmark" in text,
@@ -2727,6 +2764,29 @@ def _option_search_focus_coverage(rows: list[dict[str, Any]]) -> dict[str, bool]
         "claim_collision": "claim" in text,
         "peer_review": "peer" in text or "critique" in text or "review" in text,
     }
+
+
+def _novelty_frontier_focuses(arxiv_focuses: list[str], web_focuses: list[str]) -> list[str]:
+    return sorted(
+        focus
+        for focus in [*arxiv_focuses, *web_focuses]
+        if _novelty_focus_text_has_frontier(focus)
+    )
+
+
+def _novelty_focus_text_has_frontier(text: str) -> bool:
+    lowered = str(text).lower()
+    return any(
+        term in lowered
+        for term in (
+            "frontier",
+            "sota",
+            "state of the art",
+            "scaling",
+            "model_family",
+            "model family",
+        )
+    )
 
 
 def _option_prior(value: Any) -> dict[str, Any]:

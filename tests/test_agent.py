@@ -68,6 +68,7 @@ def _option_search_audit():
         "recent_evaluation",
         "recent_discovery",
         "architecture_variant",
+        "frontier_architecture_recent",
         "replication_failure_modes",
         "evaluation_protocol",
     ]
@@ -79,6 +80,7 @@ def _option_search_audit():
         "web_claim_collision",
         "web_peer_review",
         "web_architecture_variant",
+        "web_frontier_architecture_release",
         "web_replication_results",
     ]
     focus_summary = [
@@ -106,7 +108,7 @@ def _option_search_audit():
         for i, focus in enumerate(web_focuses)
     )
     return {
-        "pass_count": 18,
+        "pass_count": 20,
         "failed_passes": 0,
         "empty_search_passes": 2,
         "empty_arxiv_passes": 1,
@@ -116,6 +118,7 @@ def _option_search_audit():
             "recency": True,
             "recent_discovery": True,
             "architecture": True,
+            "frontier_architecture": True,
             "method": True,
             "mechanism": True,
             "evaluation": True,
@@ -1124,7 +1127,7 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(ok["option_details"][0]["novelty_threat_model"][1]["representative_prior"]["source_type"], "paper")
         self.assertEqual(ok["option_details"][0]["disqualifying_overlap_tests"][1]["test"], "claim_collision")
         self.assertFalse(ok["option_details"][0]["disqualifying_overlap_tests"][1]["passed"])
-        self.assertEqual(ok["option_details"][0]["search_audit"]["pass_count"], 18)
+        self.assertEqual(ok["option_details"][0]["search_audit"]["pass_count"], 20)
         self.assertEqual(ok["option_details"][0]["search_audit"]["empty_search_passes"], 2)
         self.assertEqual(ok["option_details"][0]["search_audit"]["focus_summary"][0]["requested_results_max"], 50)
         self.assertTrue(ok["option_details"][0]["search_audit"]["focus_coverage"]["claim_collision"])
@@ -1471,6 +1474,9 @@ class AgentToolTest(unittest.TestCase):
         self.assertTrue(any("evaluation" in call["query"].lower() for call in calls))
         self.assertTrue(any("recent discovery" in call["query"].lower() for call in calls))
         self.assertTrue(any("architecture variant" in call["query"].lower() for call in calls))
+        self.assertTrue(any("frontier architecture" in call["query"].lower() for call in calls))
+        self.assertTrue(any("model family" in call["query"].lower() for call in calls))
+        self.assertTrue(any("scaling law" in call["query"].lower() for call in calls))
         self.assertTrue(any("replication" in call["query"].lower() for call in calls))
         self.assertTrue(any("same contribution" in call["query"].lower() for call in calls))
         self.assertTrue(any("independent replication critique" in call["query"].lower() for call in calls))
@@ -1480,6 +1486,8 @@ class AgentToolTest(unittest.TestCase):
         self.assertTrue(all(call["max_results"] == 24 for call in web_calls))
         self.assertTrue(any('"we propose"' in call["query"].lower() for call in web_calls))
         self.assertTrue(any("openreview review rebuttal" in call["query"].lower() for call in web_calls))
+        self.assertTrue(any("frontier model architecture" in call["query"].lower() for call in web_calls))
+        self.assertTrue(any("model family benchmark" in call["query"].lower() for call in web_calls))
         self.assertGreaterEqual(len(fetch_calls), 1)
         self.assertLessEqual(len(fetch_calls), 12)
         self.assertTrue(all(call["max_chars"] == 2400 for call in fetch_calls))
@@ -1513,6 +1521,7 @@ class AgentToolTest(unittest.TestCase):
         axes = {row["axis"]: row for row in payload["assessment"]["comparison_matrix"]}
         self.assertIn("method", axes)
         self.assertIn("architecture", axes)
+        self.assertIn("frontier_architecture", axes)
         self.assertIn("implementation", axes)
         self.assertTrue(axes["method"]["covered"])
         self.assertTrue(axes["implementation"]["covered"])
@@ -1531,8 +1540,17 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("web_replication_results", payload["assessment"]["coverage"]["web_focuses"])
         self.assertIn("recent_discovery", payload["assessment"]["coverage"]["arxiv_focuses"])
         self.assertIn("architecture_variant", payload["assessment"]["coverage"]["arxiv_focuses"])
+        self.assertIn("frontier_architecture_recent", payload["assessment"]["coverage"]["arxiv_focuses"])
+        self.assertIn("frontier_model_family_discovery", payload["assessment"]["coverage"]["arxiv_focuses"])
         self.assertIn("web_recent_discovery", payload["assessment"]["coverage"]["web_focuses"])
         self.assertIn("web_architecture_variant", payload["assessment"]["coverage"]["web_focuses"])
+        self.assertIn("web_frontier_architecture_release", payload["assessment"]["coverage"]["web_focuses"])
+        self.assertIn("web_frontier_model_family", payload["assessment"]["coverage"]["web_focuses"])
+        self.assertTrue(payload["assessment"]["coverage"]["frontier_architecture_covered"])
+        self.assertIn(
+            "frontier_architecture_recent",
+            payload["assessment"]["coverage"]["frontier_architecture_focuses"],
+        )
         self.assertGreaterEqual(payload["assessment"]["coverage"]["web_results"], 1)
         self.assertGreaterEqual(payload["assessment"]["coverage"]["web_results_with_snippets"], 1)
         self.assertGreaterEqual(payload["assessment"]["coverage"]["web_pages_fetched"], 1)
@@ -1566,6 +1584,7 @@ class AgentToolTest(unittest.TestCase):
         self.assertTrue(payload["assessment"]["coverage"]["focus_coverage"]["method"])
         self.assertTrue(payload["assessment"]["coverage"]["focus_coverage"]["recent_discovery"])
         self.assertTrue(payload["assessment"]["coverage"]["focus_coverage"]["architecture"])
+        self.assertTrue(payload["assessment"]["coverage"]["focus_coverage"]["frontier_architecture"])
         self.assertTrue(payload["assessment"]["coverage"]["focus_coverage"]["replication"])
         self.assertTrue(payload["assessment"]["coverage"]["focus_coverage"]["exact_phrase"])
         self.assertTrue(payload["assessment"]["coverage"]["focus_coverage"]["claim_collision"])
@@ -1583,6 +1602,8 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("claim-collision", payload["guidance"])
         self.assertIn("recent-discovery", payload["guidance"])
         self.assertIn("architecture-variant", payload["guidance"])
+        self.assertIn("frontier-architecture", payload["guidance"])
+        self.assertIn("model-family", payload["guidance"])
 
     def test_verify_novelty_search_plan_uses_idea_terms_without_fixed_architectures(self):
         from mechferret import tools
@@ -1595,6 +1616,8 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("protein", combined)
         self.assertIn("method design", combined)
         self.assertIn("benchmark evaluation", combined)
+        self.assertIn("frontier architecture", combined)
+        self.assertIn("model family", combined)
         self.assertIn("implementation repository code", combined)
         self.assertIn("same contribution", combined)
         self.assertIn("we propose", combined)
@@ -2109,7 +2132,7 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(selected["selected_option"]["comparison_matrix"][1]["axis"], "evaluation")
         self.assertEqual(selected["selected_option"]["novelty_threat_model"][1]["threat"], "claim_collision")
         self.assertEqual(selected["selected_option"]["disqualifying_overlap_tests"][0]["test"], "exact_phrase_overlap")
-        self.assertEqual(selected["selected_option"]["search_audit"]["pass_count"], 18)
+        self.assertEqual(selected["selected_option"]["search_audit"]["pass_count"], 20)
         self.assertIn("causal ablation", picked[0][0]["required_delta"])
         self.assertEqual(picked[0][0]["comparison_matrix"][1]["axis"], "evaluation")
         self.assertEqual(picked[0][0]["novelty_threat_model"][1]["risk"], "needs_delta_review")
