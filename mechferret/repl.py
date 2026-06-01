@@ -229,6 +229,8 @@ class ChatJobRunner:
                 anchor_job = next((item for item in queued if str(item.id) == anchor), None)
                 if anchor_job is None:
                     return job, "anchor"
+                if anchor_job is job:
+                    return job, "same"
                 queued.remove(job)
                 index = queued.index(anchor_job)
                 if where == "after":
@@ -1013,6 +1015,9 @@ def _queue_move(runner: ChatJobRunner, args: list[str]) -> None:
         return
     if status == "anchor":
         print(_c(f"  no queued anchor matched {anchor!r}", "33"))
+        return
+    if status == "same":
+        print(_c(f"  job #{job.id} is already in that spot", "2"))
         return
     if status != "moved":
         print(_c(f"  job #{job.id} is {status}; only queued prompts can be moved.", "33"))

@@ -427,14 +427,14 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("/queue show <id>", rendered_help)
         self.assertIn("/queue retry <id>", rendered_help)
         self.assertIn("/queue edit <id> <text>", rendered_help)
-        self.assertIn("/queue move <id> first|last", rendered_help)
+        self.assertIn("/queue move <id> first|last|before|after", rendered_help)
         self.assertIn("/queue pause", rendered_help)
         self.assertIn("/queue resume", rendered_help)
         self.assertIn("/queue restore", rendered_help)
         self.assertIn("/queue wait [seconds]", rendered_help)
         self.assertIn("/cancel <id|all>", rendered_help)
         self.assertIn("/commands --workflow first_run", rendered_help)
-        self.assertIn("/commands --workflow first_run  show a runnable workflow recipe", rendered_help)
+        self.assertIn("show a runnable workflow recipe", rendered_help)
 
     def test_repl_chat_job_runner_queues_prompts_and_btw(self):
         from mechferret import repl
@@ -756,6 +756,28 @@ class AgentStackTest(unittest.TestCase):
         rendered = out.getvalue()
         self.assertIn("job #1 is running", rendered)
         self.assertIn("no queued anchor matched '999'", rendered)
+
+    def test_repl_queue_move_self_anchor_is_noop(self):
+        from mechferret import repl
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: None, queue_path=Path("queue-move-self.json"))
+            try:
+                runner.pause()
+                first = runner.submit("first")
+                second = runner.submit("second")
+
+                repl._queue_move(runner, [str(first.id), "before", str(first.id)])
+                repl._queue_move(runner, [str(second.id), "after", str(second.id)])
+
+                self.assertEqual([job.id for job in runner.queued()], [first.id, second.id])
+            finally:
+                runner.resume()
+                runner.stop(wait=True)
+
+        self.assertIn("job #1 is already in that spot", out.getvalue())
+        self.assertIn("job #2 is already in that spot", out.getvalue())
 
     def test_repl_queue_pause_holds_prompts_until_resume(self):
         from mechferret import repl
