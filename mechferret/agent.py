@@ -296,6 +296,18 @@ def _extract_provider_text(content: Any) -> str:
     return "\n".join(part.strip() for part in parts if part.strip())
 
 
+def _selected_option_detail(options: list[Any], choice: Any) -> dict[str, Any]:
+    selected = _text(choice).strip()
+    if not selected or selected == "none":
+        return {}
+    for option in options:
+        if not isinstance(option, dict):
+            continue
+        if _text(option.get("title")).strip() == selected:
+            return option
+    return {}
+
+
 def _user_explicitly_selected_benchmark(user_text: str) -> bool:
     lowered = _text(user_text).lower()
     return any(term in lowered for term in BENCHMARK_EXPLICIT_TERMS)
@@ -607,7 +619,11 @@ class Agent:
             if self.on_options:
                 choice = self.on_options(options)
                 self.tracer.event("user_selected", choice=str(choice)[:120])
-                return json.dumps({"user_selected": choice})
+                payload: dict[str, Any] = {"user_selected": choice}
+                selected = _selected_option_detail(options, choice)
+                if selected:
+                    payload["selected_option"] = selected
+                return json.dumps(payload)
             return validation
 
         meta = tool_meta(name)

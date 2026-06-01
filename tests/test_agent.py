@@ -1557,6 +1557,9 @@ class AgentToolTest(unittest.TestCase):
         selected = json.loads(a._dispatch("present_options", args))
 
         self.assertEqual(selected["user_selected"], "Novelty audit")
+        self.assertEqual(selected["selected_option"]["title"], "Novelty audit")
+        self.assertEqual(selected["selected_option"]["recent_pressure"]["status"], "recent_prior_present")
+        self.assertEqual(selected["selected_option"]["comparison_matrix"][1]["axis"], "evaluation")
         self.assertEqual(picked[0][0]["required_delta"], "Show a causal ablation.")
         self.assertEqual(picked[0][0]["comparison_matrix"][1]["axis"], "evaluation")
         self.assertEqual(picked[0][0]["recent_pressure"]["status"], "recent_prior_present")
