@@ -112,6 +112,13 @@ BENCHMARK_MODEL_COMPLAINT_RE = re.compile(
     rf"|(?:{BENCHMARK_MODEL_PATTERN}.{{0,90}}\b(?:default(?:ing)?|leak(?:ing)?|unrequested|suspicious)\b)",
     re.IGNORECASE | re.DOTALL,
 )
+DEFAULT_MODEL_COMPLAINT_RE = re.compile(
+    r"(?:\b(?:default(?:ing)?|hard[-\s]?coded|determ"
+    r"inistic|unrequested|suspicious)\b.{0,90}\b(?:interp\s+)?model\b)"
+    r"|(?:\b(?:interp\s+)?model\b.{0,90}\b(?:default(?:ing)?|hard[-\s]?coded|determ"
+    r"inistic|unrequested|suspicious)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
 BENCHMARK_MODEL_EXPLICIT_RE = re.compile(
     rf"(?:\b(?:--model|model|model\s+under\s+study|target\s+model)\b\s*[:=]?\s*{BENCHMARK_MODEL_PATTERN})"
     rf"|(?:\b(?:use|using|run|test|study|investigate|analy[sz]e|probe|ablate|patch|screen|evaluate|eval|target|choose|select|set)\b.{{0,90}}{BENCHMARK_MODEL_PATTERN})"
@@ -137,17 +144,25 @@ def _text(value: Any) -> str:
     return ""
 
 
-def build_system_prompt() -> str:
+def build_system_prompt(user_text: str = "") -> str:
     """Assemble the system prompt from base + enabled tools + project memory + git."""
 
     sections = [BASE_SYSTEM_PROMPT]
     tool_lines = ", ".join(t["name"] for t in all_specs())
     sections.append(f"Available tools: {tool_lines}.")
+    suppress_benchmark_context = _turn_rejects_benchmark_context(user_text)
 
     for fname in ("MECHFERRET.md", "CLAUDE.md"):
         path = Path.cwd() / fname
         if path.is_file():
-            sections.append(f"Project notes ({fname}):\n" + path.read_text(encoding="utf-8", errors="ignore")[:4000])
+            notes = path.read_text(encoding="utf-8", errors="ignore")[:4000]
+            if suppress_benchmark_context and _looks_like_benchmark_context(notes):
+                sections.append(
+                    f"Project notes ({fname}) omitted for this turn because they mention a benchmark model "
+                    "the user rejected. Ask for the current model/task before experiment details."
+                )
+            else:
+                sections.append(f"Project notes ({fname}):\n" + notes)
             break
 
     try:
@@ -159,7 +174,13 @@ def build_system_prompt() -> str:
 
     mechanisms = _recall_mechanisms() if os.getenv("MECHFERRET_INCLUDE_MEMORY_CONTEXT") == "1" else ""
     if mechanisms:
-        sections.append("Previously confirmed mechanisms (from memory):\n" + mechanisms)
+        if suppress_benchmark_context and _looks_like_benchmark_context(mechanisms):
+            sections.append(
+                "Previously confirmed mechanisms omitted for this turn because they mention a benchmark model "
+                "the user rejected. Ask for the current model/task before using memory."
+            )
+        else:
+            sections.append("Previously confirmed mechanisms (from memory):\n" + mechanisms)
     return "\n\n".join(sections)
 
 
@@ -345,8 +366,26 @@ def _user_explicitly_selected_benchmark_model(user_text: str) -> bool:
     return bool(BENCHMARK_MODEL_EXPLICIT_RE.search(text))
 
 
+def _turn_rejects_benchmark_context(user_text: str) -> bool:
+    text = _text(user_text)
+    if not text:
+        return False
+    if _user_explicitly_selected_benchmark_model(text):
+        return False
+    return bool(
+        BENCHMARK_MODEL_NEGATION_RE.search(text)
+        or BENCHMARK_MODEL_COMPLAINT_RE.search(text)
+        or DEFAULT_MODEL_COMPLAINT_RE.search(text)
+    )
+
+
 def _looks_like_unrequested_benchmark_model(text: str) -> bool:
     return bool(BENCHMARK_MODEL_LEAK_RE.search(_text(text)))
+
+
+def _looks_like_benchmark_context(text: str) -> bool:
+    text = _text(text)
+    return _looks_like_unrequested_benchmark_model(text) or _looks_like_stale_benchmark_scaffold(text)
 
 
 def _looks_like_stale_benchmark_scaffold(text: str) -> bool:
@@ -355,6 +394,32 @@ def _looks_like_stale_benchmark_scaffold(text: str) -> bool:
         return False
     benchmark_hits = sum(1 for term in BENCHMARK_LEAK_TERMS if term in lowered)
     return benchmark_hits >= 2 or bool(STALE_HEAD_RE.search(lowered))
+
+
+def _redact_rejected_benchmark_content(value: Any) -> Any:
+    replacement = (
+        "[Benchmark-specific prior context omitted for this turn because the current prompt rejected "
+        "default benchmark model/task context.]"
+    )
+    if isinstance(value, str):
+        return replacement if _looks_like_benchmark_context(value) else value
+    if not isinstance(value, list):
+        return value
+    cleaned: list[Any] = []
+    for block in value:
+        if isinstance(block, str):
+            cleaned.append(replacement if _looks_like_benchmark_context(block) else block)
+            continue
+        if not isinstance(block, dict):
+            cleaned.append(block)
+            continue
+        item = dict(block)
+        for key in ("text", "content"):
+            block_value = item.get(key)
+            if isinstance(block_value, str) and _looks_like_benchmark_context(block_value):
+                item[key] = replacement
+        cleaned.append(item)
+    return cleaned
 
 
 def _sanitize_assistant_text(user_text: str, text: str) -> str:
@@ -373,9 +438,15 @@ def _sanitize_assistant_text(user_text: str, text: str) -> str:
     )
 
 
-def _sanitize_loaded_messages(messages: list[dict[str, Any]], provider: str) -> list[dict[str, Any]]:
+def _sanitize_loaded_messages(
+    messages: list[dict[str, Any]],
+    provider: str,
+    *,
+    current_user_text: str = "",
+) -> list[dict[str, Any]]:
     sanitized: list[dict[str, Any]] = []
     last_user_text = ""
+    redact_benchmark_context = _turn_rejects_benchmark_context(current_user_text)
     for message in messages:
         role = message.get("role")
         if role == "system":
@@ -390,9 +461,11 @@ def _sanitize_loaded_messages(messages: list[dict[str, Any]], provider: str) -> 
             replacement = _sanitize_assistant_text(last_user_text, text)
             if replacement != text:
                 clean["content"] = replacement
+        if redact_benchmark_context and role in {"user", "assistant", "tool"}:
+            clean["content"] = _redact_rejected_benchmark_content(clean.get("content"))
         sanitized.append(clean)
     if provider == "openai":
-        return [{"role": "system", "content": build_system_prompt()}, *sanitized]
+        return [{"role": "system", "content": build_system_prompt(current_user_text)}, *sanitized]
     return sanitized
 
 
@@ -703,7 +776,7 @@ class Agent:
     # --- Anthropic ------------------------------------------------------------------
 
     def _send_anthropic(self, user_text: str) -> str:
-        self.messages = _sanitize_loaded_messages(self.messages, "anthropic")
+        self.messages = _sanitize_loaded_messages(self.messages, "anthropic", current_user_text=user_text)
         self.messages.append({"role": "user", "content": user_text})
         tools = [
             {"name": t["name"], "description": t["description"], "input_schema": t["parameters"]}
@@ -714,7 +787,7 @@ class Agent:
             payload = {
                 "model": self.model,
                 "max_tokens": MAX_TOKENS,
-                "system": build_system_prompt(),
+                "system": build_system_prompt(user_text),
                 "messages": self.messages,
                 "tools": tools,
             }
@@ -784,7 +857,7 @@ class Agent:
     # --- OpenAI ---------------------------------------------------------------------
 
     def _send_openai(self, user_text: str) -> str:
-        self.messages = _sanitize_loaded_messages(self.messages, "openai")
+        self.messages = _sanitize_loaded_messages(self.messages, "openai", current_user_text=user_text)
         self.messages.append({"role": "user", "content": user_text})
         tools = [
             {"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["parameters"]}}

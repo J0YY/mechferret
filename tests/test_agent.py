@@ -1227,6 +1227,32 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("frontier architecture", prompt)
         self.assertIn("model-family coverage", prompt)
 
+    def test_system_prompt_omits_rejected_benchmark_notes_and_memory(self):
+        cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            os.chdir(tmp)
+            Path("MECHFERRET.md").write_text(
+                "# Project\n\n## Research Target\n- Model under study: gpt2\n- Task: IOI\n",
+                encoding="utf-8",
+            )
+            try:
+                with (
+                    patch.dict(os.environ, {"MECHFERRET_INCLUDE_MEMORY_CONTEXT": "1"}),
+                    patch(
+                        "mechferret.agent._recall_mechanisms",
+                        return_value="In gpt2, attention head 5.2 is a duplicate-token / name-mover head.",
+                    ),
+                ):
+                    prompt = agent.build_system_prompt("why do we even have a default interp model?")
+            finally:
+                os.chdir(cwd)
+
+        self.assertIn("Project notes (MECHFERRET.md) omitted", prompt)
+        self.assertIn("Previously confirmed mechanisms omitted", prompt)
+        self.assertNotIn("gpt2", prompt)
+        self.assertNotIn("IOI", prompt)
+        self.assertNotIn("5.2", prompt)
+
     def test_assistant_text_sanitizes_stale_benchmark_scaffolds(self):
         stale = (
             "The minimal experiment should be:\n"
@@ -1393,6 +1419,43 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("which model and behavior/task", payload_text)
         self.assertNotIn("GPT-2", payload_text)
         self.assertNotIn("5.0", payload_text)
+
+    def test_openai_current_turn_rejects_old_benchmark_context(self):
+        captured = {}
+
+        def fake_post(url, payload, headers):
+            captured["messages"] = json.loads(json.dumps(payload["messages"]))
+            return {"choices": [{"message": {"role": "assistant", "content": "Which model should I use?"}}]}
+
+        original = agent._http_post
+        cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            os.chdir(tmp)
+            Path("MECHFERRET.md").write_text("- Model under study: gpt2\n", encoding="utf-8")
+            try:
+                agent._http_post = fake_post
+                a = agent.Agent()
+                a.provider, a.model, a._key = "openai", "gpt-test", "fake"
+                a.messages = [
+                    {"role": "system", "content": "stale system"},
+                    {"role": "user", "content": "Use GPT-2 small for IOI."},
+                    {
+                        "role": "assistant",
+                        "content": "Run duplicate-token/name-mover tests in GPT-2 small.",
+                    },
+                ]
+                reply = a.send("Why are we still seeing gpt2 by default?")
+            finally:
+                agent._http_post = original
+                os.chdir(cwd)
+
+        self.assertEqual(reply, "Which model should I use?")
+        prior_payload = json.dumps(captured["messages"][:-1])
+        self.assertIn("Project notes (MECHFERRET.md) omitted", captured["messages"][0]["content"])
+        self.assertNotIn("gpt2", prior_payload.lower())
+        self.assertNotIn("GPT-2", prior_payload)
+        self.assertNotIn("IOI", prior_payload)
+        self.assertNotIn("duplicate-token", prior_payload)
 
     def test_anthropic_stale_benchmark_text_blocks_same_turn_tool_call(self):
         calls = {"n": 0}
