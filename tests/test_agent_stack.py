@@ -471,6 +471,8 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("use /queue show #1", rendered)
         self.assertIn("use /queue show #2", rendered)
         self.assertIn("queue empty", rendered)
+        self.assertIn("done     #1 prompt: first prompt", rendered)
+        self.assertIn("done     #2 btw: side question", rendered)
 
     def test_repl_chat_job_runner_prints_show_hint_for_errors(self):
         from mechferret import repl

@@ -1115,7 +1115,8 @@ def _print_queue(runner: ChatJobRunner) -> None:
     for job in done[-3:]:
         status = job.status
         detail = f" ({job.error})" if job.error else ""
-        print(_c(f"  {status:8} #{job.id} {job.kind}{detail}", "31" if job.error else "2"))
+        text = _short_job_text(_display_job_text(job))
+        print(_c(f"  {status:8} #{job.id} {job.kind}: {text}{detail}", "31" if job.error else "2"))
 
 
 def _print_queued(job: PromptJob, runner: ChatJobRunner) -> None:
