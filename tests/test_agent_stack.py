@@ -435,7 +435,7 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("/queue restore", rendered_help)
         self.assertIn("/queue wait [seconds]", rendered_help)
         self.assertIn("/queue join <id|latest|active|next> [seconds]", rendered_help)
-        self.assertIn("/cancel <id|all>", rendered_help)
+        self.assertIn("/cancel <id|latest|next|all>", rendered_help)
         self.assertIn("/commands --workflow first_run", rendered_help)
         self.assertIn("show a runnable workflow recipe", rendered_help)
 
@@ -719,6 +719,7 @@ class AgentStackTest(unittest.TestCase):
                 repl._queue_edit(runner, [], "")
                 repl._queue_move(runner, [])
                 repl._queue_join(runner, [])
+                repl._queue_cancel(runner, [])
             finally:
                 runner.stop(wait=True)
 
@@ -728,6 +729,7 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("/queue edit <job id|latest|next> <new prompt>", rendered)
         self.assertIn("/queue move <job id|latest|next>", rendered)
         self.assertIn("/queue join <job id|latest|active|next> [seconds]", rendered)
+        self.assertIn("/queue cancel <job id|latest|next|all>", rendered)
 
     def test_repl_queue_latest_targets_live_mutations(self):
         from mechferret import repl
@@ -1125,7 +1127,7 @@ class AgentStackTest(unittest.TestCase):
                 while runner.active() is None and time.monotonic() < deadline:
                     time.sleep(0.01)
 
-                repl._queue_cancel(runner, [str(second.id)])
+                repl._queue_cancel(runner, ["next"])
                 release.set()
                 self.assertTrue(runner.wait_idle(timeout=2))
             finally:
@@ -1135,6 +1137,34 @@ class AgentStackTest(unittest.TestCase):
         self.assertEqual(second.status, "canceled")
         self.assertEqual(started, ["first"])
         self.assertIn("canceled #2", out.getvalue())
+
+    def test_save_queue_jobs_serializes_concurrent_writes_to_same_path(self):
+        from mechferret import repl
+
+        queue_path = Path("queue-concurrent.json")
+        thread_count = 12
+        barrier = threading.Barrier(thread_count + 1)
+        errors = []
+
+        def writer(index):
+            try:
+                barrier.wait(timeout=2)
+                repl._save_queue_jobs(queue_path, [repl.PromptJob(id=index + 1, text=f"prompt {index}")])
+            except Exception as exc:  # noqa: BLE001 - test reports cross-thread failures
+                errors.append(exc)
+
+        threads = [threading.Thread(target=writer, args=(index,)) for index in range(thread_count)]
+        for thread in threads:
+            thread.start()
+        barrier.wait(timeout=2)
+        for thread in threads:
+            thread.join(timeout=2)
+
+        self.assertEqual(errors, [])
+        jobs = repl._load_saved_queue(queue_path)
+        self.assertEqual(len(jobs), 1)
+        self.assertTrue(jobs[0].text.startswith("prompt "))
+        self.assertEqual(list(queue_path.parent.glob(f".{queue_path.name}.*.tmp")), [])
 
     def test_repl_queue_clear_scopes_live_and_saved_queue_state(self):
         from mechferret import repl

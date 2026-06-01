@@ -35,6 +35,8 @@ WIDTH = 78
 PURPLE = "38;5;141"  # soft violet
 PURPLE_B = "1;38;5;141"
 TERMINAL_JOB_STATUSES = {"done", "error", "canceled"}
+_QUEUE_FILE_LOCKS_GUARD = threading.Lock()
+_QUEUE_FILE_LOCKS: dict[Path, threading.Lock] = {}
 
 
 def _c(text: str, code: str) -> str:
@@ -145,12 +147,13 @@ class ChatJobRunner:
 
     def clear_saved(self) -> int:
         saved = self.saved()
-        try:
-            self._queue_path.unlink()
-        except FileNotFoundError:
-            pass
-        except OSError:
-            return 0
+        with _queue_file_lock(self._queue_path):
+            try:
+                self._queue_path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                return 0
         return len(saved)
 
     def pause(self) -> bool:
@@ -442,20 +445,42 @@ def _load_saved_queue(path: Path = QUEUE_FILE) -> list[PromptJob]:
     return jobs
 
 
+def _queue_file_lock(path: Path) -> threading.Lock:
+    try:
+        key = path.expanduser().resolve()
+    except OSError:
+        key = path.expanduser().absolute()
+    with _QUEUE_FILE_LOCKS_GUARD:
+        lock = _QUEUE_FILE_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _QUEUE_FILE_LOCKS[key] = lock
+        return lock
+
+
 def _save_queue_jobs(path: Path, jobs: list[PromptJob]) -> int:
-    if not jobs:
+    with _queue_file_lock(path):
+        if not jobs:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                pass
+            return 0
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.{time.monotonic_ns()}.tmp")
         try:
-            path.unlink()
-        except FileNotFoundError:
-            pass
-        except OSError:
-            pass
-        return 0
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps({"jobs": [_job_to_dict(job) for job in jobs]}, indent=2, sort_keys=True), encoding="utf-8")
-    tmp.replace(path)
-    return len(jobs)
+            tmp.write_text(json.dumps({"jobs": [_job_to_dict(job) for job in jobs]}, indent=2, sort_keys=True), encoding="utf-8")
+            tmp.replace(path)
+        finally:
+            try:
+                tmp.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                pass
+        return len(jobs)
 
 
 def _clone_agent_for_side_chat(agent: Any) -> Any:
@@ -737,7 +762,7 @@ def run_repl() -> None:
         if bare == "cancel":
             target = tokens[1] if len(tokens) > 1 else ""
             if not target:
-                print(_c("  usage: /cancel <job id|all>", "33"))
+                print(_c("  usage: /cancel <job id|latest|next|all>", "33"))
                 continue
             canceled = runner.cancel(target)
             if canceled:
@@ -981,7 +1006,7 @@ def _print_canceled(canceled: list[PromptJob]) -> None:
 def _queue_cancel(runner: ChatJobRunner, args: list[str]) -> None:
     target = args[0] if args else ""
     if not target:
-        print(_c("  usage: /queue cancel <job id|latest|all>", "33"))
+        print(_c("  usage: /queue cancel <job id|latest|next|all>", "33"))
         return
     canceled = runner.cancel(target)
     if canceled:

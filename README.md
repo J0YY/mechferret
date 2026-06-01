@@ -347,7 +347,7 @@ You can do things like:
 /queue restore  restore saved queued/running prompts from the last session
 /queue wait     wait until active queued and side work finishes
 /queue join <id|latest|active|next> wait for one queued or side job to finish
-/cancel <id>    remove a queued prompt before it starts
+/cancel <id|latest|next|all> remove queued prompts before they start
 /quickstart     show the recommended demo/OpenVLA/CI command path
 /selftest       run offline readiness checks and optionally verify demo artifacts
 /status         show setup, selected run, audit/verify state, artifacts, and next actions
