@@ -32,6 +32,8 @@ NOVELTY_FOCUSED_LIMIT = 10
 NOVELTY_QUERY_RESULT_LIMIT = 20
 NOVELTY_MAX_QUERY_PASSES = 12
 NOVELTY_CLOSEST_PRIOR_LIMIT = 8
+NOVELTY_WEB_RESULT_LIMIT = 12
+NOVELTY_WEB_MAX_QUERY_PASSES = 5
 NOVELTY_RISKS = {
     "high_prior_art_risk",
     "medium_prior_art_risk",
@@ -897,7 +899,7 @@ def _experiments_for_discoveries(experiments, discoveries, *, limit: int):
 
 
 def tool_verify_novelty(args: dict[str, Any]) -> str:
-    from .knowledge import search_arxiv
+    from .knowledge import search_arxiv, web_search
 
     idea, invalid = _string_arg(args, "idea")
     if invalid:
@@ -906,10 +908,12 @@ def tool_verify_novelty(args: dict[str, Any]) -> str:
     if invalid:
         return json.dumps(invalid)
     plan = _novelty_search_plan(idea, queries)
+    web_plan = _novelty_web_search_plan(idea, queries)
     seen: set[str] = set()
     related: list[dict[str, Any]] = []
     recent: list[dict[str, Any]] = []
     architecture: list[dict[str, Any]] = []
+    web_results: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
     for item in plan:
         query = item["query"]
@@ -918,7 +922,7 @@ def tool_verify_novelty(args: dict[str, Any]) -> str:
             _, papers = search_arxiv(query, max_results=item["max_results"], sort_by=sort_by)
         except Exception as exc:  # noqa: BLE001
             papers = []
-            errors.append({"query": query, "error": str(exc)})
+            errors.append({"source": "arxiv", "query": query, "error": str(exc)})
         for p in papers:
             row = _novelty_paper_row(p, focus=item["focus"])
             key = _novelty_paper_key(row)
@@ -930,13 +934,30 @@ def tool_verify_novelty(args: dict[str, Any]) -> str:
                 recent.append(row)
             if "architecture" in item["focus"] and len(architecture) < NOVELTY_FOCUSED_LIMIT:
                 architecture.append(row)
+    for item in web_plan:
+        query = item["query"]
+        try:
+            results = web_search(query, max_results=item["max_results"])
+        except Exception as exc:  # noqa: BLE001
+            results = []
+            errors.append({"source": "web", "query": query, "error": str(exc)})
+        for result in results:
+            row = _novelty_web_row(result, focus=item["focus"])
+            key = _novelty_paper_key(row)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            web_results.append(row)
     return json.dumps({
         "idea": idea,
         "search_plan": plan,
+        "arxiv_search_plan": plan,
+        "web_search_plan": web_plan,
         "related_papers": related[:NOVELTY_RELATED_LIMIT],
         "recent_papers": recent,
         "architecture_papers": architecture,
-        "assessment": _novelty_assessment(idea, related, errors),
+        "web_results": web_results[:NOVELTY_RELATED_LIMIT],
+        "assessment": _novelty_assessment(idea, [*related, *web_results], errors),
         "errors": errors,
         "novelty_questions": _novelty_questions(idea),
         "guidance": "Do not claim high novelty unless the idea survives relevance, submitted-date, "
@@ -1008,11 +1029,44 @@ def _novelty_search_plan(idea: str, queries: list[str] | None) -> list[dict[str,
     return plan[:NOVELTY_MAX_QUERY_PASSES]
 
 
+def _novelty_web_search_plan(idea: str, queries: list[str] | None) -> list[dict[str, Any]]:
+    seeds = _unique_strings([*(queries or []), idea])
+    terms = _novelty_terms(idea)
+    compact = " ".join(terms[:8]) or idea
+    candidates = []
+    for query in seeds[:2]:
+        candidates.append(_novelty_web_plan_item(query, "provided_web_relevance"))
+    candidates.extend(
+        [
+            _novelty_web_plan_item(f"{compact} recent paper implementation", "web_recent_implementation"),
+            _novelty_web_plan_item(f"{compact} benchmark architecture discovery", "web_architecture_discovery"),
+            _novelty_web_plan_item(f"{compact} github project", "web_code_prior"),
+        ]
+    )
+    plan: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in candidates:
+        key = item["query"].lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        plan.append(item)
+    return plan[:NOVELTY_WEB_MAX_QUERY_PASSES]
+
+
 def _novelty_plan_item(query: str, sort_by: str, focus: str) -> dict[str, Any]:
     return {
         "query": query,
         "sort_by": sort_by,
         "max_results": NOVELTY_QUERY_RESULT_LIMIT,
+        "focus": focus,
+    }
+
+
+def _novelty_web_plan_item(query: str, focus: str) -> dict[str, Any]:
+    return {
+        "query": query,
+        "max_results": NOVELTY_WEB_RESULT_LIMIT,
         "focus": focus,
     }
 
@@ -1044,11 +1098,25 @@ def _novelty_terms(idea: str) -> list[str]:
 
 def _novelty_paper_row(paper: dict[str, Any], *, focus: str) -> dict[str, Any]:
     return {
+        "source": "arxiv",
         "title": str(paper.get("title", "")).strip(),
         "url": str(paper.get("url", "")).strip(),
         "published": str(paper.get("published", "")).strip(),
         "abstract": str(paper.get("abstract", "")).strip()[:700],
         "authors": paper.get("authors", []) if isinstance(paper.get("authors"), list) else [],
+        "focus": focus,
+    }
+
+
+def _novelty_web_row(result: dict[str, Any], *, focus: str) -> dict[str, Any]:
+    abstract = result.get("snippet") or result.get("abstract") or result.get("description") or ""
+    return {
+        "source": "web",
+        "title": str(result.get("title", "")).strip(),
+        "url": str(result.get("url", "")).strip(),
+        "published": "",
+        "abstract": str(abstract).strip()[:700],
+        "authors": [],
         "focus": focus,
     }
 
@@ -1059,22 +1127,24 @@ def _novelty_paper_key(row: dict[str, Any]) -> str:
     return title or url
 
 
-def _novelty_assessment(idea: str, papers: list[dict[str, Any]], errors: list[dict[str, str]]) -> dict[str, Any]:
+def _novelty_assessment(idea: str, rows: list[dict[str, Any]], errors: list[dict[str, str]]) -> dict[str, Any]:
     terms = _novelty_terms(idea)
-    scored = [_novelty_scored_prior(row, terms) for row in papers]
+    scored = [_novelty_scored_prior(row, terms) for row in rows]
     scored.sort(key=lambda row: row["score"], reverse=True)
     closest = scored[:NOVELTY_CLOSEST_PRIOR_LIMIT]
     top_score = closest[0]["score"] if closest else 0.0
-    if not papers and errors:
+    arxiv_count = sum(1 for row in rows if row.get("source") == "arxiv")
+    web_count = sum(1 for row in rows if row.get("source") == "web")
+    if not rows and errors:
         risk = "unknown_search_incomplete"
         verdict = "Novelty is not assessable because one or more retrieval passes failed."
-    elif not papers:
+    elif not rows:
         risk = "unresolved_no_close_prior_found"
         verdict = "No close prior art was found by this search plan; treat novelty as unresolved until expert review."
     elif top_score >= 0.55:
         risk = "high_prior_art_risk"
         verdict = "Closest retrieved papers appear to share core terms or mechanisms; novelty claim needs a very specific delta."
-    elif top_score >= 0.25 or len(papers) >= NOVELTY_RELATED_LIMIT:
+    elif top_score >= 0.25 or len(rows) >= NOVELTY_RELATED_LIMIT:
         risk = "medium_prior_art_risk"
         verdict = "Related work exists; novelty depends on the exact method, evaluation, and mechanism difference."
     else:
@@ -1085,8 +1155,12 @@ def _novelty_assessment(idea: str, papers: list[dict[str, Any]], errors: list[di
         "verdict": verdict,
         "closest_prior_art": closest,
         "coverage": {
-            "retrieved_papers": len(papers),
+            "retrieved_evidence": len(rows),
+            "retrieved_papers": arxiv_count,
+            "web_results": web_count,
             "failed_queries": len(errors),
+            "failed_arxiv_queries": sum(1 for error in errors if error.get("source") == "arxiv"),
+            "failed_web_queries": sum(1 for error in errors if error.get("source") == "web"),
             "idea_terms": terms,
             "recent_window": _novelty_recent_window_label(),
         },
@@ -1107,20 +1181,23 @@ def _novelty_scored_prior(row: dict[str, Any], terms: list[str]) -> dict[str, An
     recent_score = 0.1 if _novelty_is_recent(row.get("published", "")) else 0.0
     score = min(1.0, round(term_score * 0.75 + focus_score + recent_score, 3))
     return {
+        "source": row.get("source", ""),
         "title": row.get("title", ""),
         "url": row.get("url", ""),
         "published": row.get("published", ""),
         "focus": focus,
         "score": score,
         "matched_terms": matched,
-        "reason": _novelty_prior_reason(matched, focus, row.get("published", "")),
+        "reason": _novelty_prior_reason(matched, focus, row.get("published", ""), row.get("source", "")),
     }
 
 
-def _novelty_prior_reason(matched: list[str], focus: str, published: Any) -> str:
+def _novelty_prior_reason(matched: list[str], focus: str, published: Any, source: Any) -> str:
     bits = []
     if matched:
         bits.append("shares idea terms: " + ", ".join(matched[:6]))
+    if source == "web":
+        bits.append("retrieved from web search")
     if "architecture" in focus:
         bits.append("retrieved by architecture-focused search")
     if "mechanism" in focus:

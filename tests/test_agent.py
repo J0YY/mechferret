@@ -628,6 +628,7 @@ class AgentToolTest(unittest.TestCase):
         from mechferret import tools
 
         calls = []
+        web_calls = []
 
         def fake_search(query, max_results=20, sort_by="relevance"):
             calls.append({"query": query, "max_results": max_results, "sort_by": sort_by})
@@ -642,7 +643,20 @@ class AgentToolTest(unittest.TestCase):
                 }
             ]
 
-        with patch("mechferret.knowledge.search_arxiv", side_effect=fake_search):
+        def fake_web_search(query, max_results=12):
+            web_calls.append({"query": query, "max_results": max_results})
+            return [
+                {
+                    "title": "Sparse autoencoder architecture implementation for VLA mechanism discovery",
+                    "url": "https://example.org/vla-sae",
+                    "snippet": "Recent benchmark implementation for sparse autoencoder architecture in vision language action policy mechanisms.",
+                }
+            ]
+
+        with (
+            patch("mechferret.knowledge.search_arxiv", side_effect=fake_search),
+            patch("mechferret.knowledge.web_search", side_effect=fake_web_search),
+        ):
             payload = json.loads(
                 tools.run_tool(
                     "verify_novelty",
@@ -660,23 +674,36 @@ class AgentToolTest(unittest.TestCase):
         self.assertTrue(any("architecture" in call["query"].lower() for call in calls))
         self.assertTrue(any("discovery" in call["query"].lower() for call in calls))
         self.assertEqual(len(payload["search_plan"]), len(calls))
+        self.assertEqual(payload["arxiv_search_plan"], payload["search_plan"])
+        self.assertGreaterEqual(len(web_calls), 3)
+        self.assertTrue(all(call["max_results"] == 12 for call in web_calls))
+        self.assertIn("web_search_plan", payload)
+        self.assertEqual(payload["web_results"][0]["source"], "web")
         self.assertIn("recent_papers", payload)
         self.assertIn("architecture_papers", payload)
         self.assertEqual(payload["assessment"]["risk"], "high_prior_art_risk")
         self.assertTrue(payload["assessment"]["closest_prior_art"])
         self.assertIn("sparse", payload["assessment"]["closest_prior_art"][0]["matched_terms"])
         self.assertIn("recent_window", payload["assessment"]["coverage"])
+        self.assertGreaterEqual(payload["assessment"]["coverage"]["web_results"], 1)
+        self.assertGreaterEqual(payload["assessment"]["coverage"]["retrieved_evidence"], 2)
         self.assertIn("Do not claim high novelty", payload["guidance"])
 
     def test_verify_novelty_reports_unknown_when_search_fails(self):
         from mechferret import tools
 
-        with patch("mechferret.knowledge.search_arxiv", side_effect=RuntimeError("network unavailable")):
+        with (
+            patch("mechferret.knowledge.search_arxiv", side_effect=RuntimeError("network unavailable")),
+            patch("mechferret.knowledge.web_search", side_effect=RuntimeError("network unavailable")),
+        ):
             payload = json.loads(tools.run_tool("verify_novelty", {"idea": "adaptive probe routing for activation patches"}))
 
         self.assertEqual(payload["assessment"]["risk"], "unknown_search_incomplete")
         self.assertGreater(payload["assessment"]["coverage"]["failed_queries"], 0)
+        self.assertGreater(payload["assessment"]["coverage"]["failed_arxiv_queries"], 0)
+        self.assertGreater(payload["assessment"]["coverage"]["failed_web_queries"], 0)
         self.assertEqual(payload["related_papers"], [])
+        self.assertEqual(payload["web_results"], [])
 
     def test_tools_validate_boolean_values(self):
         from mechferret import tools
