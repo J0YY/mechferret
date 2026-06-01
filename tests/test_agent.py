@@ -588,9 +588,10 @@ class AgentToolTest(unittest.TestCase):
             index = len(calls)
             return 99, [
                 {
-                    "title": f"{sort_by} paper {index}",
+                    "title": f"{sort_by} sparse autoencoder architecture paper {index}",
                     "url": f"https://arxiv.org/abs/2501.{index:04d}",
                     "published": "2025-01-01T00:00:00Z",
+                    "abstract": "Sparse autoencoder architecture for vision language action policies and mechanism discovery.",
                     "authors": ["A. Researcher"],
                 }
             ]
@@ -615,7 +616,21 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(len(payload["search_plan"]), len(calls))
         self.assertIn("recent_papers", payload)
         self.assertIn("architecture_papers", payload)
+        self.assertEqual(payload["assessment"]["risk"], "high_prior_art_risk")
+        self.assertTrue(payload["assessment"]["closest_prior_art"])
+        self.assertIn("sparse", payload["assessment"]["closest_prior_art"][0]["matched_terms"])
+        self.assertIn("recent_window", payload["assessment"]["coverage"])
         self.assertIn("Do not claim high novelty", payload["guidance"])
+
+    def test_verify_novelty_reports_unknown_when_search_fails(self):
+        from mechferret import tools
+
+        with patch("mechferret.knowledge.search_arxiv", side_effect=RuntimeError("network unavailable")):
+            payload = json.loads(tools.run_tool("verify_novelty", {"idea": "adaptive probe routing for activation patches"}))
+
+        self.assertEqual(payload["assessment"]["risk"], "unknown_search_incomplete")
+        self.assertGreater(payload["assessment"]["coverage"]["failed_queries"], 0)
+        self.assertEqual(payload["related_papers"], [])
 
     def test_tools_validate_boolean_values(self):
         from mechferret import tools

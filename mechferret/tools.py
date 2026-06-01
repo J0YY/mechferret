@@ -16,6 +16,7 @@ import json
 import math
 import subprocess
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
 
@@ -30,6 +31,7 @@ NOVELTY_RELATED_LIMIT = 24
 NOVELTY_FOCUSED_LIMIT = 10
 NOVELTY_QUERY_RESULT_LIMIT = 20
 NOVELTY_MAX_QUERY_PASSES = 12
+NOVELTY_CLOSEST_PRIOR_LIMIT = 8
 
 
 def _truncate(text: str, limit: int = MAX_OUTPUT) -> str:
@@ -927,6 +929,7 @@ def tool_verify_novelty(args: dict[str, Any]) -> str:
         "related_papers": related[:NOVELTY_RELATED_LIMIT],
         "recent_papers": recent,
         "architecture_papers": architecture,
+        "assessment": _novelty_assessment(idea, related, errors),
         "errors": errors,
         "novelty_questions": _novelty_questions(idea),
         "guidance": "Do not claim high novelty unless the idea survives relevance, submitted-date, "
@@ -1037,6 +1040,7 @@ def _novelty_paper_row(paper: dict[str, Any], *, focus: str) -> dict[str, Any]:
         "title": str(paper.get("title", "")).strip(),
         "url": str(paper.get("url", "")).strip(),
         "published": str(paper.get("published", "")).strip(),
+        "abstract": str(paper.get("abstract", "")).strip()[:700],
         "authors": paper.get("authors", []) if isinstance(paper.get("authors"), list) else [],
         "focus": focus,
     }
@@ -1048,10 +1052,101 @@ def _novelty_paper_key(row: dict[str, Any]) -> str:
     return title or url
 
 
+def _novelty_assessment(idea: str, papers: list[dict[str, Any]], errors: list[dict[str, str]]) -> dict[str, Any]:
+    terms = _novelty_terms(idea)
+    scored = [_novelty_scored_prior(row, terms) for row in papers]
+    scored.sort(key=lambda row: row["score"], reverse=True)
+    closest = scored[:NOVELTY_CLOSEST_PRIOR_LIMIT]
+    top_score = closest[0]["score"] if closest else 0.0
+    if not papers and errors:
+        risk = "unknown_search_incomplete"
+        verdict = "Novelty is not assessable because one or more retrieval passes failed."
+    elif not papers:
+        risk = "unresolved_no_close_prior_found"
+        verdict = "No close prior art was found by this search plan; treat novelty as unresolved until expert review."
+    elif top_score >= 0.55:
+        risk = "high_prior_art_risk"
+        verdict = "Closest retrieved papers appear to share core terms or mechanisms; novelty claim needs a very specific delta."
+    elif top_score >= 0.25 or len(papers) >= NOVELTY_RELATED_LIMIT:
+        risk = "medium_prior_art_risk"
+        verdict = "Related work exists; novelty depends on the exact method, evaluation, and mechanism difference."
+    else:
+        risk = "low_prior_art_risk"
+        verdict = "Retrieved papers look adjacent rather than directly overlapping; novelty still needs expert verification."
+    return {
+        "risk": risk,
+        "verdict": verdict,
+        "closest_prior_art": closest,
+        "coverage": {
+            "retrieved_papers": len(papers),
+            "failed_queries": len(errors),
+            "idea_terms": terms,
+            "recent_window": _novelty_recent_window_label(),
+        },
+        "required_delta": [
+            "Name the nearest prior paper and the exact method component that differs.",
+            "Show a benchmark, ablation, or causal test where the idea behaves differently.",
+            "Downgrade novelty if the contribution is only a new wording of an existing architecture or probe.",
+        ],
+    }
+
+
+def _novelty_scored_prior(row: dict[str, Any], terms: list[str]) -> dict[str, Any]:
+    haystack = f"{row.get('title', '')} {row.get('abstract', '')}".lower()
+    matched = [term for term in terms if term in haystack]
+    term_score = len(matched) / max(1, len(terms))
+    focus = str(row.get("focus", ""))
+    focus_score = 0.15 if any(key in focus for key in ("architecture", "mechanism", "relevance")) else 0.0
+    recent_score = 0.1 if _novelty_is_recent(row.get("published", "")) else 0.0
+    score = min(1.0, round(term_score * 0.75 + focus_score + recent_score, 3))
+    return {
+        "title": row.get("title", ""),
+        "url": row.get("url", ""),
+        "published": row.get("published", ""),
+        "focus": focus,
+        "score": score,
+        "matched_terms": matched,
+        "reason": _novelty_prior_reason(matched, focus, row.get("published", "")),
+    }
+
+
+def _novelty_prior_reason(matched: list[str], focus: str, published: Any) -> str:
+    bits = []
+    if matched:
+        bits.append("shares idea terms: " + ", ".join(matched[:6]))
+    if "architecture" in focus:
+        bits.append("retrieved by architecture-focused search")
+    if "mechanism" in focus:
+        bits.append("retrieved by mechanism-focused search")
+    if _novelty_is_recent(published):
+        bits.append("within the recent-paper window")
+    return "; ".join(bits) or "retrieved as adjacent prior art"
+
+
+def _novelty_is_recent(published: Any) -> bool:
+    year = _novelty_year(published)
+    return year is not None and year >= datetime.now(UTC).year - 2
+
+
+def _novelty_year(value: Any) -> int | None:
+    text = str(value or "").strip()
+    if len(text) < 4:
+        return None
+    try:
+        return int(text[:4])
+    except ValueError:
+        return None
+
+
+def _novelty_recent_window_label() -> str:
+    year = datetime.now(UTC).year
+    return f"{year - 2}-{year}"
+
+
 def _novelty_questions(idea: str) -> list[str]:
     terms = ", ".join(_novelty_terms(idea)[:5]) or "the core mechanism"
     return [
-        f"Which 2024-2026 papers already combine {terms}?",
+        f"Which recent papers already combine {terms}?",
         "What is the nearest architecture or training-pipeline ancestor, and what exact component changes?",
         "Which benchmark, ablation, or negative result would distinguish this from adjacent work?",
         "Does the contribution depend on a new mechanism, a new measurement, or only a new application domain?",
