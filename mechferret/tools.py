@@ -32,6 +32,13 @@ NOVELTY_FOCUSED_LIMIT = 10
 NOVELTY_QUERY_RESULT_LIMIT = 20
 NOVELTY_MAX_QUERY_PASSES = 12
 NOVELTY_CLOSEST_PRIOR_LIMIT = 8
+NOVELTY_RISKS = {
+    "high_prior_art_risk",
+    "medium_prior_art_risk",
+    "low_prior_art_risk",
+    "unresolved_no_close_prior_found",
+    "unknown_search_incomplete",
+}
 
 
 def _truncate(text: str, limit: int = MAX_OUTPUT) -> str:
@@ -1160,29 +1167,62 @@ def tool_present_options(args: dict[str, Any]) -> str:
         return json.dumps(invalid)
     titles = []
     for index, option in enumerate(options):
-        title = option.get("title")
-        if not isinstance(title, str) or not title.strip():
-            return json.dumps(
-                _invalid_object_list_payload(
-                    "options",
-                    title,
-                    index=index,
-                    expected="objects with non-empty string title",
-                )
-            )
-        titles.append(title)
+        invalid = _validate_option_card(option, index)
+        if invalid:
+            return json.dumps(invalid)
+        titles.append(str(option.get("title", "")).strip())
     return json.dumps({"options": titles, "option_details": [_option_detail(option) for option in options]})
+
+
+def _validate_option_card(option: dict[str, Any], index: int) -> dict[str, Any] | None:
+    for key in ("title", "summary", "detail", "novelty_verdict", "required_delta"):
+        value = option.get(key)
+        if not isinstance(value, str) or not value.strip():
+            return _invalid_object_list_payload(
+                "options",
+                value,
+                index=index,
+                expected=f"objects with non-empty string {key}",
+            )
+    risk = option.get("novelty_risk")
+    if not isinstance(risk, str) or risk.strip() not in NOVELTY_RISKS:
+        return _invalid_object_list_payload(
+            "options",
+            risk,
+            index=index,
+            expected="objects with novelty_risk from verify_novelty assessment",
+        )
+    citations = _option_strings(option.get("citations", []))
+    if not citations:
+        return _invalid_object_list_payload(
+            "options",
+            option.get("citations"),
+            index=index,
+            expected="objects with non-empty citations list",
+        )
+    if not isinstance(option.get("closest_prior_art"), list):
+        return _invalid_object_list_payload(
+            "options",
+            option.get("closest_prior_art"),
+            index=index,
+            expected="objects with closest_prior_art list from verify_novelty assessment",
+        )
+    return None
 
 
 def _option_detail(option: dict[str, Any]) -> dict[str, Any]:
     detail = {
         "title": str(option.get("title", "")).strip(),
         "summary": str(option.get("summary", "")).strip(),
+        "detail": str(option.get("detail", "")).strip(),
     }
     for key in ("novelty_risk", "novelty_verdict", "novelty", "required_delta"):
         value = option.get(key)
         if isinstance(value, str) and value.strip():
             detail[key] = value.strip()
+    citations = _option_strings(option.get("citations", []))[:4]
+    if citations:
+        detail["citations"] = citations
     closest = _option_strings(option.get("closest_prior_art", []))[:3]
     if closest:
         detail["closest_prior_art"] = closest
@@ -2020,7 +2060,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
      "parameters": _obj({"model_id": {"type": "string"}, "query": {"type": "string"}}, ["model_id", "query"])},
     {"name": "verify_novelty", "description": "Deep novelty check for a research idea using multi-pass arXiv searches across relevance, recency, architecture, and recent-discovery angles. Call this for each proposed research direction before presenting it.",
      "parameters": _obj({"idea": {"type": "string", "description": "the research idea/direction to novelty-check"}, "queries": {"type": "array", "items": {"type": "string"}, "description": "optional arXiv queries to probe for prior work"}}, ["idea"])},
-    {"name": "present_options", "description": "Present 2-5 research directions to the user as an interactive, expandable picker and return their choice. Use this instead of writing options as prose. Include novelty_risk, novelty_verdict, closest_prior_art, and required_delta from verify_novelty assessment.",
+    {"name": "present_options", "description": "Present 2-5 research directions to the user as an interactive, expandable picker and return their choice. Use this instead of writing options as prose. Every option must include detail, citations, novelty_risk, novelty_verdict, closest_prior_art, and required_delta from verify_novelty assessment.",
      "parameters": _obj({"options": {"type": "array", "items": {"type": "object", "properties": {
          "title": {"type": "string"},
          "summary": {"type": "string", "description": "one line"},
@@ -2031,7 +2071,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
          "novelty_verdict": {"type": "string", "description": "assessment.verdict from verify_novelty"},
          "closest_prior_art": {"type": "array", "items": {"type": "string"}, "description": "nearest prior paper titles/URLs from assessment.closest_prior_art"},
          "required_delta": {"type": "string", "description": "specific delta needed to justify novelty"},
-     }, "required": ["title", "summary"]}}}, ["options"])},
+     }, "required": ["title", "summary", "detail", "citations", "novelty_risk", "novelty_verdict", "closest_prior_art", "required_delta"]}}}, ["options"])},
     {"name": "run_research", "description": "Run the general prompt-to-dossier literature/research pipeline over explicit sources, URLs, memory, or a configured provider.",
      "parameters": _obj({
          "question": {"type": "string"},

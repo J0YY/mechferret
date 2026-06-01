@@ -549,6 +549,28 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(bad_title["expected"], "objects with non-empty string title")
         self.assertEqual(bad_title["index"], 0)
 
+        bad_novelty = json.loads(
+            tools.run_tool(
+                "present_options",
+                {
+                    "options": [
+                        {
+                            "title": "Thin option",
+                            "summary": "missing novelty evidence",
+                            "detail": "A direction without verify_novelty fields should be rejected.",
+                            "citations": ["https://arxiv.org/abs/2501.0001"],
+                            "novelty_risk": "medium",
+                            "novelty_verdict": "Related work exists.",
+                            "closest_prior_art": [],
+                            "required_delta": "Show a measurable delta.",
+                        }
+                    ]
+                },
+            )
+        )
+        self.assertFalse(bad_novelty["ok"])
+        self.assertEqual(bad_novelty["expected"], "objects with novelty_risk from verify_novelty assessment")
+
         ok = json.loads(
             tools.run_tool(
                 "present_options",
@@ -557,6 +579,8 @@ class AgentToolTest(unittest.TestCase):
                         {
                             "title": "Run audit",
                             "summary": "...",
+                            "detail": "Audit a candidate direction against retrieved papers and required experimental deltas.",
+                            "citations": ["Closest Paper https://arxiv.org/abs/2501.0001"],
                             "novelty_risk": "medium_prior_art_risk",
                             "novelty_verdict": "Related work exists; specify the delta.",
                             "closest_prior_art": ["Closest Paper https://arxiv.org/abs/2501.0001"],
@@ -568,6 +592,7 @@ class AgentToolTest(unittest.TestCase):
         )
         self.assertEqual(ok["options"], ["Run audit"])
         self.assertEqual(ok["option_details"][0]["novelty_risk"], "medium_prior_art_risk")
+        self.assertIn("Closest Paper", ok["option_details"][0]["citations"][0])
         self.assertIn("Closest Paper", ok["option_details"][0]["closest_prior_art"][0])
         self.assertIn("causal ablation", ok["option_details"][0]["required_delta"])
 
