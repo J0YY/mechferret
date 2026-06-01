@@ -3311,6 +3311,10 @@ class AgentStackTest(unittest.TestCase):
         option = {
             "title": "Novelty audit",
             "summary": "Check the delta",
+            "novelty_risk": "medium_prior_art_risk",
+            "novelty_verdict": "Related work exists; specify the empirical delta.",
+            "claim_readiness": {"status": "delta_review_required", "can_claim_high_novelty": False},
+            "required_delta": ["Show a causal ablation that differs from prior work."],
             "comparison_matrix": [{"axis": "method", "covered": True}],
             "novelty_threat_model": [{"threat": "claim_collision", "risk": "needs_delta_review"}],
             "disqualifying_overlap_tests": [{"test": "claim_collision", "passed": False}],
@@ -3349,6 +3353,9 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("Selected option JSON", calls[1])
         rendered = out.getvalue()
         self.assertIn("deferred options", rendered)
+        self.assertIn("novelty risk: medium_prior_art_risk", rendered)
+        self.assertIn("claim readiness: delta_review_required", rendered)
+        self.assertIn("required delta: Show a causal ablation", rendered)
         self.assertIn("selected option for #1: Novelty audit", rendered)
         self.assertIn("queued follow-up #2", rendered)
         self.assertIn("selected option: Novelty audit", rendered)

@@ -1809,7 +1809,32 @@ def _queue_show(runner: ChatJobRunner, args: list[str]) -> None:
                 summary = str(option.get("summary", "")).strip()
                 suffix = f" — {summary}" if summary else ""
                 print(_c(f"    {index}. {title}{suffix}", "2"))
+                for detail in _deferred_option_queue_details(option):
+                    print(_c(f"       {detail}", "2"))
             print(_c(f"  use /queue choose #{job.id} <number|title> to continue from one option", "2"))
+
+
+def _deferred_option_queue_details(option: dict[str, Any]) -> list[str]:
+    details: list[str] = []
+    risk = str(option.get("novelty_risk", "")).strip()
+    verdict = str(option.get("novelty_verdict", "")).strip()
+    if risk:
+        details.append(f"novelty risk: {risk}")
+    if verdict:
+        details.append(f"novelty verdict: {_short_job_text(verdict, 96)}")
+    readiness = option.get("claim_readiness")
+    if isinstance(readiness, dict):
+        status = str(readiness.get("status", "")).strip()
+        if status:
+            details.append(f"claim readiness: {status}")
+    required_delta = option.get("required_delta")
+    if isinstance(required_delta, list):
+        delta = " ".join(str(item).strip() for item in required_delta if isinstance(item, str) and item.strip())
+    else:
+        delta = str(required_delta or "").strip()
+    if delta:
+        details.append(f"required delta: {_short_job_text(delta, 110)}")
+    return details
 
 
 def _queue_tail_args(runner: ChatJobRunner, args: list[str]) -> tuple[str, float, bool, str]:
