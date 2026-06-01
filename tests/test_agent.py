@@ -90,7 +90,7 @@ def _option_search_audit():
             "passes": 1,
             "failed_passes": 0,
             "retrieved": 50,
-            "unique_added": 4 if i == 0 else 0,
+            "unique_added": 4,
             "requested_results_max": 50,
         }
         for i, focus in enumerate(arxiv_focuses)
@@ -102,7 +102,7 @@ def _option_search_audit():
             "passes": 1,
             "failed_passes": 0,
             "retrieved": 24,
-            "unique_added": 3 if i == 0 else 0,
+            "unique_added": 3,
             "requested_results_max": 24,
         }
         for i, focus in enumerate(web_focuses)
@@ -130,7 +130,24 @@ def _option_search_audit():
             "claim_collision": True,
             "peer_review": True,
         },
+        "evidence_focus_coverage": {
+            "recency": True,
+            "recent_discovery": True,
+            "architecture": True,
+            "frontier_architecture": True,
+            "method": True,
+            "mechanism": True,
+            "evaluation": True,
+            "implementation": True,
+            "replication": True,
+            "failure_modes": True,
+            "protocol": True,
+            "exact_phrase": True,
+            "claim_collision": True,
+            "peer_review": True,
+        },
         "missing_focus_coverage": [],
+        "missing_evidence_focus_coverage": [],
         "empty_focuses": [
             {"source": "arxiv", "focus": "peer_review_critique"},
             {"source": "web", "focus": "web_peer_review"},
@@ -1625,10 +1642,11 @@ class AgentToolTest(unittest.TestCase):
 
         def fake_search(query, max_results=20, sort_by="relevance"):
             calls.append({"query": query, "max_results": max_results, "sort_by": sort_by})
+            index = len(calls)
             return 99, [
                 {
-                    "title": "Sparse autoencoder method paper",
-                    "url": "https://arxiv.org/abs/2501.0001",
+                    "title": f"Sparse autoencoder method paper {index}",
+                    "url": f"https://arxiv.org/abs/2501.{index:04d}",
                     "published": "2025-01-01T00:00:00Z",
                     "abstract": "Sparse autoencoder method for vision language action policies and mechanism discovery.",
                     "authors": ["A. Researcher"],
@@ -1637,20 +1655,21 @@ class AgentToolTest(unittest.TestCase):
 
         def fake_web_search(query, max_results=12):
             web_calls.append({"query": query, "max_results": max_results})
+            index = len(web_calls)
             return [
                 {
-                    "title": "Sparse autoencoder method implementation for VLA mechanism discovery",
-                    "url": "https://example.org/vla-sae",
+                    "title": f"Sparse autoencoder method implementation for VLA mechanism discovery {index}",
+                    "url": f"https://example.org/vla-sae-{index}",
                     "snippet": f"{current_year} benchmark implementation for sparse autoencoder method in vision language action policy mechanisms.",
                 },
                 {
-                    "title": "VLA sparse autoencoder leaderboard",
-                    "url": "https://paperswithcode.com/task/vla-sae",
+                    "title": f"VLA sparse autoencoder leaderboard {index}",
+                    "url": f"https://paperswithcode.com/task/vla-sae-{index}",
                     "snippet": "Benchmark leaderboard for sparse autoencoder method mechanism discovery.",
                 },
                 {
-                    "title": "VLA SAE implementation",
-                    "url": "https://github.com/example/vla-sae",
+                    "title": f"VLA SAE implementation {index}",
+                    "url": f"https://github.com/example/vla-sae-{index}",
                     "snippet": "Repository with source code for sparse autoencoder probes on action policies.",
                 },
             ]
@@ -1714,7 +1733,7 @@ class AgentToolTest(unittest.TestCase):
         self.assertTrue(all(row["requested_results"] == 50 for row in arxiv_audit))
         self.assertTrue(all(row["requested_results"] == 24 for row in web_audit))
         self.assertTrue(all("retrieved" in row and "unique_added" in row for row in payload["search_audit"]))
-        self.assertTrue(any(row["unique_added"] == 0 and row["retrieved"] > 0 for row in payload["search_audit"]))
+        self.assertFalse(any(row["unique_added"] == 0 and row["retrieved"] > 0 for row in payload["search_audit"]))
         self.assertEqual(payload["web_results"][0]["source"], "web")
         self.assertEqual(payload["web_results"][0]["source_domain"], "example.org")
         web_source_types = {row["source_type"] for row in payload["web_results"]}
@@ -1777,13 +1796,17 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("github.com", payload["assessment"]["coverage"]["source_domain_counts"])
         self.assertGreaterEqual(payload["assessment"]["coverage"]["retrieved_evidence"], 2)
         self.assertEqual(payload["assessment"]["coverage"]["search_audit_rows"], len(payload["search_audit"]))
-        self.assertGreater(payload["assessment"]["coverage"]["duplicate_only_search_passes"], 0)
+        self.assertEqual(payload["assessment"]["coverage"]["duplicate_only_search_passes"], 0)
         self.assertEqual(payload["assessment"]["coverage"]["empty_search_passes"], 0)
         self.assertIn("search_audit", payload["assessment"])
         self.assertEqual(payload["assessment"]["search_audit"]["pass_count"], len(payload["search_audit"]))
-        self.assertGreater(payload["assessment"]["search_audit"]["duplicate_only_search_passes"], 0)
+        self.assertEqual(payload["assessment"]["search_audit"]["duplicate_only_search_passes"], 0)
         self.assertTrue(payload["assessment"]["search_audit"]["focus_coverage"]["claim_collision"])
         self.assertEqual(payload["assessment"]["search_audit"]["missing_focus_coverage"], [])
+        self.assertTrue(payload["assessment"]["search_audit"]["evidence_focus_coverage"]["claim_collision"])
+        self.assertEqual(payload["assessment"]["search_audit"]["missing_evidence_focus_coverage"], [])
+        self.assertTrue(payload["assessment"]["coverage"]["evidence_focus_coverage"]["frontier_architecture"])
+        self.assertEqual(payload["assessment"]["coverage"]["missing_evidence_focus_coverage"], [])
         focus_audit = {
             (row["source"], row["focus"]): row
             for row in payload["assessment"]["search_audit"]["focus_summary"]
@@ -1844,6 +1867,48 @@ class AgentToolTest(unittest.TestCase):
         self.assertNotIn("transformer", combined)
         self.assertNotIn("sparse autoencoder", combined)
         self.assertNotIn("github " + "project", combined)
+
+    def test_verify_novelty_marks_duplicate_only_focuses_not_ready(self):
+        from mechferret import tools
+
+        current_year = datetime.now(UTC).year
+
+        def fake_search(query, max_results=20, sort_by="relevance"):
+            return 20, [
+                {
+                    "title": "Repeated nearby prior",
+                    "url": "https://arxiv.org/abs/2501.0001",
+                    "published": f"{current_year}-01-01T00:00:00Z",
+                    "abstract": "Adaptive probe routing activation patches method mechanism evaluation.",
+                    "authors": ["A. Researcher"],
+                }
+            ]
+
+        def fake_web_search(query, max_results=12):
+            return [
+                {
+                    "title": "Repeated implementation prior",
+                    "url": "https://github.com/example/repeated-prior",
+                    "snippet": f"{current_year} implementation benchmark for adaptive probe routing.",
+                }
+            ]
+
+        with (
+            patch("mechferret.knowledge.search_arxiv", side_effect=fake_search),
+            patch("mechferret.knowledge.web_search", side_effect=fake_web_search),
+            patch("mechferret.knowledge.web_fetch", return_value=f"{current_year} implementation detail."),
+        ):
+            payload = json.loads(tools.run_tool("verify_novelty", {"idea": "adaptive probe routing for activation patches"}))
+        if payload.get("tool_output_truncated"):
+            payload = json.loads(Path(payload["full_output_path"]).read_text(encoding="utf-8"))
+
+        audit = payload["assessment"]["search_audit"]
+        self.assertGreater(audit["duplicate_only_search_passes"], 0)
+        self.assertTrue(audit["focus_coverage"]["method"])
+        self.assertFalse(audit["evidence_focus_coverage"]["method"])
+        self.assertIn("method", audit["missing_evidence_focus_coverage"])
+        self.assertFalse(payload["assessment"]["claim_readiness"]["checks"]["evidence_backed_focuses"])
+        self.assertIn("evidence_backed_focuses", payload["assessment"]["claim_readiness"]["missing_checks"])
 
     def test_verify_novelty_reports_unknown_when_search_fails(self):
         from mechferret import tools

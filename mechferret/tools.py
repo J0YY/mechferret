@@ -322,6 +322,7 @@ def _compact_novelty_coverage(coverage: dict[str, Any]) -> dict[str, Any]:
             compact[key] = coverage[key]
     for key in (
         "focus_coverage",
+        "evidence_focus_coverage",
         "threat_model_coverage",
         "web_source_types",
         "credible_source_types",
@@ -345,7 +346,9 @@ def _compact_novelty_search_audit_summary(search_audit: dict[str, Any]) -> dict[
         "empty_web_passes",
         "duplicate_only_search_passes",
         "focus_coverage",
+        "evidence_focus_coverage",
         "missing_focus_coverage",
+        "missing_evidence_focus_coverage",
     ):
         if key in search_audit:
             compact[key] = _compact_json_value(search_audit[key])
@@ -1658,6 +1661,8 @@ def _novelty_assessment(
     )
     coverage["frontier_architecture_covered"] = bool(coverage["frontier_architecture_focuses"])
     coverage["focus_coverage"] = _novelty_focus_coverage(coverage["arxiv_focuses"], coverage["web_focuses"])
+    coverage["evidence_focus_coverage"] = audit_summary.get("evidence_focus_coverage", {})
+    coverage["missing_evidence_focus_coverage"] = audit_summary.get("missing_evidence_focus_coverage", [])
     coverage["threat_model_coverage"] = _novelty_threat_model_coverage(coverage["arxiv_focuses"], coverage["web_focuses"])
     comparison_matrix = _novelty_comparison_matrix(scored, coverage)
     threat_model = _novelty_threat_model(scored, coverage)
@@ -1734,9 +1739,16 @@ def _novelty_search_audit_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         if int(row.get("failed_passes", 0) or 0) > 0
     ]
     focus_coverage = _option_search_focus_coverage(focus_rows)
+    evidence_focus_coverage = _option_search_focus_coverage(
+        [row for row in focus_rows if int(row.get("unique_added", 0) or 0) > 0]
+    )
     missing_focus_coverage = [
         focus for focus in sorted(NOVELTY_REQUIRED_OPTION_SEARCH_FOCUS)
         if not focus_coverage.get(focus)
+    ]
+    missing_evidence_focus_coverage = [
+        focus for focus in sorted(NOVELTY_REQUIRED_OPTION_SEARCH_FOCUS)
+        if not evidence_focus_coverage.get(focus)
     ]
     return {
         "pass_count": len(normalized),
@@ -1756,7 +1768,9 @@ def _novelty_search_audit_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "empty_focuses": empty_focuses,
         "failed_focuses": failed_focuses,
         "focus_coverage": focus_coverage,
+        "evidence_focus_coverage": evidence_focus_coverage,
         "missing_focus_coverage": missing_focus_coverage,
+        "missing_evidence_focus_coverage": missing_evidence_focus_coverage,
         "focus_summary": focus_rows,
         "passes": normalized,
     }
@@ -2054,6 +2068,11 @@ def _novelty_required_delta(
 
 def _novelty_claim_readiness(risk: str, top_score: float, coverage: dict[str, Any]) -> dict[str, Any]:
     focus_coverage = coverage.get("focus_coverage") if isinstance(coverage.get("focus_coverage"), dict) else {}
+    evidence_focus_coverage = (
+        coverage.get("evidence_focus_coverage")
+        if isinstance(coverage.get("evidence_focus_coverage"), dict)
+        else {}
+    )
     threat_coverage = coverage.get("threat_model_coverage") if isinstance(coverage.get("threat_model_coverage"), dict) else {}
     checks = {
         "deep_query_plan": coverage.get("arxiv_query_count", 0) >= 10
@@ -2073,6 +2092,21 @@ def _novelty_claim_readiness(risk: str, top_score: float, coverage: dict[str, An
                 "replication",
                 "failure_modes",
                 "protocol",
+            )
+        ),
+        "evidence_backed_focuses": all(
+            bool(evidence_focus_coverage.get(name))
+            for name in (
+                "recent_discovery",
+                "architecture",
+                "frontier_architecture",
+                "method",
+                "mechanism",
+                "evaluation",
+                "implementation",
+                "replication",
+                "exact_phrase",
+                "claim_collision",
             )
         ),
         "retrieved_prior_art": coverage.get("retrieved_evidence", 0) >= 8,
@@ -2123,6 +2157,8 @@ def _novelty_readiness_next_actions(status: str, missing: list[str]) -> list[str
         actions.append("Treat the direction as prior-art-overlapping until the exact method and evaluation delta is demonstrated.")
     if "focus_breadth" in missing:
         actions.append("Run follow-up searches covering recent discoveries, frontier architectures, model families, method, mechanism, evaluation, implementation, replication, failure modes, and protocol.")
+    if "evidence_backed_focuses" in missing:
+        actions.append("Repeat duplicate-only focus passes until each critical novelty axis has unique retrieved evidence, not just a planned query label.")
     if "retrieved_prior_art" in missing or "credible_source_diversity" in missing:
         actions.append("Collect more independent papers, benchmarks, code, or project reports before selecting this idea.")
     if "recent_prior_art" in missing:
@@ -2749,6 +2785,11 @@ def _valid_option_search_audit(value: Any) -> bool:
     coverage = _option_search_focus_coverage(focus_summary)
     if not all(coverage.get(name) for name in NOVELTY_REQUIRED_OPTION_SEARCH_FOCUS):
         return False
+    evidence_coverage = _option_search_focus_coverage(
+        [row for row in focus_summary if _safe_int(row.get("unique_added")) > 0]
+    )
+    if not all(evidence_coverage.get(name) for name in NOVELTY_REQUIRED_OPTION_SEARCH_FOCUS):
+        return False
     return True
 
 
@@ -2782,6 +2823,16 @@ def _option_search_audit(value: Any) -> dict[str, Any]:
     focus_summary = _option_search_focus_summary(value.get("focus_summary"))
     if focus_summary:
         audit["focus_summary"] = focus_summary
+        evidence_coverage = _option_search_focus_coverage(
+            [row for row in focus_summary if _safe_int(row.get("unique_added")) > 0]
+        )
+        audit["evidence_focus_coverage"] = evidence_coverage
+        missing_evidence = [
+            focus for focus in sorted(NOVELTY_REQUIRED_OPTION_SEARCH_FOCUS)
+            if not evidence_coverage.get(focus)
+        ]
+        if missing_evidence:
+            audit["missing_evidence_focus_coverage"] = missing_evidence[:16]
     return audit if audit["pass_count"] > 0 else {}
 
 
@@ -3860,9 +3911,11 @@ TOOL_SPECS: list[dict[str, Any]] = [
              "empty_focuses": {"type": "array", "items": {"type": "object"}},
              "failed_focuses": {"type": "array", "items": {"type": "object"}},
              "focus_coverage": {"type": "object"},
+             "evidence_focus_coverage": {"type": "object"},
              "missing_focus_coverage": {"type": "array", "items": {"type": "string"}},
+             "missing_evidence_focus_coverage": {"type": "array", "items": {"type": "string"}},
              "focus_summary": {"type": "array", "items": {"type": "object"}},
-         }, "description": "assessment.search_audit from verify_novelty; include pass_count, failed_passes, empty_search_passes, duplicate_only_search_passes, focus_coverage, missing_focus_coverage, and focus_summary. The audit must prove at least 10 arXiv passes at 50 results, 8 web passes at 24 results, focused deep-search coverage, unique_added evidence from both arXiv and web, and zero failed retrieval passes."},
+        }, "description": "assessment.search_audit from verify_novelty; include pass_count, failed_passes, empty_search_passes, duplicate_only_search_passes, focus_coverage, evidence_focus_coverage, missing_focus_coverage, missing_evidence_focus_coverage, and focus_summary. The audit must prove at least 10 arXiv passes at 50 results, 8 web passes at 24 results, focused deep-search coverage, unique_added evidence from both arXiv and web, and zero failed retrieval passes."},
          "recent_pressure": {"type": "object", "properties": {
              "status": {"type": "string"},
              "recent_window": {"type": "string"},
