@@ -338,6 +338,7 @@ You can do things like:
 /queue          show the active and queued prompts
 /queue show <id>  show a queued job's full prompt, reply, or error
 /queue retry <id> retry a job without retyping its prompt
+/queue edit <id> <prompt> edit a queued prompt before it starts
 /queue pause   hold queued prompts after the active reply finishes
 /queue resume  resume held queued prompts
 /queue restore  restore saved queued/running prompts from the last session

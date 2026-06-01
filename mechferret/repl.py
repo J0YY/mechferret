@@ -195,6 +195,23 @@ class ChatJobRunner:
             self.save_pending()
         return canceled
 
+    def edit(self, target: str, text: str) -> tuple[PromptJob | None, str]:
+        target = target.strip().lstrip("#")
+        edited: PromptJob | None = None
+        with self._lock:
+            for job in self._jobs:
+                if str(job.id) != target:
+                    continue
+                if job.status != "queued":
+                    return job, job.status
+                job.text = text
+                edited = job
+                break
+        if edited is None:
+            return None, "missing"
+        self.save_pending()
+        return edited, "updated"
+
     def recent(self, limit: int = 8) -> list[PromptJob]:
         with self._lock:
             return list(self._jobs[-limit:])
@@ -625,6 +642,8 @@ def run_repl() -> None:
                 _queue_show(runner, tokens[2:])
             elif len(tokens) > 1 and tokens[1].lower() == "retry":
                 _queue_retry(runner, tokens[2:])
+            elif len(tokens) > 1 and tokens[1].lower() == "edit":
+                _queue_edit(runner, tokens[2:], _line_after_words(line, 3))
             elif len(tokens) > 1 and tokens[1].lower() == "pause":
                 if runner.pause():
                     print(_c("  queue paused; active work can finish, but queued prompts will wait", "32"))
@@ -812,6 +831,16 @@ def _line_after_command(line: str) -> str:
     return parts[1].strip() if len(parts) > 1 else ""
 
 
+def _line_after_words(line: str, count: int) -> str:
+    text = line.strip()
+    for _ in range(count):
+        parts = text.split(maxsplit=1)
+        if len(parts) < 2:
+            return ""
+        text = parts[1].strip()
+    return text
+
+
 def _btw_prompt(text: str) -> str:
     return (
         "Side request entered with /btw while another prompt was running. "
@@ -908,6 +937,21 @@ def _queue_retry(runner: ChatJobRunner, args: list[str]) -> None:
         return
     saved_label = " saved" if saved else ""
     print(_c(f"  retried #{original.id}{saved_label} as #{retried.id}", "32"))
+
+
+def _queue_edit(runner: ChatJobRunner, args: list[str], text: str) -> None:
+    target = args[0] if args else ""
+    if not target or not text:
+        print(_c("  usage: /queue edit <job id> <new prompt>", "33"))
+        return
+    job, status = runner.edit(target, text)
+    if job is None:
+        print(_c(f"  no queued job matched {target!r}", "33"))
+        return
+    if status != "updated":
+        print(_c(f"  job #{job.id} is {status}; only queued prompts can be edited.", "33"))
+        return
+    print(_c(f"  edited #{job.id}", "32"))
 
 
 def _guard_agent_idle(runner: ChatJobRunner, action: str) -> bool:

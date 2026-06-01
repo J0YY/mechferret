@@ -426,6 +426,7 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("/queue", rendered_help)
         self.assertIn("/queue show <id>", rendered_help)
         self.assertIn("/queue retry <id>", rendered_help)
+        self.assertIn("/queue edit <id> <text>", rendered_help)
         self.assertIn("/queue pause", rendered_help)
         self.assertIn("/queue resume", rendered_help)
         self.assertIn("/queue restore", rendered_help)
@@ -624,6 +625,70 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("job #1 is running", rendered)
         self.assertIn("job #2 is queued", rendered)
         self.assertEqual(started, ["first", "second"])
+
+    def test_repl_queue_edit_updates_prompt_before_it_starts(self):
+        from mechferret import repl
+
+        started = []
+
+        def fake_chat(agent, session, text, *, background=False):
+            started.append(text)
+            return text
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-edit.json"))
+            try:
+                runner.pause()
+                job = runner.submit("old prompt")
+
+                repl._queue_edit(runner, [str(job.id)], "new prompt with details")
+                repl._queue_show(runner, [str(job.id)])
+
+                runner.resume()
+                self.assertTrue(runner.wait_idle(timeout=2))
+            finally:
+                runner.resume()
+                runner.stop(wait=True)
+
+        self.assertEqual(started, ["new prompt with details"])
+        rendered = out.getvalue()
+        self.assertIn("edited #1", rendered)
+        self.assertIn("new prompt with details", rendered)
+        self.assertNotIn("old prompt", rendered)
+
+    def test_repl_queue_edit_refuses_running_or_finished_jobs(self):
+        from mechferret import repl
+
+        release = threading.Event()
+
+        def fake_chat(agent, session, text, *, background=False):
+            if text == "running prompt":
+                self.assertTrue(release.wait(timeout=2))
+            return text
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-edit-active.json"))
+            try:
+                running = runner.submit("running prompt")
+                deadline = time.monotonic() + 2
+                while runner.active() is None and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertIsNotNone(runner.active())
+
+                repl._queue_edit(runner, [str(running.id)], "changed running prompt")
+                release.set()
+                self.assertTrue(runner.wait_idle(timeout=2))
+                repl._queue_edit(runner, [str(running.id)], "changed finished prompt")
+            finally:
+                release.set()
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("job #1 is running", rendered)
+        self.assertIn("job #1 is done", rendered)
+        self.assertEqual(running.text, "running prompt")
 
     def test_repl_queue_pause_holds_prompts_until_resume(self):
         from mechferret import repl
