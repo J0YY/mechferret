@@ -766,6 +766,27 @@ class AgentToolTest(unittest.TestCase):
         self.assertNotIn("5.0", sanitized)
         self.assertNotIn("press " + "enter", sanitized.lower())
 
+    def test_assistant_text_sanitizes_unrequested_benchmark_model_only(self):
+        text = "I will use GPT-2 small as the model and run a compact probe first."
+        sanitized = agent._sanitize_assistant_text("Proceed with the next step.", text)
+
+        self.assertIn("which model and behavior/task", sanitized)
+        self.assertNotIn("GPT-2", sanitized)
+
+    def test_assistant_text_sanitizes_model_default_even_when_task_named(self):
+        text = "For IOI, use GPT-2 small and start with the standard head screen."
+        sanitized = agent._sanitize_assistant_text("Study IOI.", text)
+
+        self.assertIn("which model and behavior/task", sanitized)
+        self.assertNotIn("GPT-2", sanitized)
+
+    def test_assistant_text_sanitizes_known_heads_without_model(self):
+        text = "Start modules: heads 5.0, 5.2, 5.6, 5.11, then validate by patching."
+        sanitized = agent._sanitize_assistant_text("Study duplicate-token behavior.", text)
+
+        self.assertIn("which model and behavior/task", sanitized)
+        self.assertNotIn("5.0", sanitized)
+
     def test_assistant_text_allows_explicit_benchmark_requests(self):
         text = "Run duplicate-token/name-mover tests in GPT-2 small."
 

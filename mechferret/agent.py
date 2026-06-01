@@ -83,15 +83,13 @@ MAX_TOKENS = int(os.getenv("MECHFERRET_MAX_TOKENS", "4096"))
 COMPACT_CHAR_THRESHOLD = int(os.getenv("MECHFERRET_COMPACT_CHARS", "240000"))  # ~60k tokens
 COMPACT_KEEP_LAST = 4
 
-BENCHMARK_EXPLICIT_TERMS = (
+BENCHMARK_MODEL_EXPLICIT_TERMS = (
     "gpt2",
     "gpt-2",
-    "ioi",
-    "indirect object",
-    "name mover",
-    "name-mover",
-    "duplicate token",
-    "duplicate-token",
+    "gpt2-small",
+    "gpt-2 small",
+    "gpt2-medium",
+    "gpt-2 medium",
 )
 BENCHMARK_LEAK_TERMS = (
     "gpt2",
@@ -104,6 +102,7 @@ BENCHMARK_LEAK_TERMS = (
     "s-inhibition",
     "known heads",
 )
+BENCHMARK_MODEL_LEAK_RE = re.compile(r"\bgpt-?2(?:[-\s]?(?:small|medium))?\b", re.IGNORECASE)
 STALE_HEAD_RE = re.compile(r"\b(?:heads?\s+)?(?:[4567]\.(?:0|1|2|3|5|6|8|11))(?:\s*,\s*[4567]\.(?:0|1|2|3|5|6|8|11)){2,}\b")
 STALE_CONTINUATION_RE = re.compile(r"\b(?:press|hit)\s+(?:enter|return)\b.*\b(?:proceed|continue|next)\b", re.IGNORECASE | re.DOTALL)
 
@@ -322,9 +321,13 @@ def _selected_option_detail(options: list[Any], choice: Any) -> dict[str, Any]:
     return {}
 
 
-def _user_explicitly_selected_benchmark(user_text: str) -> bool:
+def _user_explicitly_selected_benchmark_model(user_text: str) -> bool:
     lowered = _text(user_text).lower()
-    return any(term in lowered for term in BENCHMARK_EXPLICIT_TERMS)
+    return any(term in lowered for term in BENCHMARK_MODEL_EXPLICIT_TERMS)
+
+
+def _looks_like_unrequested_benchmark_model(text: str) -> bool:
+    return bool(BENCHMARK_MODEL_LEAK_RE.search(_text(text)))
 
 
 def _looks_like_stale_benchmark_scaffold(text: str) -> bool:
@@ -338,9 +341,11 @@ def _looks_like_stale_benchmark_scaffold(text: str) -> bool:
 def _sanitize_assistant_text(user_text: str, text: str) -> str:
     if not text:
         return text
-    stale_benchmark = _looks_like_stale_benchmark_scaffold(text) and not _user_explicitly_selected_benchmark(user_text)
+    user_named_benchmark_model = _user_explicitly_selected_benchmark_model(user_text)
+    stale_benchmark = _looks_like_stale_benchmark_scaffold(text) and not user_named_benchmark_model
+    unrequested_model = _looks_like_unrequested_benchmark_model(text) and not user_named_benchmark_model
     stale_continuation = bool(STALE_CONTINUATION_RE.search(text))
-    if not (stale_benchmark or stale_continuation):
+    if not (stale_benchmark or unrequested_model or stale_continuation):
         return text
     return (
         "I need one missing research target before I can propose a concrete experiment: "
