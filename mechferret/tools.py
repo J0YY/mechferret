@@ -51,6 +51,14 @@ NOVELTY_CLAIM_READINESS_STATUSES = {
     "delta_review_required",
     "provisional_low_overlap_after_deep_search",
 }
+NOVELTY_THREAT_RISKS = {
+    "disqualifying_until_delta_is_demonstrated",
+    "needs_delta_review",
+    "searched_no_strong_overlap",
+    "not_searched",
+}
+NOVELTY_DISQUALIFYING_RISKS = NOVELTY_THREAT_RISKS | {"missing_recent_prior_art"}
+NOVELTY_REQUIRED_THREATS = {"exact_phrase_overlap", "claim_collision"}
 NOVELTY_WEB_SOURCE_TYPES = {
     "paper",
     "benchmark",
@@ -2123,6 +2131,22 @@ def _validate_option_card(option: dict[str, Any], index: int) -> dict[str, Any] 
             index=index,
             expected="objects with comparison_matrix from verify_novelty assessment",
         )
+    threat_model = option.get("novelty_threat_model")
+    if not _valid_option_threat_model(threat_model):
+        return _invalid_object_list_payload(
+            "options",
+            threat_model,
+            index=index,
+            expected="objects with novelty_threat_model from verify_novelty assessment",
+        )
+    disqualifying_tests = option.get("disqualifying_overlap_tests")
+    if not _valid_option_disqualifying_tests(disqualifying_tests):
+        return _invalid_object_list_payload(
+            "options",
+            disqualifying_tests,
+            index=index,
+            expected="objects with disqualifying_overlap_tests from verify_novelty assessment",
+        )
     recent_pressure = option.get("recent_pressure")
     if not _valid_option_recent_pressure(recent_pressure):
         return _invalid_object_list_payload(
@@ -2172,6 +2196,12 @@ def _option_detail(option: dict[str, Any]) -> dict[str, Any]:
     comparison = _option_comparison_matrix(option.get("comparison_matrix"))
     if comparison:
         detail["comparison_matrix"] = comparison
+    threat_model = _option_threat_model(option.get("novelty_threat_model"))
+    if threat_model:
+        detail["novelty_threat_model"] = threat_model
+    disqualifying_tests = _option_disqualifying_tests(option.get("disqualifying_overlap_tests"))
+    if disqualifying_tests:
+        detail["disqualifying_overlap_tests"] = disqualifying_tests
     recent_pressure = _option_recent_pressure(option.get("recent_pressure"))
     if recent_pressure:
         detail["recent_pressure"] = recent_pressure
@@ -2233,6 +2263,113 @@ def _option_comparison_matrix(value: Any) -> list[dict[str, Any]]:
     return rows[:9]
 
 
+def _valid_option_threat_model(value: Any) -> bool:
+    if not isinstance(value, list) or not value:
+        return False
+    valid_raw = [
+        item
+        for item in value
+        if isinstance(item, dict)
+        and isinstance(item.get("threat"), str)
+        and item.get("threat", "").strip()
+        and type(item.get("searched")) is bool
+        and isinstance(item.get("risk"), str)
+        and item.get("risk", "").strip() in NOVELTY_THREAT_RISKS
+    ]
+    if len(valid_raw) != len(value):
+        return False
+    rows = _option_threat_model(value)
+    threats = {row["threat"] for row in rows}
+    return bool(rows) and NOVELTY_REQUIRED_THREATS <= threats
+
+
+def _option_threat_model(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    rows: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        threat = str(item.get("threat", "")).strip()
+        risk = str(item.get("risk", "")).strip()
+        if not threat or not risk:
+            continue
+        row: dict[str, Any] = {
+            "threat": threat,
+            "searched": item.get("searched") if type(item.get("searched")) is bool else False,
+            "risk": risk,
+            "evidence_count": _safe_int(item.get("evidence_count")),
+            "strongest_score": _safe_float(item.get("strongest_score")),
+            "failure_mode": str(item.get("failure_mode", "")).strip(),
+            "next_action": str(item.get("next_action", "")).strip(),
+        }
+        prior = _option_prior(item.get("representative_prior"))
+        if prior:
+            row["representative_prior"] = prior
+        rows.append(row)
+    return rows[:8]
+
+
+def _valid_option_disqualifying_tests(value: Any) -> bool:
+    if not isinstance(value, list) or not value:
+        return False
+    valid_raw = [
+        item
+        for item in value
+        if isinstance(item, dict)
+        and isinstance(item.get("test"), str)
+        and item.get("test", "").strip()
+        and type(item.get("passed")) is bool
+        and isinstance(item.get("risk"), str)
+        and item.get("risk", "").strip() in NOVELTY_DISQUALIFYING_RISKS
+        and isinstance(item.get("required_evidence"), str)
+        and item.get("required_evidence", "").strip()
+    ]
+    if len(valid_raw) != len(value):
+        return False
+    rows = _option_disqualifying_tests(value)
+    tests = {row["test"] for row in rows}
+    return bool(rows) and NOVELTY_REQUIRED_THREATS <= tests
+
+
+def _option_disqualifying_tests(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    rows: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        test = str(item.get("test", "")).strip()
+        risk = str(item.get("risk", "")).strip()
+        required = str(item.get("required_evidence", "")).strip()
+        if not test or not risk or not required:
+            continue
+        row: dict[str, Any] = {
+            "test": test,
+            "passed": item.get("passed") if type(item.get("passed")) is bool else False,
+            "risk": risk,
+            "required_evidence": required,
+        }
+        prior = _option_prior(item.get("representative_prior"))
+        if prior:
+            row["representative_prior"] = prior
+        rows.append(row)
+    return rows[:8]
+
+
+def _option_prior(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    row: dict[str, Any] = {}
+    for key in ("title", "url", "source_type"):
+        text = str(value.get(key, "")).strip()
+        if text:
+            row[key] = text
+    if "score" in value:
+        row["score"] = _safe_float(value.get("score"))
+    return row
+
+
 def _valid_option_recent_pressure(value: Any) -> bool:
     pressure = _option_recent_pressure(value)
     return bool(pressure.get("status") and pressure.get("recent_window"))
@@ -2262,6 +2399,18 @@ def _safe_int(value: Any) -> int:
     except (TypeError, ValueError):
         return 0
     return parsed
+
+
+def _safe_float(value: Any) -> float:
+    if type(value) is bool:
+        return 0.0
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(parsed):
+        return 0.0
+    return round(parsed, 3)
 
 
 def _option_strings(value: Any) -> list[str]:
@@ -3095,7 +3244,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
      "parameters": _obj({"model_id": {"type": "string"}, "query": {"type": "string"}}, ["model_id", "query"])},
     {"name": "verify_novelty", "description": "Deep novelty check for a research idea using multi-pass arXiv and web searches across relevance, recency, recent discoveries, architecture variants, method, mechanism, evaluation, implementation, replication, failure-mode, and protocol angles. Call this for each proposed research direction before presenting it.",
      "parameters": _obj({"idea": {"type": "string", "description": "the research idea/direction to novelty-check"}, "queries": {"type": "array", "items": {"type": "string"}, "description": "optional arXiv queries to probe for prior work"}}, ["idea"])},
-    {"name": "present_options", "description": "Present 2-5 research directions to the user as an interactive, expandable picker and return their choice. Use this instead of writing options as prose. Every option must include detail, citations, novelty_risk, novelty_verdict, closest_prior_art, claim_readiness, comparison_matrix, recent_pressure, and required_delta from verify_novelty assessment.",
+    {"name": "present_options", "description": "Present 2-5 research directions to the user as an interactive, expandable picker and return their choice. Use this instead of writing options as prose. Every option must include detail, citations, novelty_risk, novelty_verdict, closest_prior_art, claim_readiness, comparison_matrix, novelty_threat_model, disqualifying_overlap_tests, recent_pressure, and required_delta from verify_novelty assessment.",
      "parameters": _obj({"options": {"type": "array", "items": {"type": "object", "properties": {
          "title": {"type": "string"},
          "summary": {"type": "string", "description": "one line"},
@@ -3113,6 +3262,23 @@ TOOL_SPECS: list[dict[str, Any]] = [
              "representative_prior": {"type": "object"},
              "next_action": {"type": "string"},
          }}, "description": "assessment.comparison_matrix from verify_novelty; include per-axis covered/evidence_count/next_action fields."},
+         "novelty_threat_model": {"type": "array", "items": {"type": "object", "properties": {
+             "threat": {"type": "string"},
+             "searched": {"type": "boolean"},
+             "risk": {"type": "string"},
+             "evidence_count": {"type": "integer"},
+             "strongest_score": {"type": "number"},
+             "representative_prior": {"type": "object"},
+             "failure_mode": {"type": "string"},
+             "next_action": {"type": "string"},
+         }}, "description": "assessment.novelty_threat_model from verify_novelty; include exact_phrase_overlap and claim_collision rows."},
+         "disqualifying_overlap_tests": {"type": "array", "items": {"type": "object", "properties": {
+             "test": {"type": "string"},
+             "passed": {"type": "boolean"},
+             "risk": {"type": "string"},
+             "representative_prior": {"type": "object"},
+             "required_evidence": {"type": "string"},
+         }}, "description": "assessment.disqualifying_overlap_tests from verify_novelty; include exact_phrase_overlap and claim_collision rows."},
          "recent_pressure": {"type": "object", "properties": {
              "status": {"type": "string"},
              "recent_window": {"type": "string"},
@@ -3121,7 +3287,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
              "recent_prior_titles": {"type": "array", "items": {"type": "string"}},
          }, "description": "assessment.recent_pressure from verify_novelty; include status, recent_window, recent_evidence_count, latest_year, and recent_prior_titles."},
          "required_delta": {"type": "string", "description": "specific deltas from assessment.required_delta; join multiple entries into one concise string"},
-     }, "required": ["title", "summary", "detail", "citations", "novelty_risk", "novelty_verdict", "closest_prior_art", "claim_readiness", "comparison_matrix", "recent_pressure", "required_delta"]}}}, ["options"])},
+     }, "required": ["title", "summary", "detail", "citations", "novelty_risk", "novelty_verdict", "closest_prior_art", "claim_readiness", "comparison_matrix", "novelty_threat_model", "disqualifying_overlap_tests", "recent_pressure", "required_delta"]}}}, ["options"])},
     {"name": "run_research", "description": "Run the general prompt-to-dossier literature/research pipeline over explicit sources, URLs, memory, or a configured provider.",
      "parameters": _obj({
          "question": {"type": "string"},

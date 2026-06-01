@@ -2760,6 +2760,8 @@ class AgentStackTest(unittest.TestCase):
             {
                 "title": "Novelty audit",
                 "comparison_matrix": [{"axis": "method", "covered": True}],
+                "novelty_threat_model": [{"threat": "claim_collision", "risk": "needs_delta_review"}],
+                "disqualifying_overlap_tests": [{"test": "claim_collision", "passed": False}],
                 "recent_pressure": {"status": "recent_prior_present"},
             }
         ])
@@ -2769,6 +2771,8 @@ class AgentStackTest(unittest.TestCase):
         self.assertEqual(payload["failed_checks"], ["interactive_selection_unavailable"])
         self.assertEqual(payload["options"], ["Novelty audit"])
         self.assertEqual(payload["option_details"][0]["comparison_matrix"][0]["axis"], "method")
+        self.assertEqual(payload["option_details"][0]["novelty_threat_model"][0]["threat"], "claim_collision")
+        self.assertEqual(payload["option_details"][0]["disqualifying_overlap_tests"][0]["test"], "claim_collision")
 
     def test_cli_command_index_primary_names_route_from_repl(self):
         from mechferret import commands

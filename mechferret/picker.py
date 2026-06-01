@@ -61,6 +61,36 @@ def _wrap(text: str, width: int = 72) -> list[str]:
     return lines
 
 
+def _threat_bits(value) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    bits: list[str] = []
+    for row in value:
+        if not isinstance(row, dict):
+            continue
+        threat = str(row.get("threat", "")).replace("_", " ").strip()
+        risk = str(row.get("risk", "")).replace("_", " ").strip()
+        searched = "searched" if row.get("searched") is True else "unsearched"
+        if threat and risk:
+            bits.append(f"{threat}:{risk} ({searched})")
+    return bits
+
+
+def _disqualifier_bits(value) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    bits: list[str] = []
+    for row in value:
+        if not isinstance(row, dict):
+            continue
+        test = str(row.get("test", "")).replace("_", " ").strip()
+        risk = str(row.get("risk", "")).replace("_", " ").strip()
+        status = "pass" if row.get("passed") is True else "needs delta"
+        if test and risk:
+            bits.append(f"{test}:{status}/{risk}")
+    return bits
+
+
 def _select_rich_fallback(prompt, options):
     out = sys.stderr
     if prompt:
@@ -77,6 +107,12 @@ def _select_rich_fallback(prompt, options):
         pressure = o.get("recent_pressure") or {}
         if isinstance(pressure, dict) and pressure.get("status"):
             out.write(f"      recent pressure: {pressure['status']} ({pressure.get('recent_window', '')})\n")
+        threats = _threat_bits(o.get("novelty_threat_model"))
+        if threats:
+            out.write("      novelty threats: " + ", ".join(threats[:3]) + "\n")
+        disqualifiers = _disqualifier_bits(o.get("disqualifying_overlap_tests"))
+        if disqualifiers:
+            out.write("      disqualifiers: " + ", ".join(disqualifiers[:3]) + "\n")
         if o.get("novelty"):
             out.write(f"      novelty: {o['novelty']}\n")
         closest = o.get("closest_prior_art") or []
@@ -133,6 +169,12 @@ def _select_rich_tty(prompt, options):
                         + str(pressure["status"])
                         + (" (" + str(pressure.get("recent_window", "")) + ")" if pressure.get("recent_window") else "")
                     )
+                threats = _threat_bits(o.get("novelty_threat_model"))
+                if threats:
+                    rows.append("      novelty threats: " + ", ".join(threats[:5]))
+                disqualifiers = _disqualifier_bits(o.get("disqualifying_overlap_tests"))
+                if disqualifiers:
+                    rows.append("      disqualifiers: " + ", ".join(disqualifiers[:5]))
                 matrix = o.get("comparison_matrix") or []
                 if isinstance(matrix, list) and matrix:
                     axis_bits = []

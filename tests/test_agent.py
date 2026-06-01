@@ -8,6 +8,50 @@ from unittest.mock import patch
 from mechferret import agent
 
 
+def _option_threat_model():
+    return [
+        {
+            "threat": "exact_phrase_overlap",
+            "searched": True,
+            "risk": "searched_no_strong_overlap",
+            "evidence_count": 0,
+            "strongest_score": 0.0,
+            "representative_prior": {},
+            "failure_mode": "A prior uses the same phrase.",
+            "next_action": "Record why exact phrase search found no strong overlap.",
+        },
+        {
+            "threat": "claim_collision",
+            "searched": True,
+            "risk": "needs_delta_review",
+            "evidence_count": 1,
+            "strongest_score": 0.34,
+            "representative_prior": {"title": "Closest Paper", "url": "https://arxiv.org/abs/2501.0001", "source_type": "paper"},
+            "failure_mode": "A prior claims the same core contribution.",
+            "next_action": "Write the exact delta from the closest prior.",
+        },
+    ]
+
+
+def _option_disqualifying_tests():
+    return [
+        {
+            "test": "exact_phrase_overlap",
+            "passed": True,
+            "risk": "searched_no_strong_overlap",
+            "representative_prior": {},
+            "required_evidence": "Nearest exact-phrase prior and why its claim is materially different.",
+        },
+        {
+            "test": "claim_collision",
+            "passed": False,
+            "risk": "needs_delta_review",
+            "representative_prior": {"title": "Closest Paper", "url": "https://arxiv.org/abs/2501.0001", "source_type": "paper"},
+            "required_evidence": "Closest paper/project claiming the same contribution and the specific delta.",
+        },
+    ]
+
+
 class AgentToolTest(unittest.TestCase):
     def test_tool_schemas_are_well_formed(self):
         from mechferret import tools
@@ -59,6 +103,9 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("selection", next(tool for tool in tools.TOOL_SPECS if tool["name"] == "verify_bundle")["parameters"]["properties"])
         write_props = next(tool for tool in tools.TOOL_SPECS if tool["name"] == "write_paper")["parameters"]["properties"]
         self.assertEqual(write_props["compile_timeout"]["type"], "integer")
+        option_schema = next(tool for tool in tools.TOOL_SPECS if tool["name"] == "present_options")["parameters"]["properties"]["options"]["items"]
+        self.assertIn("novelty_threat_model", option_schema["required"])
+        self.assertIn("disqualifying_overlap_tests", option_schema["required"])
 
     def test_resolve_artifact_tool_returns_json(self):
         from mechferret import tools
@@ -632,6 +679,84 @@ class AgentToolTest(unittest.TestCase):
         self.assertFalse(bad_comparison["ok"])
         self.assertEqual(bad_comparison["expected"], "objects with comparison_matrix from verify_novelty assessment")
 
+        bad_threat_model = json.loads(
+            tools.run_tool(
+                "present_options",
+                {
+                    "options": [
+                        {
+                            "title": "Thin option",
+                            "summary": "missing novelty threat model",
+                            "detail": "A direction without threat-model novelty evidence should be rejected.",
+                            "citations": ["https://arxiv.org/abs/2501.0001"],
+                            "novelty_risk": "medium_prior_art_risk",
+                            "novelty_verdict": "Related work exists.",
+                            "closest_prior_art": [],
+                            "claim_readiness": {
+                                "status": "not_ready_needs_more_evidence",
+                                "can_claim_high_novelty": False,
+                                "missing_checks": ["focus_breadth"],
+                                "next_actions": ["Run follow-up searches."],
+                            },
+                            "comparison_matrix": [
+                                {"axis": "method", "covered": True, "evidence_count": 1, "next_action": "Compare method."},
+                                {"axis": "evaluation", "covered": False, "evidence_count": 0, "next_action": "Add benchmark."},
+                            ],
+                            "recent_pressure": {
+                                "status": "recent_prior_present",
+                                "recent_window": "2024-2026",
+                                "recent_evidence_count": 1,
+                            },
+                            "required_delta": ["Show a measurable delta."],
+                        }
+                    ]
+                },
+            )
+        )
+        self.assertFalse(bad_threat_model["ok"])
+        self.assertEqual(bad_threat_model["expected"], "objects with novelty_threat_model from verify_novelty assessment")
+
+        bad_disqualifying_tests = json.loads(
+            tools.run_tool(
+                "present_options",
+                {
+                    "options": [
+                        {
+                            "title": "Thin option",
+                            "summary": "missing disqualifying overlap tests",
+                            "detail": "A direction without disqualifying overlap tests should be rejected.",
+                            "citations": ["https://arxiv.org/abs/2501.0001"],
+                            "novelty_risk": "medium_prior_art_risk",
+                            "novelty_verdict": "Related work exists.",
+                            "closest_prior_art": [],
+                            "claim_readiness": {
+                                "status": "not_ready_needs_more_evidence",
+                                "can_claim_high_novelty": False,
+                                "missing_checks": ["focus_breadth"],
+                                "next_actions": ["Run follow-up searches."],
+                            },
+                            "comparison_matrix": [
+                                {"axis": "method", "covered": True, "evidence_count": 1, "next_action": "Compare method."},
+                                {"axis": "evaluation", "covered": False, "evidence_count": 0, "next_action": "Add benchmark."},
+                            ],
+                            "novelty_threat_model": _option_threat_model(),
+                            "recent_pressure": {
+                                "status": "recent_prior_present",
+                                "recent_window": "2024-2026",
+                                "recent_evidence_count": 1,
+                            },
+                            "required_delta": ["Show a measurable delta."],
+                        }
+                    ]
+                },
+            )
+        )
+        self.assertFalse(bad_disqualifying_tests["ok"])
+        self.assertEqual(
+            bad_disqualifying_tests["expected"],
+            "objects with disqualifying_overlap_tests from verify_novelty assessment",
+        )
+
         ok = json.loads(
             tools.run_tool(
                 "present_options",
@@ -666,6 +791,8 @@ class AgentToolTest(unittest.TestCase):
                                     "next_action": "Run targeted evaluation search.",
                                 },
                             ],
+                            "novelty_threat_model": _option_threat_model(),
+                            "disqualifying_overlap_tests": _option_disqualifying_tests(),
                             "recent_pressure": {
                                 "status": "recent_prior_present",
                                 "recent_window": "2024-2026",
@@ -688,6 +815,10 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("causal ablation", ok["option_details"][0]["required_delta"])
         self.assertEqual(ok["option_details"][0]["comparison_matrix"][0]["axis"], "method")
         self.assertFalse(ok["option_details"][0]["comparison_matrix"][1]["covered"])
+        self.assertEqual(ok["option_details"][0]["novelty_threat_model"][0]["threat"], "exact_phrase_overlap")
+        self.assertEqual(ok["option_details"][0]["novelty_threat_model"][1]["representative_prior"]["source_type"], "paper")
+        self.assertEqual(ok["option_details"][0]["disqualifying_overlap_tests"][1]["test"], "claim_collision")
+        self.assertFalse(ok["option_details"][0]["disqualifying_overlap_tests"][1]["passed"])
         self.assertEqual(ok["option_details"][0]["recent_pressure"]["status"], "recent_prior_present")
         self.assertEqual(ok["option_details"][0]["recent_pressure"]["latest_year"], 2025)
 
@@ -750,6 +881,8 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("closest_prior_art", prompt)
         self.assertIn("claim_readiness", prompt)
         self.assertIn("comparison_matrix", prompt)
+        self.assertIn("novelty_threat_model", prompt)
+        self.assertIn("disqualifying_overlap_tests", prompt)
         self.assertIn("recent_pressure", prompt)
 
     def test_assistant_text_sanitizes_stale_benchmark_scaffolds(self):
@@ -1582,6 +1715,8 @@ class AgentToolTest(unittest.TestCase):
                         {"axis": "method", "covered": True, "evidence_count": 1, "next_action": "Compare method."},
                         {"axis": "evaluation", "covered": False, "evidence_count": 0, "next_action": "Add benchmark."},
                     ],
+                    "novelty_threat_model": _option_threat_model(),
+                    "disqualifying_overlap_tests": _option_disqualifying_tests(),
                     "recent_pressure": {
                         "status": "recent_prior_present",
                         "recent_window": "2024-2026",
@@ -1600,8 +1735,12 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(selected["selected_option"]["title"], "Novelty audit")
         self.assertEqual(selected["selected_option"]["recent_pressure"]["status"], "recent_prior_present")
         self.assertEqual(selected["selected_option"]["comparison_matrix"][1]["axis"], "evaluation")
+        self.assertEqual(selected["selected_option"]["novelty_threat_model"][1]["threat"], "claim_collision")
+        self.assertEqual(selected["selected_option"]["disqualifying_overlap_tests"][0]["test"], "exact_phrase_overlap")
         self.assertEqual(picked[0][0]["required_delta"], "Show a causal ablation.")
         self.assertEqual(picked[0][0]["comparison_matrix"][1]["axis"], "evaluation")
+        self.assertEqual(picked[0][0]["novelty_threat_model"][1]["risk"], "needs_delta_review")
+        self.assertFalse(picked[0][0]["disqualifying_overlap_tests"][1]["passed"])
         self.assertEqual(picked[0][0]["recent_pressure"]["status"], "recent_prior_present")
 
     def test_agent_dispatch_preserves_deferred_option_selection_payload(self):
@@ -1634,6 +1773,8 @@ class AgentToolTest(unittest.TestCase):
                         {"axis": "method", "covered": True, "evidence_count": 1, "next_action": "Compare method."},
                         {"axis": "evaluation", "covered": False, "evidence_count": 0, "next_action": "Add benchmark."},
                     ],
+                    "novelty_threat_model": _option_threat_model(),
+                    "disqualifying_overlap_tests": _option_disqualifying_tests(),
                     "recent_pressure": {
                         "status": "recent_prior_present",
                         "recent_window": "2024-2026",
@@ -1652,6 +1793,8 @@ class AgentToolTest(unittest.TestCase):
         self.assertTrue(selected["selection_deferred"])
         self.assertEqual(selected["failed_checks"], ["interactive_selection_unavailable"])
         self.assertEqual(selected["option_details"][0]["title"], "Novelty audit")
+        self.assertEqual(selected["option_details"][0]["novelty_threat_model"][0]["threat"], "exact_phrase_overlap")
+        self.assertEqual(selected["option_details"][0]["disqualifying_overlap_tests"][1]["test"], "claim_collision")
         self.assertNotIn("selected_option", selected)
 
     def test_large_output_persisted(self):
