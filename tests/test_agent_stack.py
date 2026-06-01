@@ -426,6 +426,8 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("/queue", rendered_help)
         self.assertIn("/queue show <id>", rendered_help)
         self.assertIn("/queue retry <id>", rendered_help)
+        self.assertIn("/queue pause", rendered_help)
+        self.assertIn("/queue resume", rendered_help)
         self.assertIn("/queue restore", rendered_help)
         self.assertIn("/queue wait [seconds]", rendered_help)
         self.assertIn("/cancel <id|all>", rendered_help)
@@ -622,6 +624,43 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("job #1 is running", rendered)
         self.assertIn("job #2 is queued", rendered)
         self.assertEqual(started, ["first", "second"])
+
+    def test_repl_queue_pause_holds_prompts_until_resume(self):
+        from mechferret import repl
+
+        started = []
+
+        def fake_chat(agent, session, text, *, background=False):
+            started.append(text)
+            return text
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-pause.json"))
+            try:
+                self.assertTrue(runner.pause())
+                first = runner.submit("first")
+                second = runner.submit("second")
+                time.sleep(0.1)
+
+                self.assertTrue(runner.paused())
+                self.assertEqual(started, [])
+                self.assertEqual([job.id for job in runner.queued()], [first.id, second.id])
+                repl._print_queue(runner)
+                repl._queue_wait(runner, ["1"])
+
+                self.assertTrue(runner.resume())
+                self.assertTrue(runner.wait_idle(timeout=2))
+            finally:
+                runner.resume()
+                runner.stop(wait=True)
+
+        self.assertEqual(started, ["first", "second"])
+        rendered = out.getvalue()
+        self.assertIn("queue paused", rendered)
+        self.assertIn("queued  #1", rendered)
+        self.assertIn("queued  #2", rendered)
+        self.assertIn("use /queue resume", rendered)
 
     def test_repl_chat_job_runner_cancels_pending_prompts(self):
         from mechferret import repl

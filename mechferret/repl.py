@@ -101,6 +101,7 @@ class ChatJobRunner:
         self._next_id = 1
         self._lock = threading.Lock()
         self._stopped = False
+        self._paused = False
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
@@ -150,6 +151,23 @@ class ChatJobRunner:
         except OSError:
             return 0
         return len(saved)
+
+    def pause(self) -> bool:
+        with self._lock:
+            was_paused = self._paused
+            self._paused = True
+        self.save_pending(include_active=True)
+        return not was_paused
+
+    def resume(self) -> bool:
+        with self._lock:
+            was_paused = self._paused
+            self._paused = False
+        return was_paused
+
+    def paused(self) -> bool:
+        with self._lock:
+            return self._paused
 
     def active(self) -> PromptJob | None:
         with self._lock:
@@ -247,12 +265,22 @@ class ChatJobRunner:
         with self._lock:
             self._active = job
 
+    def _wait_if_paused(self, job: PromptJob) -> None:
+        while True:
+            with self._lock:
+                if self._stopped or not self._paused or job.status == "canceled":
+                    return
+            time.sleep(0.05)
+
     def _run(self) -> None:
         while True:
             job = self._queue.get()
             try:
                 if job is None:
                     return
+                self._wait_if_paused(job)
+                if self._stopped:
+                    continue
                 if job.status == "canceled":
                     print(_c(f"  skipped canceled #{job.id}", "2"))
                     continue
@@ -424,6 +452,8 @@ def _print_status_and_bar(agent, session, runner: ChatJobRunner | None = None) -
         side_active = len(runner.side_active())
         queued = len(runner.queued())
         saved = len(runner.saved())
+        if runner.paused():
+            bits.append(_c("paused", "33"))
         if active is not None:
             bits.append(_c(f"running:#{active.id}", PURPLE))
         if side_active:
@@ -595,6 +625,16 @@ def run_repl() -> None:
                 _queue_show(runner, tokens[2:])
             elif len(tokens) > 1 and tokens[1].lower() == "retry":
                 _queue_retry(runner, tokens[2:])
+            elif len(tokens) > 1 and tokens[1].lower() == "pause":
+                if runner.pause():
+                    print(_c("  queue paused; active work can finish, but queued prompts will wait", "32"))
+                else:
+                    print(_c("  queue already paused", "2"))
+            elif len(tokens) > 1 and tokens[1].lower() == "resume":
+                if runner.resume():
+                    print(_c("  queue resumed", "32"))
+                else:
+                    print(_c("  queue was not paused", "2"))
             else:
                 _print_queue(runner)
             continue
@@ -786,6 +826,8 @@ def _print_queue(runner: ChatJobRunner) -> None:
     queued = runner.queued()
     recent = runner.recent()
     saved = runner.saved()
+    if runner.paused():
+        print(_c("  queue paused; queued prompts will wait for /queue resume", "33"))
     if active is None and not side_active and not queued and not saved:
         print(_c("  queue empty", "2"))
     else:
@@ -817,6 +859,9 @@ def _queue_wait(runner: ChatJobRunner, args: list[str]) -> None:
         if timeout <= 0:
             print(_c("  wait timeout must be positive", "33"))
             return
+    if runner.paused():
+        print(_c("  queue paused; use /queue resume before waiting for queued work", "33"))
+        return
     if not runner.is_busy():
         print(_c("  queue already idle", "2"))
         return
