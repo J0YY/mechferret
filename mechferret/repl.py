@@ -228,7 +228,10 @@ class ChatJobRunner:
         if target in {"latest", "last"}:
             return max(self._jobs, key=_job_order_key) if self._jobs else None
         if target in {"active", "running"}:
-            return self._active
+            if self._active is not None:
+                return self._active
+            running = [job for job in self._jobs if job.status == "running"]
+            return max(running, key=_job_order_key) if running else None
         if target == "next":
             return next((job for job in self._jobs if job.status == "queued"), None)
         return next((job for job in self._jobs if str(job.id) == target), None)
@@ -387,14 +390,15 @@ class ChatJobRunner:
 
     def wait_job(self, target: str, timeout: float = 3600.0) -> tuple[PromptJob | None, bool, bool]:
         deadline = time.monotonic() + timeout
+        job, saved = self.find_job(target)
+        if job is None or saved:
+            return job, saved, False
         while True:
-            job, saved = self.find_job(target)
-            if job is None or saved or job.status in TERMINAL_JOB_STATUSES:
-                if job is not None and not saved:
-                    self.save_pending()
-                return job, saved, job is not None and job.status in TERMINAL_JOB_STATUSES
+            if job.status in TERMINAL_JOB_STATUSES:
+                self.save_pending()
+                return job, False, True
             if time.monotonic() >= deadline:
-                return job, saved, False
+                return job, False, False
             time.sleep(0.01)
 
     def stop(self, *, wait: bool = False) -> None:

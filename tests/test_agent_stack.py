@@ -692,6 +692,66 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("job #1 done", rendered)
         self.assertIn("use /queue show #1", rendered)
 
+    def test_repl_queue_join_active_latches_resolved_job_until_done(self):
+        from mechferret import repl
+
+        release = threading.Event()
+
+        def fake_chat(agent, session, text, *, background=False):
+            self.assertTrue(release.wait(timeout=2))
+            return f"reply for {text}"
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-join-active.json"))
+            try:
+                job = runner.submit("main")
+                deadline = time.monotonic() + 2
+                while runner.active() is None and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                releaser = threading.Thread(target=lambda: (time.sleep(0.05), release.set()))
+                releaser.start()
+                repl._queue_join(runner, ["active", "2"])
+                releaser.join(timeout=2)
+            finally:
+                release.set()
+                runner.stop(wait=True)
+
+        self.assertEqual(job.status, "done")
+        rendered = out.getvalue()
+        self.assertIn("waiting for job #1", rendered)
+        self.assertIn("job #1 done", rendered)
+
+    def test_repl_queue_join_running_can_target_side_jobs(self):
+        from mechferret import repl
+
+        release = threading.Event()
+
+        def fake_chat(agent, session, text, *, background=False):
+            self.assertTrue(release.wait(timeout=2))
+            return f"reply for {text}"
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-join-running-side.json"))
+            try:
+                side = runner.submit_side(repl._btw_prompt("side question"))
+                deadline = time.monotonic() + 2
+                while not runner.side_active() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                releaser = threading.Thread(target=lambda: (time.sleep(0.05), release.set()))
+                releaser.start()
+                repl._queue_join(runner, ["running", "2"])
+                releaser.join(timeout=2)
+            finally:
+                release.set()
+                runner.stop(wait=True)
+
+        self.assertEqual(side.status, "done")
+        rendered = out.getvalue()
+        self.assertIn("waiting for job #1", rendered)
+        self.assertIn("job #1 done", rendered)
+
     def test_repl_queue_join_times_out_or_refuses_saved_and_paused_jobs(self):
         from mechferret import repl
 
