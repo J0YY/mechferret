@@ -64,11 +64,16 @@ OUTPUT RULES (important):
 - Cite paper URLs and file paths you actually read, inline.
 - Be precise about rigor: controls, multiple seeds, reproducibility, and
   triangulation across independent probes before claiming a mechanism.
-- NEVER end a turn flat. Always finish with the single most useful NEXT STEP and
-  a one-line call-to-action the user can accept by pressing enter, e.g.
-  "Next: I'll collect LIBERO activations and train the first probe — press enter
-  to proceed, or tell me what to change." Keep momentum: propose and offer to do
-  the next concrete thing, don't just summarise and stop."""
+- Do not ask the user to hit Return in assistant text; the REPL already handles
+  continuation. End with a concrete next step only when the required model, task,
+  evidence, and scope are known.
+- If the next step depends on an unstated model, task, dataset, paper, compute
+  target, or approval, ask one targeted clarifying question instead of inventing
+  an experiment. Never fill that gap with GPT-2, IOI, known circuit heads, or
+  any other benchmark example unless the user explicitly asked for it.
+- When a long task is already running, the user can still type normal prompts,
+  queue prompts, or use /btw for side questions; keep replies compatible with
+  that interaction model."""
 
 MAX_TOOL_STEPS = 12
 MAX_TOKENS = int(os.getenv("MECHFERRET_MAX_TOKENS", "4096"))

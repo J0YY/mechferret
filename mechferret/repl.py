@@ -1650,7 +1650,7 @@ def _chat(agent, session, text: str, *, background: bool = False) -> str | None:
             print(_render_reply(reply))
     emit_status(_c(f"  ({agent.cost.format_total()})", "2"))
     if not background:
-        print(_c("  ↵ press enter to continue · or type to redirect", "38;5;141"))
+        print(_c("  ↵ continue · or type to redirect", "38;5;141"))
         print()
     first_line = next((ln for ln in (reply or "").strip().splitlines() if ln.strip()), "")
     session.step = (first_line[:60] + "…") if len(first_line) > 60 else (first_line or "ready")

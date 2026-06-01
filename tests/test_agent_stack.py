@@ -2720,6 +2720,8 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("Use run_research for general literature/source-grounded research", prompt)
         self.assertIn("Use run_discovery only", prompt)
         self.assertIn("audit advisories", prompt)
+        self.assertIn("ask one targeted clarifying question", prompt)
+        self.assertNotIn("press " + "enter", prompt.lower())
 
 
 if __name__ == "__main__":

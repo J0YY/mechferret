@@ -621,6 +621,9 @@ class AgentToolTest(unittest.TestCase):
 
         self.assertNotIn("Previously confirmed mechanisms", prompt)
         self.assertNotIn("find the IOI circuit in gpt2", prompt)
+        self.assertNotIn("press " + "enter", prompt.lower())
+        self.assertIn("ask one targeted clarifying question", prompt)
+        self.assertIn("Never fill that gap with GPT-2", prompt)
         self.assertIn("novelty_risk", prompt)
         self.assertIn("closest_prior_art", prompt)
 
