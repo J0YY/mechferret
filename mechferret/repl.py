@@ -441,6 +441,22 @@ class ChatJobRunner:
             self.session.step = f"applied side #{job.id}"
             return job, "applied"
 
+    def apply_all_side_results(self) -> tuple[list[PromptJob], str]:
+        with self._lock:
+            if self._active is not None:
+                return [], "busy"
+            ready = sorted(
+                (job for job in self._jobs if job.kind == "btw" and job.status == "done" and job.reply and not job.applied),
+                key=_job_order_key,
+            )
+            if not ready:
+                return [], "missing"
+            for job in ready:
+                _append_side_result_to_main_context(self.agent, job)
+                job.applied = True
+            self.session.step = f"applied {len(ready)} side replies"
+            return ready, "applied"
+
     def is_busy(self) -> bool:
         with self._lock:
             return self._active is not None or any(job.status in {"queued", "running"} for job in self._jobs)
@@ -1450,6 +1466,17 @@ def _queue_retry(runner: ChatJobRunner, args: list[str]) -> None:
 
 def _queue_apply(runner: ChatJobRunner, args: list[str]) -> None:
     target = args[0] if args else "side"
+    if target.strip().lower() == "all":
+        jobs, status = runner.apply_all_side_results()
+        if status == "applied":
+            ids = ", ".join(f"#{job.id}" for job in jobs)
+            print(_c(f"  applied side replies {ids} to the main conversation", "32"))
+            return
+        if status == "busy":
+            print(_c("  wait for the active prompt before applying side replies", "33"))
+            return
+        print(_c("  no ready side replies to apply", "2"))
+        return
     job, status = runner.apply_side_result(target)
     if status == "applied" and job is not None:
         print(_c(f"  applied side #{job.id} to the main conversation", "32"))

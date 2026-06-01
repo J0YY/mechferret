@@ -427,7 +427,7 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("/queue add <text>", rendered_help)
         self.assertIn("/queue show <id|latest|active|running|side|next>", rendered_help)
         self.assertIn("/queue retry <id|latest|running|side|next>", rendered_help)
-        self.assertIn("/queue apply <id|side|latest>", rendered_help)
+        self.assertIn("/queue apply <id|side|latest|all>", rendered_help)
         self.assertIn("/queue edit <id|latest|next> <text>", rendered_help)
         self.assertIn("/queue move <id|latest|next> first|last|before|after", rendered_help)
         self.assertIn("/queue cancel <id|latest|next|all>", rendered_help)
@@ -1070,6 +1070,90 @@ class AgentStackTest(unittest.TestCase):
         self.assertTrue(first.applied)
         self.assertFalse(second.applied)
         self.assertIn("applied side #1 to the main conversation", out.getvalue())
+
+    def test_repl_queue_apply_all_promotes_ready_sides_in_order(self):
+        from mechferret import repl
+
+        class MainAgent:
+            provider = "anthropic"
+
+            def __init__(self) -> None:
+                self.messages = []
+
+        def fake_chat(agent, session, text, *, background=False):
+            return f"reply for {text}"
+
+        agent = MainAgent()
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(agent, repl.Session(), chat_fn=fake_chat, queue_path=Path("btw-apply-all.json"))
+            try:
+                first = runner.submit_side(repl._btw_prompt("first side"))
+                second = runner.submit_side(repl._btw_prompt("second side"))
+                self.assertTrue(runner.wait_idle(timeout=2))
+
+                repl._queue_apply(runner, ["all"])
+            finally:
+                runner.stop(wait=True)
+
+        self.assertTrue(first.applied)
+        self.assertTrue(second.applied)
+        self.assertIn("applied side replies #1, #2", out.getvalue())
+        self.assertEqual([message["role"] for message in agent.messages], ["user", "assistant", "user", "assistant"])
+        self.assertIn("first side", str(agent.messages[0]["content"]))
+        self.assertIn("second side", str(agent.messages[2]["content"]))
+
+    def test_repl_queue_apply_all_reports_empty_ready_set(self):
+        from mechferret import repl
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: "reply", queue_path=Path("btw-apply-all-empty.json"))
+            try:
+                repl._queue_apply(runner, ["all"])
+            finally:
+                runner.stop(wait=True)
+
+        self.assertIn("no ready side replies to apply", out.getvalue())
+
+    def test_repl_queue_apply_all_waits_for_main_prompt_to_finish(self):
+        from mechferret import repl
+
+        class MainAgent:
+            provider = "anthropic"
+
+            def __init__(self) -> None:
+                self.messages = []
+
+        release_main = threading.Event()
+
+        def fake_chat(agent, session, text, *, background=False):
+            if text == "main":
+                self.assertTrue(release_main.wait(timeout=2))
+            return "reply"
+
+        agent = MainAgent()
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(agent, repl.Session(), chat_fn=fake_chat, queue_path=Path("btw-apply-all-busy.json"))
+            try:
+                runner.submit("main")
+                deadline = time.monotonic() + 2
+                while runner.active() is None and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                side = runner.submit_side(repl._btw_prompt("side question"))
+                deadline = time.monotonic() + 2
+                while side.status == "running" and time.monotonic() < deadline:
+                    time.sleep(0.01)
+
+                repl._queue_apply(runner, ["all"])
+            finally:
+                release_main.set()
+                runner.stop(wait=True)
+
+        self.assertFalse(side.applied)
+        self.assertEqual(agent.messages, [])
+        self.assertIn("wait for the active prompt before applying side replies", out.getvalue())
 
     def test_repl_queue_wait_waits_for_main_and_side_jobs(self):
         from mechferret import repl

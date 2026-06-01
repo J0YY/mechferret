@@ -339,7 +339,7 @@ You can do things like:
 /queue add <prompt> enqueue a prompt explicitly, including prompts that start with /
 /queue show <id|latest|active|running|side|next> show a queued job's full prompt, reply, or error
 /queue retry <id|latest|running|side|next> retry a job without retyping its prompt
-/queue apply <id|side|latest> add a finished /btw side reply to the main conversation
+/queue apply <id|side|latest|all> add finished /btw side replies to the main conversation
 /queue edit <id|latest|next> <prompt> edit a queued prompt before it starts
 /queue move <id|latest|next> first|last|before|after reorder a queued prompt before it starts
 /queue cancel <id|latest|next|all> cancel queued prompts from the queue view
