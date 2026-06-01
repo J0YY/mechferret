@@ -289,7 +289,12 @@ class ChatJobRunner:
             job = self._find_live_job_locked(target)
             if job is not None:
                 return job, False
-        for job in self.saved():
+        saved_jobs = self.saved()
+        if target in {"latest", "last"} and saved_jobs:
+            return max(saved_jobs, key=_job_order_key), True
+        if target == "next" and saved_jobs:
+            return saved_jobs[0], True
+        for job in saved_jobs:
             if str(job.id) == target:
                 return job, True
         return None, False

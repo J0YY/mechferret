@@ -701,6 +701,38 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("job #9 saved", rendered)
         self.assertIn("saved prompt", rendered)
 
+    def test_repl_queue_saved_aliases_resolve_latest_and_next_jobs(self):
+        from mechferret import repl
+
+        queue_path = Path("queue-saved-aliases.json")
+        old = repl.PromptJob(id=3, text="older saved prompt", created_at=100.0)
+        new = repl.PromptJob(id=8, text="newer saved prompt", created_at=200.0)
+        repl._save_queue_jobs(queue_path, [old, new])
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: "reply", queue_path=queue_path)
+            try:
+                latest, latest_saved = runner.find_job("latest")
+                next_job, next_saved = runner.find_job("next")
+                self.assertIsNotNone(latest)
+                self.assertIsNotNone(next_job)
+                self.assertEqual(latest.id, new.id)
+                self.assertEqual(next_job.id, old.id)
+                self.assertTrue(latest_saved)
+                self.assertTrue(next_saved)
+
+                repl._queue_show(runner, ["latest"])
+                repl._queue_retry(runner, ["latest"])
+                self.assertTrue(runner.wait_idle(timeout=2))
+            finally:
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("job #8 saved", rendered)
+        self.assertIn("newer saved prompt", rendered)
+        self.assertIn("retried #8 saved as #1", rendered)
+
     def test_repl_queue_latest_targets_most_recent_live_job(self):
         from mechferret import repl
 
