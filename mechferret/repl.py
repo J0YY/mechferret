@@ -43,6 +43,10 @@ def _c(text: str, code: str) -> str:
     return f"\033[{code}m{text}\033[0m" if _COLOR else text
 
 
+def _job_order_key(job: "PromptJob") -> tuple[float, int]:
+    return (job.created_at, job.id)
+
+
 def _vlen(text: str) -> int:
     import re
 
@@ -197,7 +201,7 @@ class ChatJobRunner:
     def _find_live_job_locked(self, target: str) -> PromptJob | None:
         target = target.strip().lower().lstrip("#")
         if target in {"latest", "last"}:
-            return self._jobs[-1] if self._jobs else None
+            return max(self._jobs, key=_job_order_key) if self._jobs else None
         if target in {"active", "running"}:
             return self._active
         if target == "next":
@@ -276,7 +280,7 @@ class ChatJobRunner:
 
     def recent(self, limit: int = 8) -> list[PromptJob]:
         with self._lock:
-            return list(self._jobs[-limit:])
+            return sorted(self._jobs, key=_job_order_key)[-limit:]
 
     def find_job(self, target: str) -> tuple[PromptJob | None, bool]:
         raw_target = target.strip().lower()

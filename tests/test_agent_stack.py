@@ -779,7 +779,7 @@ class AgentStackTest(unittest.TestCase):
                 repl._queue_move(runner, ["latest", "first"])
                 self.assertEqual([job.id for job in runner.queued()], [second.id, first.id])
                 repl._queue_cancel(runner, ["latest"])
-                self.assertEqual(first.status, "canceled")
+                self.assertEqual(second.status, "canceled")
 
                 runner.resume()
                 self.assertTrue(runner.wait_idle(timeout=2))
@@ -787,11 +787,32 @@ class AgentStackTest(unittest.TestCase):
                 runner.resume()
                 runner.stop(wait=True)
 
-        self.assertEqual(started, ["updated second"])
+        self.assertEqual(started, ["first"])
         rendered = out.getvalue()
         self.assertIn("edited #2", rendered)
         self.assertIn("moved #2 first", rendered)
-        self.assertIn("canceled #1", rendered)
+        self.assertIn("canceled #2", rendered)
+
+    def test_repl_queue_latest_stays_chronological_after_reorder(self):
+        from mechferret import repl
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: None, queue_path=Path("queue-latest-order.json"))
+            try:
+                runner.pause()
+                first = runner.submit("first")
+                second = runner.submit("second")
+                third = runner.submit("third")
+
+                repl._queue_move(runner, [str(third.id), "first"])
+                self.assertEqual([job.id for job in runner.queued()], [third.id, first.id, second.id])
+                self.assertIs(runner.find_job("next")[0], third)
+                self.assertIs(runner.find_job("latest")[0], third)
+                self.assertEqual([job.id for job in runner.recent(3)], [first.id, second.id, third.id])
+            finally:
+                runner.resume()
+                runner.stop(wait=True)
 
     def test_repl_queue_active_and_next_targets_resolve_live_jobs(self):
         from mechferret import repl
