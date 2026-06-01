@@ -131,6 +131,8 @@ class PromptJob:
     reply: str | None = None
     error: str = ""
     applied: bool = False
+    deferred_options: list[dict[str, Any]] = field(default_factory=list)
+    deferred_selection: str = ""
     created_at: float = field(default_factory=time.time)
     output: list[str] = field(default_factory=list)
 
@@ -274,7 +276,9 @@ class ChatJobRunner:
             live_by_id = {job.id: job for job in self._jobs}
             live_pending = [
                 job for job in self._jobs
-                if job.status in {"queued", "running"} or (job.kind == "btw" and job.status in {"done", "error"} and not job.applied)
+                if job.status in {"queued", "running"}
+                or (job.kind == "btw" and job.status in {"done", "error"} and not job.applied)
+                or (job.kind != "btw" and job.status == "done" and job.deferred_options and not job.deferred_selection)
             ]
         saved = [job for job in self.saved() if not _queue_file_entry_matches_live_job(job, live_by_id)]
         self._preserved_saved_ids.clear()
@@ -289,6 +293,7 @@ class ChatJobRunner:
                 if job.status == "queued"
                 or job.status == "running"
                 or (job.kind == "btw" and job.status in {"done", "error"} and not job.applied)
+                or (job.kind != "btw" and job.status == "done" and job.deferred_options and not job.deferred_selection)
             ]
         pending.extend(job for job in saved_jobs if not _queue_file_entry_matches_live_job(job, live_by_id))
         return _save_queue_jobs(self._queue_path, pending)
@@ -474,6 +479,34 @@ class ChatJobRunner:
             retried = self.submit(original.text, kind=original.kind)
         return original, retried, saved
 
+    def choose_deferred_option(
+        self,
+        target: str,
+        choice: str,
+    ) -> tuple[PromptJob | None, PromptJob | None, str, dict[str, Any] | None]:
+        original, saved = self.find_job(target)
+        if original is None:
+            return None, None, "missing", None
+        if original.status not in TERMINAL_JOB_STATUSES:
+            return original, None, original.status, None
+        option = _find_deferred_option(original.deferred_options, choice)
+        if option is None:
+            return original, None, "option", None
+        title = str(option.get("title", "")).strip() or choice.strip()
+        original.deferred_selection = title
+        if saved:
+            saved_jobs = self.saved()
+            saved_job = _find_saved_queue_job(saved_jobs, str(original.id))
+            if saved_job is not None:
+                saved_job.deferred_selection = title
+                self._preserved_saved_ids.discard(saved_job.id)
+                self._save_with_saved_jobs([job for job in saved_jobs if job.id != saved_job.id])
+        else:
+            self.save_pending()
+        followup = self.submit(_deferred_option_followup_prompt(original, option))
+        self.session.step = f"selected option for #{original.id}"
+        return original, followup, "queued", option
+
     def apply_side_result(self, target: str = "side") -> tuple[PromptJob | None, str]:
         target = target or "side"
         normalized = target.strip().lower().lstrip("#")
@@ -605,6 +638,10 @@ class ChatJobRunner:
                 job for job in self._jobs
                 if job.kind == "btw" and job.status in {"done", "error"} and not job.applied
             )
+            pending.extend(
+                job for job in self._jobs
+                if job.kind != "btw" and job.status == "done" and job.deferred_options and not job.deferred_selection
+            )
             if include_active and self._active is not None and self._active.status == "running":
                 pending = [self._active, *pending]
             if include_active:
@@ -711,6 +748,10 @@ def _job_to_dict(job: PromptJob) -> dict[str, Any]:
         row["error"] = job.error
     if job.applied:
         row["applied"] = True
+    if job.deferred_options:
+        row["deferred_options"] = job.deferred_options
+    if job.deferred_selection:
+        row["deferred_selection"] = job.deferred_selection
     return row
 
 
@@ -736,7 +777,8 @@ def _load_saved_queue(path: Path = QUEUE_FILE) -> list[PromptJob]:
             continue
         kind = row.get("kind") if isinstance(row.get("kind"), str) else "prompt"
         status = row.get("status") if row.get("status") in SAVED_JOB_STATUSES else "queued"
-        if kind != "btw" and status in {"done", "error"}:
+        deferred_options = [item for item in row.get("deferred_options", []) if isinstance(item, dict)]
+        if kind != "btw" and status in {"done", "error"} and not deferred_options:
             status = "queued"
         created_at = row.get("created_at") if isinstance(row.get("created_at"), (int, float)) else time.time()
         raw_id = row.get("id")
@@ -745,6 +787,7 @@ def _load_saved_queue(path: Path = QUEUE_FILE) -> list[PromptJob]:
         reply = row.get("reply") if isinstance(row.get("reply"), str) else None
         error = row.get("error") if isinstance(row.get("error"), str) else ""
         applied = row.get("applied") if type(row.get("applied")) is bool else False
+        deferred_selection = row.get("deferred_selection") if isinstance(row.get("deferred_selection"), str) else ""
         job = PromptJob(
             id=job_id,
             text=text,
@@ -753,6 +796,8 @@ def _load_saved_queue(path: Path = QUEUE_FILE) -> list[PromptJob]:
             reply=reply,
             error=error,
             applied=applied,
+            deferred_options=deferred_options,
+            deferred_selection=deferred_selection.strip(),
             created_at=float(created_at),
             output=output[-80:],
         )
@@ -810,6 +855,36 @@ def _move_queue_job(jobs: list[PromptJob], job: PromptJob, where: str, anchor_jo
     else:
         jobs.append(job)
     return "moved"
+
+
+def _find_deferred_option(options: list[dict[str, Any]], choice: str) -> dict[str, Any] | None:
+    text = choice.strip()
+    if not text:
+        return None
+    if text.isdigit():
+        index = int(text) - 1
+        return options[index] if 0 <= index < len(options) else None
+    normalized = " ".join(text.lower().split())
+    for option in options:
+        title = " ".join(str(option.get("title", "")).lower().split())
+        if title == normalized:
+            return option
+    for option in options:
+        title = " ".join(str(option.get("title", "")).lower().split())
+        if normalized and normalized in title:
+            return option
+    return None
+
+
+def _deferred_option_followup_prompt(job: PromptJob, option: dict[str, Any]) -> str:
+    title = str(option.get("title", "")).strip() or "selected option"
+    option_json = json.dumps(option, indent=2, sort_keys=True, default=str)
+    return (
+        f"Continue queued job #{job.id} from its deferred interactive option selection.\n"
+        f"The user selected: {title}\n\n"
+        f"Selected option JSON:\n{option_json}\n\n"
+        "Resume the work using this selected direction. Do not ask the user to choose again unless this selected option is internally inconsistent."
+    )
 
 
 def _queue_file_lock(path: Path) -> threading.Lock:
@@ -1190,6 +1265,8 @@ def run_repl() -> None:
                 _queue_tail(runner, tokens[2:])
             elif len(tokens) > 1 and tokens[1].lower() == "retry":
                 _queue_retry(runner, tokens[2:])
+            elif len(tokens) > 1 and tokens[1].lower() in {"choose", "select"}:
+                _queue_choose(runner, tokens[2:])
             elif len(tokens) > 1 and tokens[1].lower() == "apply":
                 _queue_apply(runner, tokens[2:])
             elif len(tokens) > 1 and tokens[1].lower() == "edit":
@@ -1410,16 +1487,21 @@ def _btw_prompt(text: str) -> str:
 
 
 def _deferred_option_selection(options: list[Any]) -> dict[str, Any]:
+    option_details = [option for option in options if isinstance(option, dict)]
+    job = getattr(_BACKGROUND_JOB, "job", None)
+    if isinstance(job, PromptJob):
+        job.deferred_options = deepcopy(option_details)
+        job.deferred_selection = ""
     return {
         "ok": False,
         "user_selected": "none",
         "selection_deferred": True,
         "failed_checks": ["interactive_selection_unavailable"],
-        "options": [str(option.get("title", "")).strip() for option in options if isinstance(option, dict)],
-        "option_details": options,
+        "options": [str(option.get("title", "")).strip() for option in option_details],
+        "option_details": option_details,
         "next_actions": [
             "Do not pick a direction automatically.",
-            "Tell the user that this queued/background job reached an interactive choice and should be resumed with a foreground selection or an explicit follow-up prompt.",
+            "Tell the user that this queued/background job reached an interactive choice and can be resumed with `/queue choose <job> <number|title>` or an explicit follow-up prompt.",
         ],
     }
 
@@ -1462,6 +1544,10 @@ def _print_queue(runner: ChatJobRunner) -> None:
             print(_c("  run `/queue show side` or `/queue show <id>` to inspect saved prompts and replies", "2"))
         if saved_restorable:
             print(_c("  run `/queue restore` to enqueue saved prompts, or `/queue clear` to drop them", "2"))
+        deferred = [job for job in [*recent, *saved] if job.deferred_options and not job.deferred_selection]
+        if deferred:
+            latest = max(deferred, key=_job_order_key)
+            print(_c(f"  run `/queue choose #{latest.id} <number|title>` to resume a deferred option selection", "2"))
     done = [job for job in recent if job.status in {"done", "error", "canceled"} and job not in side_ready]
     for job in done[-3:]:
         status = job.status
@@ -1485,6 +1571,8 @@ def _print_job_result_hint(job: PromptJob, *, background: bool = False) -> None:
     emit(_c(f"  use /queue show #{job.id} to view the prompt, live output, reply, or error", "2"))
     if job.kind == "btw" and job.status == "done" and not job.applied:
         emit(_c(f"  use /queue apply #{job.id} to add this side reply to the main conversation", "2"))
+    if job.deferred_options and not job.deferred_selection:
+        emit(_c(f"  use /queue choose #{job.id} <number|title> to resume its deferred option selection", "2"))
 
 
 def _print_finished(job: PromptJob, *, label: str = "queued", background: bool = False) -> None:
@@ -1632,6 +1720,17 @@ def _queue_show(runner: ChatJobRunner, args: list[str]) -> None:
     if job.reply:
         print(_c("  reply:", "1"))
         print(_render_reply(job.reply))
+    if job.deferred_options:
+        if job.deferred_selection:
+            print(_c(f"  selected option: {job.deferred_selection}", "32"))
+        else:
+            print(_c("  deferred options:", "1"))
+            for index, option in enumerate(job.deferred_options, 1):
+                title = str(option.get("title", "")).strip() or f"option {index}"
+                summary = str(option.get("summary", "")).strip()
+                suffix = f" — {summary}" if summary else ""
+                print(_c(f"    {index}. {title}{suffix}", "2"))
+            print(_c(f"  use /queue choose #{job.id} <number|title> to continue from one option", "2"))
 
 
 def _queue_tail(runner: ChatJobRunner, args: list[str]) -> None:
@@ -1692,6 +1791,33 @@ def _queue_retry(runner: ChatJobRunner, args: list[str]) -> None:
         return
     saved_label = " saved" if saved else ""
     print(_c(f"  retried #{original.id}{saved_label} as #{retried.id}", "32"))
+
+
+def _queue_choose(runner: ChatJobRunner, args: list[str]) -> None:
+    target = args[0] if args else ""
+    choice = " ".join(args[1:]).strip()
+    if not target or not choice:
+        print(_c("  usage: /queue choose <job id|latest|side> <number|title>", "33"))
+        return
+    original, followup, status, option = runner.choose_deferred_option(target, choice)
+    if original is None:
+        print(_c(f"  no queue job matched {target!r}", "33"))
+        return
+    if status == "option":
+        print(_c(f"  no deferred option matched {choice!r} for job #{original.id}", "33"))
+        if original.deferred_options:
+            print(_c("  available options:", "2"))
+            for index, candidate in enumerate(original.deferred_options, 1):
+                title = str(candidate.get("title", "")).strip() or f"option {index}"
+                print(_c(f"    {index}. {title}", "2"))
+        return
+    if status != "queued":
+        print(_c(f"  job #{original.id} is {status}; wait for it to finish before choosing an option.", "33"))
+        return
+    title = str((option or {}).get("title", "")).strip() or choice
+    print(_c(f"  selected option for #{original.id}: {title}", "32"))
+    if followup is not None:
+        print(_c(f"  queued follow-up #{followup.id} to continue from that choice", "32"))
 
 
 def _queue_apply(runner: ChatJobRunner, args: list[str]) -> None:

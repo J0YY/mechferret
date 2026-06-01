@@ -340,6 +340,7 @@ You can do things like:
 /queue show <id|latest|active|running|side|next> show a queued job's full prompt, live output, reply, or error
 /queue tail <id|latest|active|running|side> [seconds] follow live output from a queued or /btw job
 /queue retry <id|latest|running|side|next> retry a job without retyping its prompt
+/queue choose <id|latest|side> <number|title> choose a deferred option from a queued/background picker
 /queue apply <id|side|latest|all> add finished /btw side replies to the main conversation
 /queue edit <id|latest|next> <prompt> edit a queued prompt before it starts
 /queue move <id|latest|next> first|last|before|after reorder a queued prompt before it starts

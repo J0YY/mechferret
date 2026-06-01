@@ -524,6 +524,7 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("/queue show <id|latest|active|running|side|next>", rendered_help)
         self.assertIn("/queue tail <id|latest|active|running|side> [seconds]", rendered_help)
         self.assertIn("/queue retry <id|latest|running|side|next>", rendered_help)
+        self.assertIn("/queue choose <id|latest|side> <number|title>", rendered_help)
         self.assertIn("/queue apply <id|side|latest|all>", rendered_help)
         self.assertIn("/queue edit <id|latest|next> <text>", rendered_help)
         self.assertIn("/queue move <id|latest|next> first|last|before|after", rendered_help)
@@ -2956,6 +2957,55 @@ class AgentStackTest(unittest.TestCase):
         self.assertEqual(payload["option_details"][0]["novelty_threat_model"][0]["threat"], "claim_collision")
         self.assertEqual(payload["option_details"][0]["disqualifying_overlap_tests"][0]["test"], "claim_collision")
         self.assertEqual(payload["option_details"][0]["search_audit"]["pass_count"], 12)
+
+    def test_repl_queue_choose_resumes_deferred_background_option(self):
+        from mechferret import repl
+
+        calls = []
+        option = {
+            "title": "Novelty audit",
+            "summary": "Check the delta",
+            "comparison_matrix": [{"axis": "method", "covered": True}],
+            "novelty_threat_model": [{"threat": "claim_collision", "risk": "needs_delta_review"}],
+            "disqualifying_overlap_tests": [{"test": "claim_collision", "passed": False}],
+            "search_audit": {"pass_count": 18, "failed_passes": 0, "empty_search_passes": 0},
+            "recent_pressure": {"status": "recent_prior_present"},
+        }
+
+        def fake_chat(agent, session, text, *, background=False):
+            calls.append(text)
+            if text == "pick one":
+                repl._deferred_option_selection([option])
+                return "selection deferred"
+            return "continued from option"
+
+        queue_path = Path("queue-choose-option.json")
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=queue_path)
+            try:
+                job = runner.submit("pick one")
+                self.assertTrue(runner.wait_idle(timeout=2))
+                saved_before = repl._load_saved_queue(queue_path)
+                self.assertEqual(saved_before[0].status, "done")
+                self.assertEqual(saved_before[0].deferred_options[0]["title"], "Novelty audit")
+                repl._queue_show(runner, [str(job.id)])
+                repl._queue_choose(runner, [str(job.id), "1"])
+                self.assertTrue(runner.wait_idle(timeout=2))
+                repl._queue_show(runner, [str(job.id)])
+            finally:
+                runner.stop(wait=True)
+
+        self.assertEqual(job.deferred_options[0]["title"], "Novelty audit")
+        self.assertEqual(job.deferred_selection, "Novelty audit")
+        self.assertEqual(len(calls), 2)
+        self.assertIn("Continue queued job #1", calls[1])
+        self.assertIn("Selected option JSON", calls[1])
+        rendered = out.getvalue()
+        self.assertIn("deferred options", rendered)
+        self.assertIn("selected option for #1: Novelty audit", rendered)
+        self.assertIn("queued follow-up #2", rendered)
+        self.assertIn("selected option: Novelty audit", rendered)
 
     def test_cli_command_index_primary_names_route_from_repl(self):
         from mechferret import commands
