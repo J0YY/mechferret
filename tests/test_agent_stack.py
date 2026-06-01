@@ -1328,6 +1328,34 @@ class AgentStackTest(unittest.TestCase):
 
         self.assertEqual(started, ["active prompt"])
 
+    def test_repl_stop_wait_joins_side_jobs_after_fast_shutdown(self):
+        from mechferret import repl
+
+        queue_path = Path("side-stop-queue.json")
+        release = threading.Event()
+        finished = threading.Event()
+
+        def fake_chat(agent, session, text, *, background=False):
+            self.assertTrue(release.wait(timeout=2))
+            time.sleep(0.05)
+            finished.set()
+            return text
+
+        with redirect_stdout(StringIO()):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=queue_path)
+            try:
+                side = runner.submit_side(repl._btw_prompt("side shutdown"))
+                runner.stop(wait=False)
+                release.set()
+                runner.stop(wait=True)
+            finally:
+                release.set()
+                runner.stop(wait=True)
+
+        self.assertTrue(finished.is_set())
+        self.assertEqual(side.status, "done")
+        self.assertEqual(runner.saved(), [])
+
     def test_repl_busy_guard_blocks_agent_state_mutations(self):
         from mechferret import repl
 

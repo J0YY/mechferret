@@ -334,15 +334,18 @@ class ChatJobRunner:
     def stop(self, *, wait: bool = False) -> None:
         if self._stopped:
             if wait:
-                self._thread.join(timeout=2)
+                self._join_workers()
             return
         self._stopped = True
         self._queue.put(None)
         if wait:
-            self._thread.join(timeout=2)
-            for thread in list(self._side_threads):
-                thread.join(timeout=2)
+            self._join_workers()
         self.save_pending(include_active=True)
+
+    def _join_workers(self) -> None:
+        self._thread.join(timeout=2)
+        for thread in list(self._side_threads):
+            thread.join(timeout=2)
 
     def save_pending(self, *, include_active: bool = False) -> int:
         with self._lock:
