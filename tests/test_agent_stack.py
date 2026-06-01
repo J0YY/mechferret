@@ -2864,7 +2864,7 @@ class AgentStackTest(unittest.TestCase):
                 self.assertEqual([job.text for job in runner.saved()], ["second"])
                 self.assertTrue(queue_path.exists())
                 restored_runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=queue_path)
-                restored = restored_runner.restore_saved()
+                restored = restored_runner.restore_saved("next")
                 self.assertEqual([job.text for job in restored], [second.text])
                 self.assertEqual([job.id for job in restored], [second.id])
                 followup = restored_runner.submit("third")
