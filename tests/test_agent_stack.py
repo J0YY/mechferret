@@ -775,6 +775,29 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("/queue apply side", rendered)
         self.assertNotIn("done     #1 btw: side question", rendered)
 
+    def test_repl_queue_view_suggests_apply_all_for_multiple_ready_sides(self):
+        from mechferret import repl
+
+        def fake_chat(agent, session, text, *, background=False):
+            return "side answer"
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-view-side-ready-all.json"))
+            try:
+                runner.submit_side(repl._btw_prompt("first side"))
+                runner.submit_side(repl._btw_prompt("second side"))
+                self.assertTrue(runner.wait_idle(timeout=2))
+                repl._print_queue(runner)
+            finally:
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("ready   #1 btw: first side", rendered)
+        self.assertIn("ready   #2 btw: second side", rendered)
+        self.assertIn("/queue apply all", rendered)
+        self.assertNotIn("/queue apply side", rendered)
+
     def test_repl_queue_view_does_not_duplicate_live_queued_jobs_as_saved(self):
         from mechferret import repl
 

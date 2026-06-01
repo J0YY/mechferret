@@ -1276,7 +1276,10 @@ def _print_queue(runner: ChatJobRunner) -> None:
         for job in saved:
             print(_c(f"  saved   #{job.id} {job.kind}: {_short_job_text(_display_job_text(job))}", "33"))
         if side_ready:
-            print(_c("  run `/queue apply side` to add a ready side reply to the main conversation", "2"))
+            if len(side_ready) > 1:
+                print(_c("  run `/queue apply all` to add ready side replies to the main conversation", "2"))
+            else:
+                print(_c("  run `/queue apply side` to add a ready side reply to the main conversation", "2"))
         if saved:
             print(_c("  run `/queue restore` to enqueue saved prompts, or `/queue clear` to drop them", "2"))
     done = [job for job in recent if job.status in {"done", "error", "canceled"} and job not in side_ready]
