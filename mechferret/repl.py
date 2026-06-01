@@ -412,10 +412,15 @@ class ChatJobRunner:
 
     def apply_side_result(self, target: str = "side") -> tuple[PromptJob | None, str]:
         target = target or "side"
+        normalized = target.strip().lower().lstrip("#")
         with self._lock:
             if self._active is not None:
                 return None, "busy"
-            job = self._find_live_job_locked(target)
+            if normalized in {"latest", "last"}:
+                side_jobs = [job for job in self._jobs if job.kind == "btw"]
+                job = max(side_jobs, key=_job_order_key) if side_jobs else None
+            else:
+                job = self._find_live_job_locked(target)
             if job is None:
                 return None, "missing"
             if job.kind != "btw":

@@ -930,6 +930,41 @@ class AgentStackTest(unittest.TestCase):
         self.assertEqual(agent.messages, [])
         self.assertIn("wait for the active prompt before applying side replies", out.getvalue())
 
+    def test_repl_queue_apply_latest_targets_latest_side_not_latest_main(self):
+        from mechferret import repl
+
+        class MainAgent:
+            provider = "anthropic"
+
+            def __init__(self) -> None:
+                self.messages = []
+
+        calls = []
+
+        def fake_chat(agent, session, text, *, background=False):
+            calls.append(text)
+            return f"reply for {text}"
+
+        agent = MainAgent()
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(agent, repl.Session(), chat_fn=fake_chat, queue_path=Path("btw-apply-latest.json"))
+            try:
+                side = runner.submit_side(repl._btw_prompt("side question"))
+                self.assertTrue(runner.wait_idle(timeout=2))
+                main = runner.submit("newer main")
+                self.assertTrue(runner.wait_idle(timeout=2))
+
+                self.assertGreater(main.id, side.id)
+                repl._queue_apply(runner, ["latest"])
+            finally:
+                runner.stop(wait=True)
+
+        self.assertTrue(side.applied)
+        self.assertIn("applied side #1 to the main conversation", out.getvalue())
+        self.assertEqual(agent.messages[-1]["content"], "reply for " + repl._btw_prompt("side question"))
+        self.assertEqual(calls, [repl._btw_prompt("side question"), "newer main"])
+
     def test_repl_queue_wait_waits_for_main_and_side_jobs(self):
         from mechferret import repl
 
