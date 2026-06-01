@@ -2767,10 +2767,7 @@ def _valid_option_comparison_matrix(value: Any) -> bool:
     valid_raw = [
         item
         for item in value
-        if isinstance(item, dict)
-        and isinstance(item.get("axis"), str)
-        and item.get("axis", "").strip()
-        and type(item.get("covered")) is bool
+        if _valid_option_comparison_axis_row(item)
     ]
     if len(valid_raw) != len(value):
         return False
@@ -2779,6 +2776,24 @@ def _valid_option_comparison_matrix(value: Any) -> bool:
         return False
     axes = {row["axis"] for row in rows}
     return NOVELTY_REQUIRED_COMPARISON_AXES <= axes and all("covered" in row for row in rows)
+
+
+def _valid_option_comparison_axis_row(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    axis = value.get("axis")
+    if not isinstance(axis, str) or not axis.strip():
+        return False
+    if type(value.get("covered")) is not bool:
+        return False
+    if not _has_nonnegative_int(value, "evidence_count"):
+        return False
+    if not _has_nonnegative_int(value, "recent_evidence_count"):
+        return False
+    if not _has_finite_number(value, "strongest_score"):
+        return False
+    next_action = value.get("next_action")
+    return isinstance(next_action, str) and bool(next_action.strip())
 
 
 def _option_comparison_matrix(value: Any) -> list[dict[str, Any]]:
@@ -2795,6 +2810,8 @@ def _option_comparison_matrix(value: Any) -> list[dict[str, Any]]:
             "axis": axis,
             "covered": item.get("covered") if type(item.get("covered")) is bool else False,
             "evidence_count": _safe_int(item.get("evidence_count")),
+            "recent_evidence_count": _safe_int(item.get("recent_evidence_count")),
+            "strongest_score": _safe_float(item.get("strongest_score")),
             "next_action": str(item.get("next_action", "")).strip(),
         }
         prior = item.get("representative_prior")
@@ -3289,6 +3306,26 @@ def _option_recent_pressure(value: Any) -> dict[str, Any]:
         "latest_year": _safe_int(value.get("latest_year")),
         "recent_prior_titles": _option_strings(value.get("recent_prior_titles", []))[:5],
     }
+
+
+def _has_nonnegative_int(row: dict[str, Any], key: str) -> bool:
+    if key not in row or type(row.get(key)) is bool:
+        return False
+    try:
+        parsed = int(row.get(key))
+    except (TypeError, ValueError):
+        return False
+    return parsed >= 0
+
+
+def _has_finite_number(row: dict[str, Any], key: str) -> bool:
+    if key not in row or type(row.get(key)) is bool:
+        return False
+    try:
+        parsed = float(row.get(key))
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(parsed)
 
 
 def _safe_int(value: Any) -> int:

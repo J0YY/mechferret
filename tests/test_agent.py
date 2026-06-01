@@ -59,20 +59,31 @@ def _option_disqualifying_tests():
 
 
 def _option_comparison_matrix():
+    rows = [
+        ("exact_phrase", True, 1, "Compare exact phrase."),
+        ("claim_collision", True, 1, "Compare claim."),
+        ("recency", True, 1, "Compare recent work."),
+        ("method", True, 1, "Compare method."),
+        ("mechanism", True, 1, "Compare mechanism."),
+        ("architecture", True, 1, "Compare architecture."),
+        ("frontier_architecture", True, 1, "Compare frontier architecture."),
+        ("evaluation", False, 0, "Add benchmark."),
+        ("implementation", True, 1, "Compare implementation."),
+        ("replication", True, 1, "Compare replication."),
+        ("peer_review", True, 1, "Compare peer review."),
+        ("failure_modes", True, 1, "Compare failures."),
+        ("protocol", True, 1, "Compare protocol."),
+    ]
     return [
-        {"axis": "exact_phrase", "covered": True, "evidence_count": 1, "next_action": "Compare exact phrase."},
-        {"axis": "claim_collision", "covered": True, "evidence_count": 1, "next_action": "Compare claim."},
-        {"axis": "recency", "covered": True, "evidence_count": 1, "next_action": "Compare recent work."},
-        {"axis": "method", "covered": True, "evidence_count": 1, "next_action": "Compare method."},
-        {"axis": "mechanism", "covered": True, "evidence_count": 1, "next_action": "Compare mechanism."},
-        {"axis": "architecture", "covered": True, "evidence_count": 1, "next_action": "Compare architecture."},
-        {"axis": "frontier_architecture", "covered": True, "evidence_count": 1, "next_action": "Compare frontier architecture."},
-        {"axis": "evaluation", "covered": False, "evidence_count": 0, "next_action": "Add benchmark."},
-        {"axis": "implementation", "covered": True, "evidence_count": 1, "next_action": "Compare implementation."},
-        {"axis": "replication", "covered": True, "evidence_count": 1, "next_action": "Compare replication."},
-        {"axis": "peer_review", "covered": True, "evidence_count": 1, "next_action": "Compare peer review."},
-        {"axis": "failure_modes", "covered": True, "evidence_count": 1, "next_action": "Compare failures."},
-        {"axis": "protocol", "covered": True, "evidence_count": 1, "next_action": "Compare protocol."},
+        {
+            "axis": axis,
+            "covered": covered,
+            "evidence_count": evidence_count,
+            "recent_evidence_count": 1 if covered else 0,
+            "strongest_score": 0.34 if covered else 0.0,
+            "next_action": next_action,
+        }
+        for axis, covered, evidence_count, next_action in rows
     ]
 
 
@@ -925,6 +936,15 @@ class AgentToolTest(unittest.TestCase):
         bad_shallow_matrix = json.loads(tools.run_tool("present_options", {"options": [shallow_matrix]}))
         self.assertFalse(bad_shallow_matrix["ok"])
         self.assertEqual(bad_shallow_matrix["expected"], "objects with comparison_matrix from verify_novelty assessment")
+
+        forged_axis_rows = _validated_option("Forged comparison rows")
+        forged_axis_rows["comparison_matrix"] = [
+            {"axis": row["axis"], "covered": row["covered"]}
+            for row in _option_comparison_matrix()
+        ]
+        bad_forged_axis_rows = json.loads(tools.run_tool("present_options", {"options": [forged_axis_rows]}))
+        self.assertFalse(bad_forged_axis_rows["ok"])
+        self.assertEqual(bad_forged_axis_rows["expected"], "objects with comparison_matrix from verify_novelty assessment")
 
         bad_threat_model = json.loads(
             tools.run_tool(
