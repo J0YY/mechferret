@@ -2,10 +2,16 @@ import json
 import os
 import tempfile
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
 from mechferret import agent
+
+
+def _recent_window_label() -> str:
+    year = datetime.now(UTC).year
+    return f"{year - 2}-{year}"
 
 
 def _option_threat_model():
@@ -155,9 +161,9 @@ def _validated_option(title: str = "Novelty audit") -> dict:
         "search_audit": _option_search_audit(),
         "recent_pressure": {
             "status": "recent_prior_present",
-            "recent_window": "2024-2026",
+            "recent_window": _recent_window_label(),
             "recent_evidence_count": 1,
-            "latest_year": 2025,
+            "latest_year": datetime.now(UTC).year,
             "recent_prior_titles": ["Closest Paper"],
         },
         "required_delta": ["Show a causal ablation that differs from prior work."],
@@ -1041,6 +1047,55 @@ class AgentToolTest(unittest.TestCase):
         self.assertFalse(bad_failed_search["ok"])
         self.assertEqual(bad_failed_search["expected"], "objects with search_audit from verify_novelty assessment")
 
+        no_web_unique_search_audit = _option_search_audit()
+        for row in no_web_unique_search_audit["focus_summary"]:
+            if row["source"] == "web":
+                row["unique_added"] = 0
+        no_web_unique = _validated_option("No web evidence")
+        no_web_unique["search_audit"] = no_web_unique_search_audit
+        bad_no_web_unique = json.loads(
+            tools.run_tool(
+                "present_options",
+                {"options": [no_web_unique]},
+            )
+        )
+        self.assertFalse(bad_no_web_unique["ok"])
+        self.assertEqual(bad_no_web_unique["expected"], "objects with search_audit from verify_novelty assessment")
+
+        missing_recent = _validated_option("No recent evidence")
+        missing_recent["recent_pressure"] = {
+            "status": "missing_recent_prior_art",
+            "recent_window": _recent_window_label(),
+            "recent_evidence_count": 0,
+            "latest_year": 0,
+            "recent_prior_titles": [],
+        }
+        bad_missing_recent = json.loads(
+            tools.run_tool(
+                "present_options",
+                {"options": [missing_recent]},
+            )
+        )
+        self.assertFalse(bad_missing_recent["ok"])
+        self.assertEqual(bad_missing_recent["expected"], "objects with recent_pressure from verify_novelty assessment")
+
+        stale_recent = _validated_option("Stale evidence")
+        stale_recent["recent_pressure"] = {
+            "status": "recent_prior_present",
+            "recent_window": "2020-2022",
+            "recent_evidence_count": 1,
+            "latest_year": 2022,
+            "recent_prior_titles": ["Old Paper"],
+        }
+        bad_stale_recent = json.loads(
+            tools.run_tool(
+                "present_options",
+                {"options": [stale_recent]},
+            )
+        )
+        self.assertFalse(bad_stale_recent["ok"])
+        self.assertEqual(bad_stale_recent["expected"], "objects with recent_pressure from verify_novelty assessment")
+
         too_few_options = json.loads(
             tools.run_tool(
                 "present_options",
@@ -1074,7 +1129,7 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(ok["option_details"][0]["search_audit"]["focus_summary"][0]["requested_results_max"], 50)
         self.assertTrue(ok["option_details"][0]["search_audit"]["focus_coverage"]["claim_collision"])
         self.assertEqual(ok["option_details"][0]["recent_pressure"]["status"], "recent_prior_present")
-        self.assertEqual(ok["option_details"][0]["recent_pressure"]["latest_year"], 2025)
+        self.assertEqual(ok["option_details"][0]["recent_pressure"]["latest_year"], datetime.now(UTC).year)
 
     def test_run_discovery_requires_explicit_model_without_modelled_skill(self):
         from mechferret import tools

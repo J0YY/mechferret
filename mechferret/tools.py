@@ -2592,11 +2592,15 @@ def _valid_option_search_audit(value: Any) -> bool:
         return False
     arxiv_passes = _option_search_source_passes(focus_summary, "arxiv")
     web_passes = _option_search_source_passes(focus_summary, "web")
+    arxiv_unique = _option_search_source_unique_added(focus_summary, "arxiv")
+    web_unique = _option_search_source_unique_added(focus_summary, "web")
     if audit.get("failed_passes", 0) != 0 or audit.get("failed_focuses"):
         return False
     if audit.get("pass_count", 0) < NOVELTY_MIN_OPTION_ARXIV_PASSES + NOVELTY_MIN_OPTION_WEB_PASSES:
         return False
     if arxiv_passes < NOVELTY_MIN_OPTION_ARXIV_PASSES or web_passes < NOVELTY_MIN_OPTION_WEB_PASSES:
+        return False
+    if arxiv_unique <= 0 or web_unique <= 0:
         return False
     if _option_search_source_requested_max(focus_summary, "arxiv") < NOVELTY_QUERY_RESULT_LIMIT:
         return False
@@ -2688,6 +2692,10 @@ def _option_search_source_requested_max(rows: list[dict[str, Any]], source: str)
     return max((_safe_int(row.get("requested_results_max")) for row in rows if row.get("source") == source), default=0)
 
 
+def _option_search_source_unique_added(rows: list[dict[str, Any]], source: str) -> int:
+    return sum(_safe_int(row.get("unique_added")) for row in rows if row.get("source") == source)
+
+
 def _option_search_focus_coverage(rows: list[dict[str, Any]]) -> dict[str, bool]:
     text = " ".join(str(row.get("focus", "")) for row in rows).lower()
     return {
@@ -2722,7 +2730,14 @@ def _option_prior(value: Any) -> dict[str, Any]:
 
 def _valid_option_recent_pressure(value: Any) -> bool:
     pressure = _option_recent_pressure(value)
-    return bool(pressure.get("status") and pressure.get("recent_window"))
+    if pressure.get("status") != "recent_prior_present":
+        return False
+    if pressure.get("recent_window") != _novelty_recent_window_label():
+        return False
+    if _safe_int(pressure.get("recent_evidence_count")) <= 0:
+        return False
+    latest_year = _safe_int(pressure.get("latest_year"))
+    return latest_year >= datetime.now(UTC).year - 2
 
 
 def _option_recent_pressure(value: Any) -> dict[str, Any]:
@@ -3594,7 +3609,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
      "parameters": _obj({"model_id": {"type": "string"}, "query": {"type": "string"}}, ["model_id", "query"])},
     {"name": "verify_novelty", "description": "Deep novelty check for a research idea using multi-pass arXiv and web searches across relevance, recency, recent discoveries, architecture variants, method, mechanism, evaluation, implementation, replication, failure-mode, and protocol angles. Call this for each proposed research direction before presenting it.",
      "parameters": _obj({"idea": {"type": "string", "description": "the research idea/direction to novelty-check"}, "queries": {"type": "array", "items": {"type": "string"}, "description": "optional arXiv queries to probe for prior work"}}, ["idea"])},
-    {"name": "present_options", "description": "Present 2-5 research directions to the user as an interactive, expandable picker and return their choice. Use this instead of writing options as prose. Every option must include detail, citations, novelty_risk, novelty_verdict, closest_prior_art, claim_readiness, comparison_matrix, novelty_threat_model, disqualifying_overlap_tests, search_audit, recent_pressure, and required_delta from verify_novelty assessment.",
+    {"name": "present_options", "description": "Present 2-5 research directions to the user as an interactive, expandable picker and return their choice. Use this instead of writing options as prose. Every option must include detail, citations, novelty_risk, novelty_verdict, closest_prior_art, claim_readiness, comparison_matrix, novelty_threat_model, disqualifying_overlap_tests, search_audit, recent_pressure, and required_delta from verify_novelty assessment. search_audit must show successful deep arXiv and web retrieval with unique evidence from both sources; recent_pressure must show recent_prior_present in the current recent window.",
      "parameters": _obj({"options": {"type": "array", "minItems": 2, "maxItems": 5, "items": {"type": "object", "properties": {
          "title": {"type": "string"},
          "summary": {"type": "string", "description": "one line"},
@@ -3641,14 +3656,14 @@ TOOL_SPECS: list[dict[str, Any]] = [
              "focus_coverage": {"type": "object"},
              "missing_focus_coverage": {"type": "array", "items": {"type": "string"}},
              "focus_summary": {"type": "array", "items": {"type": "object"}},
-         }, "description": "assessment.search_audit from verify_novelty; include pass_count, failed_passes, empty_search_passes, duplicate_only_search_passes, focus_coverage, missing_focus_coverage, and focus_summary. The audit must prove at least 10 arXiv passes at 50 results, 8 web passes at 24 results, focused deep-search coverage, and zero failed retrieval passes."},
+         }, "description": "assessment.search_audit from verify_novelty; include pass_count, failed_passes, empty_search_passes, duplicate_only_search_passes, focus_coverage, missing_focus_coverage, and focus_summary. The audit must prove at least 10 arXiv passes at 50 results, 8 web passes at 24 results, focused deep-search coverage, unique_added evidence from both arXiv and web, and zero failed retrieval passes."},
          "recent_pressure": {"type": "object", "properties": {
              "status": {"type": "string"},
              "recent_window": {"type": "string"},
              "recent_evidence_count": {"type": "integer"},
              "latest_year": {"type": "integer"},
              "recent_prior_titles": {"type": "array", "items": {"type": "string"}},
-         }, "description": "assessment.recent_pressure from verify_novelty; include status, recent_window, recent_evidence_count, latest_year, and recent_prior_titles."},
+         }, "description": "assessment.recent_pressure from verify_novelty; include status=recent_prior_present, current recent_window, recent_evidence_count, latest_year, and recent_prior_titles."},
          "required_delta": {"type": "string", "description": "specific deltas from assessment.required_delta; join multiple entries into one concise string"},
      }, "required": ["title", "summary", "detail", "citations", "novelty_risk", "novelty_verdict", "closest_prior_art", "claim_readiness", "comparison_matrix", "novelty_threat_model", "disqualifying_overlap_tests", "search_audit", "recent_pressure", "required_delta"]}}}, ["options"])},
     {"name": "run_research", "description": "Run the general prompt-to-dossier literature/research pipeline over explicit sources, URLs, memory, or a configured provider.",

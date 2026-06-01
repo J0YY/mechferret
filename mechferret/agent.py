@@ -60,7 +60,9 @@ Workflow when the user wants to plan research:
    novelty_verdict, closest_prior_art, claim_readiness, comparison_matrix,
    novelty_threat_model, disqualifying_overlap_tests, search_audit,
    recent_pressure, and required_delta) so the user can browse and pick. Do NOT
-   write the options out as prose.
+   write the options out as prose. Only present directions whose novelty audit
+   found recent prior evidence and unique retrieved evidence from both arXiv and
+   web/project/code sources.
 
 OUTPUT RULES (important):
 - Plain text only. No markdown: no #, *, **, backticks, tables, or '-' bullets.
