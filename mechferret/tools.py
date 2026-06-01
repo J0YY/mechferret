@@ -44,6 +44,13 @@ NOVELTY_RISKS = {
     "unresolved_no_close_prior_found",
     "unknown_search_incomplete",
 }
+NOVELTY_CLAIM_READINESS_STATUSES = {
+    "not_ready_search_incomplete",
+    "not_ready_prior_art_overlap",
+    "not_ready_needs_more_evidence",
+    "delta_review_required",
+    "provisional_low_overlap_after_deep_search",
+}
 NOVELTY_WEB_SOURCE_TYPES = {
     "paper",
     "benchmark",
@@ -161,6 +168,7 @@ def _persisted_json_summary(name: str, payload: Any, path: Path, result: str) ->
         "source_diversity",
         "required_delta",
         "closest_prior_art",
+        "claim_readiness",
     ):
         if isinstance(payload, dict) and key in payload:
             minimal[key] = payload[key]
@@ -221,9 +229,12 @@ def _compact_json_value(value: Any) -> Any:
             "source_diversity",
             "required_delta",
             "closest_prior_art",
+            "claim_readiness",
         ):
             if key in value and isinstance(value[key], (str, int, float, bool, list, type(None))):
                 summary[key] = value[key]
+            elif key in value and key == "claim_readiness" and isinstance(value[key], dict):
+                summary[key] = _compact_json_value(value[key])
             elif key in value and key == "coverage" and isinstance(value[key], dict):
                 summary[key] = _compact_json_value(value[key])
         return summary
@@ -1675,6 +1686,36 @@ def _validate_option_card(option: dict[str, Any], index: int) -> dict[str, Any] 
             index=index,
             expected="objects with closest_prior_art list from verify_novelty assessment",
         )
+    readiness = option.get("claim_readiness")
+    if not isinstance(readiness, dict):
+        return _invalid_object_list_payload(
+            "options",
+            readiness,
+            index=index,
+            expected="objects with claim_readiness from verify_novelty assessment",
+        )
+    status = readiness.get("status")
+    if not isinstance(status, str) or status.strip() not in NOVELTY_CLAIM_READINESS_STATUSES:
+        return _invalid_object_list_payload(
+            "options",
+            status,
+            index=index,
+            expected="claim_readiness.status from verify_novelty assessment",
+        )
+    if readiness.get("can_claim_high_novelty") is not False:
+        return _invalid_object_list_payload(
+            "options",
+            readiness.get("can_claim_high_novelty"),
+            index=index,
+            expected="claim_readiness.can_claim_high_novelty=false from verify_novelty assessment",
+        )
+    if not isinstance(readiness.get("missing_checks", []), list) or not isinstance(readiness.get("next_actions", []), list):
+        return _invalid_object_list_payload(
+            "options",
+            readiness,
+            index=index,
+            expected="claim_readiness with missing_checks and next_actions lists",
+        )
     return None
 
 
@@ -1694,6 +1735,14 @@ def _option_detail(option: dict[str, Any]) -> dict[str, Any]:
     closest = _option_strings(option.get("closest_prior_art", []))[:3]
     if closest:
         detail["closest_prior_art"] = closest
+    readiness = option.get("claim_readiness")
+    if isinstance(readiness, dict):
+        detail["claim_readiness"] = {
+            "status": str(readiness.get("status", "")).strip(),
+            "can_claim_high_novelty": bool(readiness.get("can_claim_high_novelty")),
+            "missing_checks": _option_strings(readiness.get("missing_checks", []))[:8],
+            "next_actions": _option_strings(readiness.get("next_actions", []))[:4],
+        }
     return detail
 
 
@@ -2528,7 +2577,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
      "parameters": _obj({"model_id": {"type": "string"}, "query": {"type": "string"}}, ["model_id", "query"])},
     {"name": "verify_novelty", "description": "Deep novelty check for a research idea using multi-pass arXiv and web searches across relevance, recency, method, mechanism, evaluation, implementation, replication, failure-mode, protocol, and recent-discovery angles. Call this for each proposed research direction before presenting it.",
      "parameters": _obj({"idea": {"type": "string", "description": "the research idea/direction to novelty-check"}, "queries": {"type": "array", "items": {"type": "string"}, "description": "optional arXiv queries to probe for prior work"}}, ["idea"])},
-    {"name": "present_options", "description": "Present 2-5 research directions to the user as an interactive, expandable picker and return their choice. Use this instead of writing options as prose. Every option must include detail, citations, novelty_risk, novelty_verdict, closest_prior_art, and required_delta from verify_novelty assessment.",
+    {"name": "present_options", "description": "Present 2-5 research directions to the user as an interactive, expandable picker and return their choice. Use this instead of writing options as prose. Every option must include detail, citations, novelty_risk, novelty_verdict, closest_prior_art, claim_readiness, and required_delta from verify_novelty assessment.",
      "parameters": _obj({"options": {"type": "array", "items": {"type": "object", "properties": {
          "title": {"type": "string"},
          "summary": {"type": "string", "description": "one line"},
@@ -2538,8 +2587,9 @@ TOOL_SPECS: list[dict[str, Any]] = [
          "novelty_risk": {"type": "string", "description": "assessment.risk from verify_novelty"},
          "novelty_verdict": {"type": "string", "description": "assessment.verdict from verify_novelty"},
          "closest_prior_art": {"type": "array", "items": {"type": "string"}, "description": "nearest prior paper titles/URLs from assessment.closest_prior_art"},
+         "claim_readiness": {"type": "object", "description": "assessment.claim_readiness from verify_novelty; include status, can_claim_high_novelty, missing_checks, and next_actions."},
          "required_delta": {"type": "string", "description": "specific delta needed to justify novelty"},
-     }, "required": ["title", "summary", "detail", "citations", "novelty_risk", "novelty_verdict", "closest_prior_art", "required_delta"]}}}, ["options"])},
+     }, "required": ["title", "summary", "detail", "citations", "novelty_risk", "novelty_verdict", "closest_prior_art", "claim_readiness", "required_delta"]}}}, ["options"])},
     {"name": "run_research", "description": "Run the general prompt-to-dossier literature/research pipeline over explicit sources, URLs, memory, or a configured provider.",
      "parameters": _obj({
          "question": {"type": "string"},

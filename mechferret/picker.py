@@ -71,6 +71,9 @@ def _select_rich_fallback(prompt, options):
             out.write(f"      novelty risk: {o['novelty_risk']}\n")
         if o.get("novelty_verdict"):
             out.write(f"      novelty verdict: {o['novelty_verdict']}\n")
+        readiness = o.get("claim_readiness") or {}
+        if isinstance(readiness, dict) and readiness.get("status"):
+            out.write(f"      claim readiness: {readiness['status']}\n")
         if o.get("novelty"):
             out.write(f"      novelty: {o['novelty']}\n")
         closest = o.get("closest_prior_art") or []
@@ -114,6 +117,12 @@ def _select_rich_tty(prompt, options):
                     rows.append("      novelty risk: " + str(o["novelty_risk"]))
                 if o.get("novelty_verdict"):
                     rows.append("      novelty verdict: " + str(o["novelty_verdict"]))
+                readiness = o.get("claim_readiness") or {}
+                if isinstance(readiness, dict) and readiness.get("status"):
+                    rows.append("      claim readiness: " + str(readiness["status"]))
+                    missing = readiness.get("missing_checks") or []
+                    if missing:
+                        rows.append("      missing checks: " + ", ".join(str(c) for c in missing[:5]))
                 closest = o.get("closest_prior_art") or []
                 if closest:
                     rows.append("      closest prior: " + "; ".join(str(c) for c in closest[:3]))

@@ -562,6 +562,12 @@ class AgentToolTest(unittest.TestCase):
                             "novelty_risk": "medium",
                             "novelty_verdict": "Related work exists.",
                             "closest_prior_art": [],
+                            "claim_readiness": {
+                                "status": "not_ready_needs_more_evidence",
+                                "can_claim_high_novelty": False,
+                                "missing_checks": ["retrieved_prior_art"],
+                                "next_actions": ["Collect more independent evidence."],
+                            },
                             "required_delta": "Show a measurable delta.",
                         }
                     ]
@@ -570,6 +576,28 @@ class AgentToolTest(unittest.TestCase):
         )
         self.assertFalse(bad_novelty["ok"])
         self.assertEqual(bad_novelty["expected"], "objects with novelty_risk from verify_novelty assessment")
+
+        bad_readiness = json.loads(
+            tools.run_tool(
+                "present_options",
+                {
+                    "options": [
+                        {
+                            "title": "Thin option",
+                            "summary": "missing readiness evidence",
+                            "detail": "A direction without claim readiness should be rejected.",
+                            "citations": ["https://arxiv.org/abs/2501.0001"],
+                            "novelty_risk": "medium_prior_art_risk",
+                            "novelty_verdict": "Related work exists.",
+                            "closest_prior_art": [],
+                            "required_delta": "Show a measurable delta.",
+                        }
+                    ]
+                },
+            )
+        )
+        self.assertFalse(bad_readiness["ok"])
+        self.assertEqual(bad_readiness["expected"], "objects with claim_readiness from verify_novelty assessment")
 
         ok = json.loads(
             tools.run_tool(
@@ -584,6 +612,12 @@ class AgentToolTest(unittest.TestCase):
                             "novelty_risk": "medium_prior_art_risk",
                             "novelty_verdict": "Related work exists; specify the delta.",
                             "closest_prior_art": ["Closest Paper https://arxiv.org/abs/2501.0001"],
+                            "claim_readiness": {
+                                "status": "delta_review_required",
+                                "can_claim_high_novelty": False,
+                                "missing_checks": [],
+                                "next_actions": ["Write a precise delta before claiming novelty."],
+                            },
                             "required_delta": "Show a causal ablation that differs from prior work.",
                         }
                     ]
@@ -594,6 +628,8 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(ok["option_details"][0]["novelty_risk"], "medium_prior_art_risk")
         self.assertIn("Closest Paper", ok["option_details"][0]["citations"][0])
         self.assertIn("Closest Paper", ok["option_details"][0]["closest_prior_art"][0])
+        self.assertEqual(ok["option_details"][0]["claim_readiness"]["status"], "delta_review_required")
+        self.assertFalse(ok["option_details"][0]["claim_readiness"]["can_claim_high_novelty"])
         self.assertIn("causal ablation", ok["option_details"][0]["required_delta"])
 
     def test_run_discovery_requires_explicit_model_without_modelled_skill(self):
@@ -651,6 +687,7 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("Never fill that gap with GPT-2", prompt)
         self.assertIn("novelty_risk", prompt)
         self.assertIn("closest_prior_art", prompt)
+        self.assertIn("claim_readiness", prompt)
 
     def test_verify_novelty_runs_deep_recent_method_search(self):
         from mechferret import tools
