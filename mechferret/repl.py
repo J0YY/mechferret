@@ -653,7 +653,7 @@ def run_repl() -> None:
                 _print_queue(runner)
             elif agent.configured and agent.messages:
                 job = runner.submit("Proceed with the next step you proposed. Keep building.")
-                print(_c(f"  queued #{job.id}", "2"))
+                _print_queued(job, runner)
             continue
 
         try:
@@ -864,7 +864,7 @@ def run_repl() -> None:
                 continue
             agent.reload()
         job = runner.submit(line)
-        print(_c(f"  queued #{job.id}", "2"))
+        _print_queued(job, runner)
 
     runner.stop(wait=False)
     _save_history()
@@ -920,6 +920,16 @@ def _print_queue(runner: ChatJobRunner) -> None:
         status = job.status
         detail = f" ({job.error})" if job.error else ""
         print(_c(f"  {status:8} #{job.id} {job.kind}{detail}", "31" if job.error else "2"))
+
+
+def _print_queued(job: PromptJob, runner: ChatJobRunner) -> None:
+    queued = runner.queued()
+    if job in queued:
+        position = queued.index(job) + 1
+        print(_c(f"  queued #{job.id} (position {position}/{len(queued)})", "2"))
+    else:
+        print(_c(f"  queued #{job.id}", "2"))
+    print(_c(f"  use /queue edit #{job.id} <prompt>, /queue move #{job.id} first, or /queue cancel #{job.id}", "2"))
 
 
 def _print_canceled(canceled: list[PromptJob]) -> None:

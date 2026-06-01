@@ -469,6 +469,30 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("side #2", rendered)
         self.assertIn("queue empty", rendered)
 
+    def test_repl_print_queued_shows_position_and_controls(self):
+        from mechferret import repl
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: None, queue_path=Path("queue-print.json"))
+            try:
+                runner.pause()
+                first = runner.submit("first")
+                second = runner.submit("second")
+
+                repl._print_queued(first, runner)
+                repl._print_queued(second, runner)
+            finally:
+                runner.resume()
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("queued #1 (position 1/2)", rendered)
+        self.assertIn("queued #2 (position 2/2)", rendered)
+        self.assertIn("/queue edit #1 <prompt>", rendered)
+        self.assertIn("/queue move #2 first", rendered)
+        self.assertIn("/queue cancel #2", rendered)
+
     def test_repl_btw_runs_while_main_prompt_is_active(self):
         from mechferret import repl
 
