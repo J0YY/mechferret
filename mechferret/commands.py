@@ -23,6 +23,7 @@ SECTIONS: list[tuple[str, list[Command]]] = [
         Command("/queue", "show the active and queued prompts"),
         Command("/queue add <text>", "enqueue a prompt explicitly, including prompts that start with /"),
         Command("/queue show <id|latest|active|running|side|next>", "show a queued job's full prompt, live output, reply, or error"),
+        Command("/queue tail <id|latest|active|running|side> [seconds]", "follow live output from a running queued or /btw job"),
         Command("/queue retry <id|latest|running|side|next>", "retry a job without retyping its prompt"),
         Command("/queue apply <id|side|latest|all>", "add finished /btw side replies to the main conversation"),
         Command("/queue edit <id|latest|next> <text>", "edit a queued prompt before it starts"),

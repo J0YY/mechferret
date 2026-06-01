@@ -1079,6 +1079,8 @@ def run_repl() -> None:
                 _queue_join(runner, tokens[2:])
             elif len(tokens) > 1 and tokens[1].lower() == "show":
                 _queue_show(runner, tokens[2:])
+            elif len(tokens) > 1 and tokens[1].lower() in {"tail", "watch", "follow"}:
+                _queue_tail(runner, tokens[2:])
             elif len(tokens) > 1 and tokens[1].lower() == "retry":
                 _queue_retry(runner, tokens[2:])
             elif len(tokens) > 1 and tokens[1].lower() == "apply":
@@ -1514,6 +1516,50 @@ def _queue_show(runner: ChatJobRunner, args: list[str]) -> None:
     if job.reply:
         print(_c("  reply:", "1"))
         print(_render_reply(job.reply))
+
+
+def _queue_tail(runner: ChatJobRunner, args: list[str]) -> None:
+    target = args[0] if args else ""
+    timeout = 60.0
+    if not target:
+        print(_c("  usage: /queue tail <job id|latest|active|running|side> [seconds]", "33"))
+        return
+    if len(args) > 1:
+        try:
+            timeout = float(args[1])
+        except ValueError:
+            print(_c("  usage: /queue tail <job id|latest|active|running|side> [seconds]", "33"))
+            return
+        if timeout <= 0:
+            print(_c("  tail timeout must be positive", "33"))
+            return
+    job, saved = runner.find_job(target)
+    if job is None:
+        print(_c(f"  no queue job matched {target!r}", "33"))
+        return
+    if saved:
+        print(_c(f"  job #{job.id} is saved; run /queue restore {target} before tailing it.", "33"))
+        return
+    print(_c(f"  following #{job.id} {job.kind}; timeout {timeout:g}s", "2"))
+    seen = 0
+    deadline = time.monotonic() + timeout
+    while True:
+        output = list(job.output)
+        if len(output) > seen:
+            print(_render_reply("\n".join(output[seen:])))
+            seen = len(output)
+        if job.status in TERMINAL_JOB_STATUSES:
+            if job.error:
+                print(_c("  error:", "31"))
+                print(_indent(job.error))
+            print(_c(f"  job #{job.id} {job.status}", "32" if job.status == "done" else "33"))
+            _print_job_result_hint(job)
+            return
+        if time.monotonic() >= deadline:
+            print(_c(f"  job #{job.id} still {job.status} after timeout", "33"))
+            print(_c(f"  use /queue tail #{job.id} to keep following, or /queue show #{job.id} for the current transcript", "2"))
+            return
+        time.sleep(0.05)
 
 
 def _queue_retry(runner: ChatJobRunner, args: list[str]) -> None:

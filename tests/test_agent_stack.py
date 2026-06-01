@@ -522,6 +522,7 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("/queue", rendered_help)
         self.assertIn("/queue add <text>", rendered_help)
         self.assertIn("/queue show <id|latest|active|running|side|next>", rendered_help)
+        self.assertIn("/queue tail <id|latest|active|running|side> [seconds]", rendered_help)
         self.assertIn("/queue retry <id|latest|running|side|next>", rendered_help)
         self.assertIn("/queue apply <id|side|latest|all>", rendered_help)
         self.assertIn("/queue edit <id|latest|next> <text>", rendered_help)
@@ -1035,6 +1036,38 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("live output:", rendered)
         self.assertIn("partial answer before completion", rendered)
         self.assertIn("long prompt", rendered)
+
+    def test_repl_queue_tail_follows_live_background_output_until_done(self):
+        from mechferret import repl
+
+        release = threading.Event()
+        partial_emitted = threading.Event()
+
+        def fake_chat(agent, session, text, *, background=False):
+            repl._print_background("partial one")
+            partial_emitted.set()
+            self.assertTrue(release.wait(timeout=2))
+            repl._print_background("partial two")
+            return "final answer"
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-tail.json"))
+            try:
+                job = runner.submit("tail prompt")
+                self.assertTrue(partial_emitted.wait(timeout=2))
+                release.set()
+                repl._queue_tail(runner, [str(job.id), "2"])
+            finally:
+                release.set()
+                runner.wait_idle(timeout=2)
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("following #1", rendered)
+        self.assertIn("partial one", rendered)
+        self.assertIn("partial two", rendered)
+        self.assertIn("job #1 done", rendered)
 
     def test_repl_btw_runs_while_main_prompt_is_active(self):
         from mechferret import repl
@@ -1854,6 +1887,7 @@ class AgentStackTest(unittest.TestCase):
             try:
                 repl._queue_add(runner, "")
                 repl._queue_show(runner, [])
+                repl._queue_tail(runner, [])
                 repl._queue_retry(runner, [])
                 repl._queue_edit(runner, [], "")
                 repl._queue_move(runner, [])
@@ -1865,6 +1899,7 @@ class AgentStackTest(unittest.TestCase):
         rendered = out.getvalue()
         self.assertIn("/queue add <prompt>", rendered)
         self.assertIn("/queue show <job id|latest|active|running|side|next>", rendered)
+        self.assertIn("/queue tail <job id|latest|active|running|side> [seconds]", rendered)
         self.assertIn("/queue retry <job id|latest|running|side|next>", rendered)
         self.assertIn("/queue edit <job id|latest|next> <new prompt>", rendered)
         self.assertIn("/queue move <job id|latest|next>", rendered)
