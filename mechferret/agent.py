@@ -539,6 +539,18 @@ class Agent:
         """
 
         results: dict[str, str] = {}
+        if self.abort.is_set():
+            for cid, name, _args in calls:
+                results[cid] = json.dumps(
+                    _agent_tool_failure(
+                        name,
+                        "tool call aborted",
+                        failed_check="tool_aborted",
+                        extra={"aborted": True},
+                        next_action="Retry after clearing the abort signal.",
+                    )
+                )
+            return results
         read_only = [c for c in calls if tool_meta(c[1])["read_only"]]
         serial = [c for c in calls if not tool_meta(c[1])["read_only"]]
         if len(read_only) > 1:
@@ -552,17 +564,6 @@ class Agent:
             for cid, name, args in read_only:
                 results[cid] = self._dispatch(name, args)
         for cid, name, args in serial:
-            if self.abort.is_set():
-                results[cid] = json.dumps(
-                    _agent_tool_failure(
-                        name,
-                        "tool call aborted",
-                        failed_check="tool_aborted",
-                        extra={"aborted": True},
-                        next_action="Retry after clearing the abort signal.",
-                    )
-                )
-                continue
             results[cid] = self._dispatch(name, args)
         return results
 

@@ -431,10 +431,18 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("tool_arguments", malformed["failed_checks"])
 
         a.abort.set()
-        aborted = json.loads(a._run_tool_calls([("b", "write_file", {"path": "x", "content": "y"})])["b"])
+        aborted_results = a._run_tool_calls([
+            ("b", "write_file", {"path": "x", "content": "y"}),
+            ("c", "list_skills", {}),
+        ])
+        aborted = json.loads(aborted_results["b"])
+        aborted_readonly = json.loads(aborted_results["c"])
         self.assertFalse(aborted["ok"])
         self.assertTrue(aborted["aborted"])
         self.assertIn("tool_aborted", aborted["failed_checks"])
+        self.assertFalse(aborted_readonly["ok"])
+        self.assertTrue(aborted_readonly["aborted"])
+        self.assertIn("tool_aborted", aborted_readonly["failed_checks"])
 
     def test_mcp_no_server_is_safe(self):
         from mechferret import mcp, tools
