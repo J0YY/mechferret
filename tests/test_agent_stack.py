@@ -708,6 +708,49 @@ class AgentStackTest(unittest.TestCase):
 
         self.assertIn("saved:1", prompt)
 
+    def test_repl_input_prompt_shows_ready_side_replies(self):
+        from mechferret import repl
+
+        def fake_chat(agent, session, text, *, background=False):
+            return "side answer"
+
+        with redirect_stdout(StringIO()):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-prompt-side-ready.json"))
+            try:
+                side = runner.submit_side(repl._btw_prompt("side question"))
+                self.assertTrue(runner.wait_idle(timeout=2))
+                prompt = repl._input_prompt(runner)
+                side.applied = True
+                applied_prompt = repl._input_prompt(runner)
+            finally:
+                runner.stop(wait=True)
+
+        self.assertIn("btw-ready:1", prompt)
+        self.assertNotIn("btw-ready", applied_prompt)
+
+    def test_repl_status_bar_shows_ready_side_replies(self):
+        from mechferret import repl
+
+        class Agent:
+            configured = False
+            model = "offline"
+            permission_mode = "auto"
+
+        def fake_chat(agent, session, text, *, background=False):
+            return "side answer"
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-status-side-ready.json"))
+            try:
+                runner.submit_side(repl._btw_prompt("side question"))
+                self.assertTrue(runner.wait_idle(timeout=2))
+                repl._print_status_and_bar(Agent(), repl.Session(), runner)
+            finally:
+                runner.stop(wait=True)
+
+        self.assertIn("btw-ready:1", out.getvalue())
+
     def test_repl_queue_view_does_not_duplicate_live_queued_jobs_as_saved(self):
         from mechferret import repl
 

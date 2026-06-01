@@ -258,6 +258,10 @@ class ChatJobRunner:
         with self._lock:
             return [job for job in self._jobs if job.kind == "btw" and job.status == "running"]
 
+    def side_ready(self) -> list[PromptJob]:
+        with self._lock:
+            return [job for job in self._jobs if job.kind == "btw" and job.status == "done" and job.reply and not job.applied]
+
     def queued(self) -> list[PromptJob]:
         with self._lock:
             return [job for job in self._jobs if job.status == "queued"]
@@ -798,6 +802,7 @@ def _print_status_and_bar(agent, session, runner: ChatJobRunner | None = None) -
     if runner is not None:
         active = runner.active()
         side_active = len(runner.side_active())
+        side_ready = len(runner.side_ready())
         queued = len(runner.queued())
         saved = len(runner.saved_only())
         if runner.paused():
@@ -806,6 +811,8 @@ def _print_status_and_bar(agent, session, runner: ChatJobRunner | None = None) -
             bits.append(_c(f"running:#{active.id}", PURPLE))
         if side_active:
             bits.append(_c(f"btw:{side_active}", PURPLE))
+        if side_ready:
+            bits.append(_c(f"btw-ready:{side_ready}", "33"))
         if queued:
             bits.append(_c(f"queued:{queued}", "33"))
         if saved:
@@ -823,10 +830,11 @@ def _print_status_and_bar(agent, session, runner: ChatJobRunner | None = None) -
 def _input_prompt(runner: ChatJobRunner) -> str:
     active = runner.active()
     side_active = len(runner.side_active())
+    side_ready = len(runner.side_ready())
     queued = len(runner.queued())
     saved = len(runner.saved_only())
     paused = runner.paused()
-    if active is None and not side_active and not queued and not saved and not paused:
+    if active is None and not side_active and not side_ready and not queued and not saved and not paused:
         return "❯ "
     parts: list[str] = []
     if paused:
@@ -835,6 +843,8 @@ def _input_prompt(runner: ChatJobRunner) -> str:
         parts.append(f"run#{active.id}")
     if side_active:
         parts.append(f"btw:{side_active}")
+    if side_ready:
+        parts.append(f"btw-ready:{side_ready}")
     if queued:
         parts.append(f"q:{queued}")
     if saved:
