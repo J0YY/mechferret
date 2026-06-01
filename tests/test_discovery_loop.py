@@ -169,7 +169,7 @@ class HypothesisFlowTest(unittest.TestCase):
             target=[],
         )
 
-        hyps, specs = gen.promote([bad_truthy_flags, bad_target, good], [], top_k="bad", source_ids=[" src "])
+        hyps, specs = gen.promote([bad_truthy_flags, bad_target, good], "ioi", top_k="bad", source_ids=[" src "])
 
         self.assertEqual(len(hyps), 1)
         self.assertEqual(hyps[0].target["layer"], 6)
@@ -178,6 +178,9 @@ class HypothesisFlowTest(unittest.TestCase):
         self.assertEqual(hyps[0].source_ids, ["src"])
         self.assertEqual(len(specs), 3)
         self.assertTrue(all(spec.task == "ioi" for spec in specs))
+
+        with self.assertRaisesRegex(KeyError, "Unknown interpretability task"):
+            gen.promote([good], [], top_k="bad", source_ids=[" src "])
 
     def test_update_and_classify_tolerate_malformed_rows(self):
         hyp = Hypothesis(
@@ -437,6 +440,20 @@ class DiscoveryLoopTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "not aligned"):
                 DiscoveryController(root / "mem.sqlite").run(
                     "Find SAEs for OpenVLA",
+                    model="gpt2",
+                    backend="synthetic",
+                    out_dir=root / "run",
+                    include_memory=False,
+                )
+
+    def test_vague_discovery_prompt_requires_explicit_task(self):
+        issue = request_alignment_issue("Investigate an interesting model behavior", None, "", "gpt2")
+        self.assertIn("could not infer", issue)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with self.assertRaisesRegex(ValueError, "could not infer"):
+                DiscoveryController(root / "mem.sqlite").run(
+                    "Investigate an interesting model behavior",
                     model="gpt2",
                     backend="synthetic",
                     out_dir=root / "run",

@@ -160,4 +160,4 @@ def infer_task(question: str) -> str:
     for task_name, keywords in keyword_map.items():
         if any(keyword in text for keyword in keywords):
             return task_name
-    return "ioi"
+    return ""

@@ -31,6 +31,7 @@ class InterpEngineTest(unittest.TestCase):
         self.assertEqual(set(TASKS), {"ioi", "induction", "greater_than", "factual_recall"})
         self.assertEqual(get_task("IOI").name, "ioi")
         self.assertEqual(infer_task("find induction heads"), "induction")
+        self.assertEqual(infer_task("plan a vague research project"), "")
 
     def test_key_head_is_significant_and_reproduced(self):
         key = max(self.circuit.heads, key=lambda h: abs(h.magnitude))

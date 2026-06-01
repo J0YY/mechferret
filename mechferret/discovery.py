@@ -250,7 +250,7 @@ def request_alignment_issue(
         name for name, keywords in TASK_KEYWORDS.items()
         if any(keyword in text for keyword in keywords)
     ]
-    if matched_tasks and task_name not in matched_tasks:
+    if matched_tasks and task_name and task_name not in matched_tasks:
         return (
             f"Discovery task mismatch: the question looks like {matched_tasks[0]!r}, but the run would use "
             f"{task_name!r}. Pick a matching skill/task or pass --allow-mismatch."
@@ -260,7 +260,7 @@ def request_alignment_issue(
             f"Skill mismatch: skill {skill.name!r} is for {skill.task!r}, but the question looks like "
             f"{matched_tasks[0]!r}. Pick a matching skill or pass --allow-mismatch."
         )
-    if not explicit_task and not skill and task_name == "ioi" and not matched_tasks:
+    if not explicit_task and not skill and not matched_tasks:
         return (
             "Discovery could not infer a supported interpretability task from the question. "
             "Choose --task ioi|induction|greater_than|factual_recall, use --skill, or run literature mode first."
@@ -311,9 +311,14 @@ class DiscoveryController:
         if not model:
             raise ValueError("discovery needs an explicit model; pass --model or use a skill that declares a model.")
         task_name = (task or infer_task(question)).lower()
+        self._validate_alignment(question, skill_obj, task_name, model, explicit_task, allow_mismatch)
+        if not task_name:
+            raise ValueError(
+                "Discovery needs an explicit task when the prompt does not name a supported task. "
+                "Choose --task ioi|induction|greater_than|factual_recall, use --skill, or run literature mode first."
+            )
         get_task(task_name)  # validate
         question = question or f"Which components of {model} implement the {task_name} behaviour?"
-        self._validate_alignment(question, skill_obj, task_name, model, explicit_task, allow_mismatch)
         budget = _budget(budget or Budget())
 
         run_id = f"disc_{uuid.uuid4().hex[:10]}"

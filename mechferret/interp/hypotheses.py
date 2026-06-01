@@ -108,10 +108,7 @@ def _seeds(value: Any) -> list[int]:
 
 
 def _task(name: Any):
-    try:
-        return get_task(_text(name).strip())
-    except Exception:  # noqa: BLE001 - malformed boundary input falls back to the default task
-        return get_task("ioi")
+    return get_task(_text(name).strip())
 
 
 def _head_target(value: Any) -> tuple[int, int] | None:
@@ -165,10 +162,10 @@ class HypothesisGenerator:
         max_heads: int = 96,
         source_ids: list[str] | None = None,
     ) -> tuple[list[Hypothesis], list[ExperimentSpec]]:
-        task = _task(task_name)
         max_heads = _positive_int(max_heads, 96)
         source_ids = _strings(source_ids or [])
         n_layers, n_heads, _ = _shape(self.model)
+        task = _task(task_name)
         start_layer = n_layers // 3  # the upper two-thirds carry task-specific computation
         candidates = [
             (layer, head)
