@@ -172,6 +172,8 @@ def _persisted_json_summary(name: str, payload: Any, path: Path, result: str) ->
     ):
         if isinstance(payload, dict) and key in payload:
             minimal[key] = payload[key]
+    if isinstance(payload, dict) and name == "verify_novelty":
+        minimal.update(_essential_novelty_summary(payload))
     if isinstance(summary.get("checks"), list):
         compact_checks = summary["checks"]
         minimal["checks"] = compact_checks
@@ -180,6 +182,99 @@ def _persisted_json_summary(name: str, payload: Any, path: Path, result: str) ->
             minimal["checks_omitted"] = True
             minimal["check_count"] = len(compact_checks)
     return json.dumps(minimal)
+
+
+def _essential_novelty_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    summary: dict[str, Any] = {}
+    if "idea" in payload:
+        summary["idea"] = _compact_json_value(payload.get("idea"))
+    for source_key, count_key in (
+        ("related_papers", "related_papers_count"),
+        ("recent_papers", "recent_papers_count"),
+        ("focused_papers", "focused_papers_count"),
+        ("method_papers", "method_papers_count"),
+        ("web_results", "web_results_count"),
+        ("errors", "error_count"),
+    ):
+        value = payload.get(source_key)
+        if isinstance(value, list):
+            summary[count_key] = len(value)
+    assessment = payload.get("assessment")
+    if isinstance(assessment, dict):
+        compact_assessment: dict[str, Any] = {}
+        for key in (
+            "risk",
+            "verdict",
+            "evidence_strength",
+            "source_diversity",
+            "required_delta",
+            "claim_readiness",
+        ):
+            if key in assessment:
+                compact_assessment[key] = _compact_json_value(assessment[key])
+        if isinstance(assessment.get("coverage"), dict):
+            compact_assessment["coverage"] = _compact_novelty_coverage(assessment["coverage"])
+        closest = assessment.get("closest_prior_art")
+        if isinstance(closest, list):
+            compact_assessment["closest_prior_art_count"] = len(closest)
+            compact_assessment["closest_prior_art"] = [_compact_novelty_prior(item) for item in closest[:5]]
+        summary["assessment"] = compact_assessment
+    return summary
+
+
+def _compact_novelty_coverage(coverage: dict[str, Any]) -> dict[str, Any]:
+    compact: dict[str, Any] = {}
+    for key in (
+        "search_strategy",
+        "arxiv_query_count",
+        "web_query_count",
+        "arxiv_results_per_query",
+        "web_results_per_query",
+        "retrieved_evidence",
+        "retrieved_papers",
+        "recent_evidence",
+        "web_results",
+        "web_pages_fetched",
+        "web_results_with_page_text",
+        "unique_source_domains",
+        "credible_source_count",
+        "failed_queries",
+        "failed_arxiv_queries",
+        "failed_web_queries",
+        "failed_web_fetches",
+        "recent_window",
+    ):
+        if key in coverage:
+            compact[key] = coverage[key]
+    for key in ("focus_coverage", "web_source_types", "credible_source_types", "arxiv_focuses", "web_focuses"):
+        if key in coverage:
+            compact[key] = _compact_json_value(coverage[key])
+    return compact
+
+
+def _compact_novelty_prior(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return _compact_json_preview_item(value)
+    row: dict[str, Any] = {}
+    for key in (
+        "title",
+        "url",
+        "source",
+        "source_type",
+        "source_domain",
+        "published",
+        "focus",
+        "score",
+        "source_credibility",
+        "matched_terms",
+        "reason",
+    ):
+        if key in value:
+            row[key] = _compact_json_value(value[key])
+    excerpt = value.get("evidence_excerpt")
+    if isinstance(excerpt, str) and excerpt:
+        row["evidence_excerpt"] = excerpt[:260]
+    return row
 
 
 def _compact_json_object(payload: dict[str, Any]) -> dict[str, Any]:

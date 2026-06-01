@@ -1508,6 +1508,72 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(parsed["assessment"]["coverage"]["web_source_types"]["benchmark"], 2)
         self.assertEqual(parsed["assessment"]["closest_prior_art"][0]["source_type"], "benchmark")
 
+    def test_minimal_large_novelty_output_preserves_nested_assessment(self):
+        from mechferret import tools
+
+        closest = [
+            {
+                "title": f"closest prior {index}",
+                "url": f"https://arxiv.org/abs/2501.{index:04d}",
+                "source": "arxiv",
+                "source_type": "paper",
+                "source_domain": "arxiv.org",
+                "score": 0.91,
+                "matched_terms": ["sparse", "autoencoder", "robot"],
+                "evidence_excerpt": "overlap " * 200,
+            }
+            for index in range(120)
+        ]
+        payload = {
+            "idea": "large novelty result",
+            "related_papers": [{"title": f"paper {index}", "abstract": "x" * 800} for index in range(300)],
+            "recent_papers": [{"title": f"recent {index}"} for index in range(80)],
+            "focused_papers": [{"title": f"focused {index}"} for index in range(80)],
+            "method_papers": [{"title": f"method {index}"} for index in range(80)],
+            "web_results": [{"title": f"web {index}"} for index in range(80)],
+            "assessment": {
+                "risk": "high_prior_art_risk",
+                "verdict": "Closest retrieved evidence overlaps.",
+                "evidence_strength": "strong_multi_source_overlap",
+                "source_diversity": "broad_independent",
+                "coverage": {
+                    "arxiv_query_count": 20,
+                    "web_query_count": 12,
+                    "arxiv_results_per_query": 50,
+                    "web_results_per_query": 24,
+                    "focus_coverage": {"recent_discovery": True, "architecture": True},
+                    "long": "y" * 4000,
+                },
+                "claim_readiness": {
+                    "status": "not_ready_prior_art_overlap",
+                    "can_claim_high_novelty": False,
+                    "missing_checks": [],
+                    "next_actions": ["Write the exact delta."],
+                },
+                "closest_prior_art": closest,
+                "required_delta": ["Name the difference."],
+            },
+        }
+        raw = json.dumps(payload)
+        with tempfile.TemporaryDirectory() as tmp:
+            original_dir = tools.RESULTS_DIR
+            tools.RESULTS_DIR = Path(tmp)
+            try:
+                out = tools._persist_if_large("verify_novelty", raw)
+                saved_path_exists = Path(json.loads(out)["full_output_path"]).exists()
+            finally:
+                tools.RESULTS_DIR = original_dir
+
+        parsed = json.loads(out)
+        self.assertTrue(parsed["tool_output_truncated"])
+        self.assertEqual(parsed["assessment"]["risk"], "high_prior_art_risk")
+        self.assertEqual(parsed["assessment"]["claim_readiness"]["status"], "not_ready_prior_art_overlap")
+        self.assertEqual(parsed["assessment"]["coverage"]["arxiv_results_per_query"], 50)
+        self.assertEqual(parsed["assessment"]["closest_prior_art_count"], 120)
+        self.assertLessEqual(len(parsed["assessment"]["closest_prior_art"]), 5)
+        self.assertEqual(parsed["related_papers_count"], 300)
+        self.assertTrue(saved_path_exists)
+
     def test_bounded_check_lists_stay_structured_when_compacted(self):
         from mechferret import tools
 
