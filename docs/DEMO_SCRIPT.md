@@ -33,9 +33,9 @@ Talk track while it runs (~1s):
 
 ## 2. Show the dossier (`runs/demo/report.html`)
 
-- **Confirmed Mechanisms** — e.g. "head 5.5 / 6.5 / 7.3 are name-mover /
-  duplicate-token heads," each with effect size, reproducibility, and **novelty
-  vs. the literature**.
+- **Confirmed Mechanisms** — candidate components that cleared independent
+  probes, each with effect size, reproducibility, and **novelty vs. the
+  literature**.
 - **Experiment Ledger** — every probe, its effect vs. control, significance,
   reproducibility, and the backend used.
 - **Metrics** — `rigor_score`, `reproducibility_rate`, `confirmed_mechanisms`,

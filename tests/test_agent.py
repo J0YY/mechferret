@@ -708,6 +708,91 @@ class AgentToolTest(unittest.TestCase):
 
         self.assertEqual(agent._sanitize_assistant_text("Use GPT-2 small for IOI.", text), text)
 
+    def test_openai_stale_benchmark_text_blocks_same_turn_tool_call(self):
+        calls = {"n": 0}
+        streamed = []
+
+        def fake_post(url, payload, headers):
+            calls["n"] += 1
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": (
+                                "The minimal experiment should be:\n"
+                                "1. Target behavior: duplicate-token/name-mover behavior in GPT-2 small.\n"
+                                "2. Start modules: heads 5.0, 5.2, 5.6, 5.11, 4.8, 6.8, 4.11, 4.3.\n"
+                                "Next: " + "press " + "enter to proceed."
+                            ),
+                            "tool_calls": [
+                                {
+                                    "id": "call_1",
+                                    "type": "function",
+                                    "function": {"name": "list_skills", "arguments": "{}"},
+                                }
+                            ],
+                        }
+                    }
+                ]
+            }
+
+        original = agent._http_post
+        agent._http_post = fake_post
+        fired = []
+        try:
+            a = agent.Agent(on_tool=lambda name, args: fired.append(name))
+            a.on_text = streamed.append
+            a.provider, a.model, a._key = "openai", "gpt-test", "fake"
+            reply = a.send("Proceed with the next step.")
+        finally:
+            agent._http_post = original
+        self.assertEqual(calls["n"], 1)
+        self.assertEqual(fired, [])
+        self.assertEqual(streamed, [reply])
+        self.assertIn("which model and behavior/task", reply)
+        self.assertNotIn("GPT-2", reply)
+        self.assertNotIn("tool_calls", a.messages[-1])
+
+    def test_anthropic_stale_benchmark_text_blocks_same_turn_tool_call(self):
+        calls = {"n": 0}
+        streamed = []
+
+        def fake_post(url, payload, headers):
+            calls["n"] += 1
+            return {
+                "stop_reason": "tool_use",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": (
+                            "The minimal experiment should be:\n"
+                            "1. Target behavior: duplicate-token/name-mover behavior in GPT-2 small.\n"
+                            "2. Start modules: heads 5.0, 5.2, 5.6, 5.11, 4.8, 6.8, 4.11, 4.3.\n"
+                            "Next: " + "press " + "enter to proceed."
+                        ),
+                    },
+                    {"type": "tool_use", "id": "t1", "name": "list_skills", "input": {}},
+                ],
+            }
+
+        original = agent._http_post
+        agent._http_post = fake_post
+        fired = []
+        try:
+            a = agent.Agent(on_tool=lambda name, args: fired.append(name))
+            a.on_text = streamed.append
+            a.provider, a.model, a._key = "anthropic", "claude-sonnet-4-6", "fake"
+            reply = a.send("Proceed with the next step.")
+        finally:
+            agent._http_post = original
+        self.assertEqual(calls["n"], 1)
+        self.assertEqual(fired, [])
+        self.assertEqual(streamed, [reply])
+        self.assertIn("which model and behavior/task", reply)
+        self.assertNotIn("GPT-2", reply)
+        self.assertEqual(a.messages[-1]["content"], [{"type": "text", "text": reply}])
+
     def test_retrieval_tools_floor_shallow_result_counts(self):
         from mechferret import tools
 

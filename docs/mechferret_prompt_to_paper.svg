@@ -40,7 +40,7 @@
     <text x="28" y="92" class="body">Ask for a behavior,</text>
     <text x="28" y="120" class="body">task, or playbook.</text>
     <rect class="chip" x="28" y="146" width="184" height="42"/>
-    <text x="120" y="173" class="small" text-anchor="middle">ioi-circuit</text>
+    <text x="120" y="173" class="small" text-anchor="middle">chosen skill</text>
   </g>
 
   <g transform="translate(360,210)">

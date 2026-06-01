@@ -109,10 +109,10 @@
       <text x="0" y="0" class="eyebrow">System components</text>
       <text x="0" y="43" class="body">DiscoveryController, HypothesisGenerator, InterpEngine</text>
       <text x="0" y="86" class="body">ExperimentCritic, Coordinator, BudgetGuard, memory</text>
-      <text x="0" y="129" class="body">Local fallback, TransformerLens, Modal GPU, SLURM</text>
+      <text x="0" y="129" class="body">Explicit smoke runs, TransformerLens, Modal GPU, SLURM</text>
       <line class="divider" x1="0" y1="128" x2="620" y2="128"/>
-      <text x="0" y="166" class="body">A skill can describe IOI. MechFerret can screen heads,</text>
-      <text x="0" y="194" class="body">run probes, enforce controls, and prove the claim.</text>
+      <text x="0" y="166" class="body">A skill can describe a target behavior. MechFerret can</text>
+      <text x="0" y="194" class="body">run probes, enforce controls, and test the claim.</text>
     </g>
   </g>
 

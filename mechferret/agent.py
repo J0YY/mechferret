@@ -292,42 +292,6 @@ def _extract_provider_text(content: Any) -> str:
     return "\n".join(part.strip() for part in parts if part.strip())
 
 
-def _replace_provider_text(content: Any, text: str) -> Any:
-    if isinstance(content, str):
-        return text
-    if not isinstance(content, list):
-        return text
-    replaced = False
-    new_content: list[Any] = []
-    for block in content:
-        if isinstance(block, str):
-            if not replaced:
-                new_content.append(text)
-                replaced = True
-            continue
-        if not isinstance(block, dict):
-            new_content.append(block)
-            continue
-        if isinstance(block.get("text"), str):
-            if not replaced:
-                replacement = dict(block)
-                replacement["text"] = text
-                new_content.append(replacement)
-                replaced = True
-            continue
-        if isinstance(block.get("content"), str) and block.get("type") in {"text", "output_text"}:
-            if not replaced:
-                replacement = dict(block)
-                replacement["content"] = text
-                new_content.append(replacement)
-                replaced = True
-            continue
-        new_content.append(block)
-    if not replaced:
-        new_content.insert(0, {"type": "text", "text": text})
-    return new_content
-
-
 def _user_explicitly_selected_benchmark(user_text: str) -> bool:
     lowered = _text(user_text).lower()
     return any(term in lowered for term in BENCHMARK_EXPLICIT_TERMS)
@@ -700,11 +664,13 @@ class Agent:
                     append=False,
                 )
             text = _extract_provider_text(content)
-            if text and not calls:
+            if text:
                 sanitized = _sanitize_assistant_text(user_text, text)
                 if sanitized != text:
-                    content = _replace_provider_text(content, sanitized)
+                    content = [{"type": "text", "text": sanitized}]
                     text = sanitized
+                    calls = []
+                    malformed_results = []
             self.messages.append({"role": "assistant", "content": content})
             if text:
                 final_text.append(text)
@@ -754,12 +720,14 @@ class Agent:
             if error:
                 return self._record_provider_response_failure("openai", error, data)
             text = _extract_provider_text(message.get("content"))
-            if text and not tool_calls:
+            if text:
                 sanitized = _sanitize_assistant_text(user_text, text)
                 if sanitized != text:
                     message = dict(message)
                     message["content"] = sanitized
+                    message.pop("tool_calls", None)
                     text = sanitized
+                    tool_calls = []
             self.messages.append(message)
             if text:
                 final_text.append(text)

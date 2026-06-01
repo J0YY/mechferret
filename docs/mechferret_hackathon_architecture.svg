@@ -218,7 +218,7 @@
 
       <rect class="chipLime" x="0" y="404" width="220" height="86" rx="18"/>
       <text x="110" y="439" class="label" text-anchor="middle">Synthetic</text>
-      <text x="110" y="470" class="small" text-anchor="middle">local fallback</text>
+      <text x="110" y="470" class="small" text-anchor="middle">explicit smoke</text>
 
       <rect class="chipCyan" x="252" y="404" width="220" height="86" rx="18"/>
       <text x="362" y="439" class="label" text-anchor="middle">TransformerLens</text>
@@ -240,7 +240,7 @@
 
     <g transform="translate(34,145)">
       <rect class="chipLime" x="0" y="0" width="260" height="126" rx="20"/>
-      <text x="130" y="43" class="label" text-anchor="middle">Local synthetic</text>
+      <text x="130" y="43" class="label" text-anchor="middle">Smoke backend</text>
       <text x="130" y="77" class="small" text-anchor="middle">no keys, no GPU</text>
       <text x="130" y="106" class="small" text-anchor="middle">smoke runs in seconds</text>
 

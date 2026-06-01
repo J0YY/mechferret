@@ -123,7 +123,7 @@ def doctor() -> dict[str, Any]:
         check("example_corpus", example_corpus_path().exists(), str(example_corpus_path()), "Restore mechferret/seed_corpus."),
         check("registry_items", len(all_items()) >= 10, str(len(all_items())), "Restore the tool/task registry."),
         check("skills_available", len(list_skills()) >= 1, f"{len(list_skills())} skills", "Restore mechferret/skills."),
-        check("interp_backend", True, "transformer_lens" if interp_real else "local fallback"),
+        check("interp_backend", True, "transformer_lens" if interp_real else "explicit synthetic smoke backend"),
         check("config_path", True, str(default_config_path())),
         check("paper_generator", _paper_generator_ok(), "evidence-bound local paper scaffold", "Fix mechferret.paper local scaffold generation."),
         _openvla_project_check(),
