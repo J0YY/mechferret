@@ -802,6 +802,39 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("waiting for job #2", rendered)
         self.assertIn("job #2 done", rendered)
 
+    def test_repl_queue_side_alias_targets_latest_finished_btw(self):
+        from mechferret import repl
+
+        calls = []
+
+        def fake_chat(agent, session, text, *, background=False):
+            calls.append(text)
+            return f"reply for {text}"
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-side-finished.json"))
+            try:
+                first = runner.submit_side(repl._btw_prompt("first side"))
+                second = runner.submit_side(repl._btw_prompt("second side"))
+                self.assertTrue(runner.wait_idle(timeout=2))
+                found_side, saved = runner.find_job("side")
+                self.assertIs(found_side, second)
+                self.assertFalse(saved)
+                repl._queue_show(runner, ["side"])
+                repl._queue_retry(runner, ["btw"])
+                self.assertTrue(runner.wait_idle(timeout=2))
+            finally:
+                runner.stop(wait=True)
+
+        self.assertEqual(first.status, "done")
+        self.assertEqual(second.status, "done")
+        self.assertGreaterEqual(sum("second side" in call for call in calls), 2)
+        rendered = out.getvalue()
+        self.assertIn("job #2", rendered)
+        self.assertIn("second side", rendered)
+        self.assertIn("retried #2 as #3", rendered)
+
     def test_repl_queue_join_times_out_or_refuses_saved_and_paused_jobs(self):
         from mechferret import repl
 

@@ -234,7 +234,10 @@ class ChatJobRunner:
             return max(running, key=_job_order_key) if running else None
         if target in {"side", "btw"}:
             side_running = [job for job in self._jobs if job.kind == "btw" and job.status == "running"]
-            return max(side_running, key=_job_order_key) if side_running else None
+            if side_running:
+                return max(side_running, key=_job_order_key)
+            side_jobs = [job for job in self._jobs if job.kind == "btw"]
+            return max(side_jobs, key=_job_order_key) if side_jobs else None
         if target == "next":
             return next((job for job in self._jobs if job.status == "queued"), None)
         return next((job for job in self._jobs if str(job.id) == target), None)
