@@ -1334,7 +1334,7 @@ def _queue_join(runner: ChatJobRunner, args: list[str]) -> None:
         print(_c(f"  no queue job matched {target!r}", "33"))
         return
     if saved:
-        restored = runner.restore_saved(str(job.id))
+        restored = runner.restore_saved(target)
         if not restored:
             print(_c(f"  job #{job.id} is saved but could not be restored.", "33"))
             return

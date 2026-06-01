@@ -1987,6 +1987,33 @@ class AgentStackTest(unittest.TestCase):
         self.assertEqual([job.text for job in canceled], ["selected saved"])
         self.assertEqual([job.text for job in saved], ["other saved with same id"])
 
+    def test_repl_join_saved_alias_preserves_distinct_saved_id_collision_target(self):
+        from mechferret import repl
+
+        queue_path = Path("join-saved-collision-alias.json")
+        repl._save_queue_jobs(queue_path, [
+            repl.PromptJob(id=3, text="older saved", created_at=1.0),
+            repl.PromptJob(id=3, text="newer saved", created_at=2.0),
+        ])
+
+        def fake_chat(_agent, _session, text, *, background=False):
+            return text
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=queue_path)
+            try:
+                repl._queue_join(runner, ["latest", "2"])
+                saved = runner.saved()
+            finally:
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("restored #3", rendered)
+        self.assertIn("job #3 done", rendered)
+        self.assertEqual([job.text for job in runner.recent()], ["newer saved"])
+        self.assertEqual([job.text for job in saved], ["older saved"])
+
     def test_repl_chat_job_runner_saves_and_restores_pending_prompts(self):
         from mechferret import repl
 
