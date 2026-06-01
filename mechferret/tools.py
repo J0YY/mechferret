@@ -828,22 +828,25 @@ def tool_run_discovery(args: dict[str, Any]) -> str:
         return json.dumps(invalid)
     budget_requested = any(args.get(name) not in (None, "") for name in ("max_rounds", "max_experiments", "max_gpu_seconds"))
     budget = Budget(max_rounds=max_rounds, max_experiments=max_experiments, max_gpu_seconds=max_gpu_seconds) if budget_requested else None
-    run = DiscoveryController(db_path or ".mechferret/memory.sqlite").run(
-        question=question or "",
-        skill=skill,
-        task=task,
-        model=model,
-        backend=backend,
-        source_paths=source_paths,
-        urls=urls,
-        out_dir=out_dir or "runs/agent",
-        budget=budget,
-        provider=provider,
-        llm_model=llm_model,
-        include_memory=include_memory,
-        allow_mismatch=allow_mismatch,
-        allow_seed_corpus=allow_seed_corpus,
-    )
+    try:
+        run = DiscoveryController(db_path or ".mechferret/memory.sqlite").run(
+            question=question or "",
+            skill=skill,
+            task=task,
+            model=model,
+            backend=backend,
+            source_paths=source_paths,
+            urls=urls,
+            out_dir=out_dir or "runs/agent",
+            budget=budget,
+            provider=provider,
+            llm_model=llm_model,
+            include_memory=include_memory,
+            allow_mismatch=allow_mismatch,
+            allow_seed_corpus=allow_seed_corpus,
+        )
+    except (FileNotFoundError, KeyError, ValueError) as exc:
+        return json.dumps(_discovery_error_payload(str(exc), out_dir=out_dir or "runs/agent"))
     discoveries = [
         {
             "id": d.id,
@@ -911,6 +914,36 @@ def tool_run_discovery(args: dict[str, Any]) -> str:
         "artifacts": run.artifacts,
         "report_html": run.artifacts.get("html"),
     })
+
+
+def _discovery_error_payload(error: str, *, out_dir: str) -> dict[str, Any]:
+    lowered = error.lower()
+    failed_checks: list[str] = []
+    next_actions: list[str] = []
+    if "explicit model" in lowered or "model is required" in lowered:
+        failed_checks.append("model_required")
+        next_actions.append("Ask the user which model to investigate, then pass model explicitly.")
+    if "could not infer" in lowered or "explicit task" in lowered or "unknown interpretability task" in lowered:
+        failed_checks.append("task_required")
+        next_actions.append("Ask the user to choose task ioi, induction, greater_than, or factual_recall, or use a matching skill.")
+    if "not aligned" in lowered or "mismatch" in lowered or "unsupported term" in lowered:
+        failed_checks.append("request_alignment")
+        next_actions.append("Use run_research for planning, openvla_sae for OpenVLA/SAE work, or pass allow_mismatch only for an intentional demo.")
+    if "no such file" in lowered or "not found" in lowered:
+        failed_checks.append("source_missing")
+        next_actions.append("Check source_paths, urls, skill name, and output paths before retrying.")
+    if not failed_checks:
+        failed_checks.append("discovery_request")
+    if not next_actions:
+        next_actions.append("Inspect the discovery request and retry with explicit model, task or skill, and evidence sources.")
+    return {
+        "ok": False,
+        "tool": "run_discovery",
+        "error": error,
+        "failed_checks": failed_checks,
+        "next_actions": next_actions,
+        "out_dir": out_dir,
+    }
 
 
 def _experiments_for_discoveries(experiments, discoveries, *, limit: int):

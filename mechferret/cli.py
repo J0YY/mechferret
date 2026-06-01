@@ -3231,17 +3231,47 @@ def _run_payload(run, *, command: str) -> dict[str, Any]:
 
 
 def _error_payload(command: str, exc: Exception, *, out_dir: str | Path = "") -> dict[str, Any]:
+    error = str(exc)
     return {
         "ok": False,
         "command": command,
-        "error": str(exc),
+        "error": error,
         "out_dir": str(out_dir),
-        "next_actions": [
-            "Add --source or --url for literature grounding.",
-            "Pass --seed-corpus when you intentionally want the packaged demo corpus.",
-            "Use --provider openai or --provider anthropic when configured provider research is desired.",
-        ],
+        "failed_checks": _command_error_failed_checks(command, error),
+        "next_actions": _command_error_next_actions(command, error),
     }
+
+
+def _command_error_failed_checks(command: str, error: str) -> list[str]:
+    lowered = error.lower()
+    if command == "discover":
+        checks: list[str] = []
+        if "explicit model" in lowered or "model is required" in lowered:
+            checks.append("model_required")
+        if "could not infer" in lowered or "explicit task" in lowered or "question, --task, or --skill" in lowered:
+            checks.append("task_required")
+        if "not aligned" in lowered or "mismatch" in lowered or "unsupported term" in lowered:
+            checks.append("request_alignment")
+        return checks or ["discovery_request"]
+    return ["command_request"]
+
+
+def _command_error_next_actions(command: str, error: str) -> list[str]:
+    lowered = error.lower()
+    if command == "discover":
+        actions: list[str] = []
+        if "explicit model" in lowered or "model is required" in lowered:
+            actions.append("Pass --model <model> or use a skill file that declares a model.")
+        if "could not infer" in lowered or "explicit task" in lowered or "question, --task, or --skill" in lowered:
+            actions.append("Pass --task ioi|induction|greater_than|factual_recall, use --skill, or run literature mode first.")
+        if "not aligned" in lowered or "mismatch" in lowered or "unsupported term" in lowered:
+            actions.append("Use `mechferret run ...` for planning, `mechferret sae openvla plan` for OpenVLA/SAE work, or pass --allow-mismatch for an intentional demo.")
+        return actions or ["Retry with explicit --model and --task or a matching --skill."]
+    return [
+        "Add --source or --url for literature grounding.",
+        "Pass --seed-corpus when you intentionally want the packaged demo corpus.",
+        "Use --provider openai or --provider anthropic when configured provider research is desired.",
+    ]
 
 
 def _passed_payload(result: dict[str, Any]) -> dict[str, Any]:
