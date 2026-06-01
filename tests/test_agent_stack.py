@@ -424,7 +424,7 @@ class AgentStackTest(unittest.TestCase):
         rendered_help = out.getvalue()
         self.assertIn("/btw <text>", rendered_help)
         self.assertIn("/queue", rendered_help)
-        self.assertIn("/queue show <id|latest|active|next>", rendered_help)
+        self.assertIn("/queue show <id|latest|active|running|side|next>", rendered_help)
         self.assertIn("/queue retry <id|latest|next>", rendered_help)
         self.assertIn("/queue edit <id|latest|next> <text>", rendered_help)
         self.assertIn("/queue move <id|latest|next> first|last|before|after", rendered_help)
@@ -434,7 +434,7 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("/queue resume", rendered_help)
         self.assertIn("/queue restore [id|latest|next|all]", rendered_help)
         self.assertIn("/queue wait [seconds]", rendered_help)
-        self.assertIn("/queue join <id|latest|active|next> [seconds]", rendered_help)
+        self.assertIn("/queue join <id|latest|active|running|side|next> [seconds]", rendered_help)
         self.assertIn("/cancel <id|latest|next|all>", rendered_help)
         self.assertIn("/commands --workflow first_run", rendered_help)
         self.assertIn("show a runnable workflow recipe", rendered_help)
@@ -754,6 +754,54 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("waiting for job #1", rendered)
         self.assertIn("job #1 done", rendered)
 
+    def test_repl_queue_side_alias_targets_btw_while_main_is_active(self):
+        from mechferret import repl
+
+        release_main = threading.Event()
+        release_side = threading.Event()
+
+        def fake_chat(agent, session, text, *, background=False):
+            if text == "main":
+                self.assertTrue(release_main.wait(timeout=2))
+            else:
+                self.assertTrue(release_side.wait(timeout=2))
+            return f"reply for {text}"
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-side-alias.json"))
+            try:
+                main = runner.submit("main")
+                deadline = time.monotonic() + 2
+                while runner.active() is None and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                side = runner.submit_side(repl._btw_prompt("side question"))
+                deadline = time.monotonic() + 2
+                while not runner.side_active() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+
+                found_side, saved = runner.find_job("side")
+                self.assertIs(found_side, side)
+                self.assertFalse(saved)
+                self.assertIs(runner.find_job("active")[0], main)
+                repl._queue_show(runner, ["side"])
+                releaser = threading.Thread(target=lambda: (time.sleep(0.05), release_side.set()))
+                releaser.start()
+                repl._queue_join(runner, ["side", "2"])
+                releaser.join(timeout=2)
+            finally:
+                release_side.set()
+                release_main.set()
+                runner.stop(wait=True)
+
+        self.assertEqual(side.status, "done")
+        self.assertEqual(main.status, "done")
+        rendered = out.getvalue()
+        self.assertIn("job #2", rendered)
+        self.assertIn("side question", rendered)
+        self.assertIn("waiting for job #2", rendered)
+        self.assertIn("job #2 done", rendered)
+
     def test_repl_queue_join_times_out_or_refuses_saved_and_paused_jobs(self):
         from mechferret import repl
 
@@ -1044,11 +1092,11 @@ class AgentStackTest(unittest.TestCase):
                 runner.stop(wait=True)
 
         rendered = out.getvalue()
-        self.assertIn("/queue show <job id|latest|active|next>", rendered)
+        self.assertIn("/queue show <job id|latest|active|running|side|next>", rendered)
         self.assertIn("/queue retry <job id|latest|next>", rendered)
         self.assertIn("/queue edit <job id|latest|next> <new prompt>", rendered)
         self.assertIn("/queue move <job id|latest|next>", rendered)
-        self.assertIn("/queue join <job id|latest|active|next> [seconds]", rendered)
+        self.assertIn("/queue join <job id|latest|active|running|side|next> [seconds]", rendered)
         self.assertIn("/queue cancel <job id|latest|next|all>", rendered)
 
     def test_repl_queue_latest_targets_live_mutations(self):

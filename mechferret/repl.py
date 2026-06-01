@@ -232,6 +232,9 @@ class ChatJobRunner:
                 return self._active
             running = [job for job in self._jobs if job.status == "running"]
             return max(running, key=_job_order_key) if running else None
+        if target in {"side", "btw"}:
+            side_running = [job for job in self._jobs if job.kind == "btw" and job.status == "running"]
+            return max(side_running, key=_job_order_key) if side_running else None
         if target == "next":
             return next((job for job in self._jobs if job.status == "queued"), None)
         return next((job for job in self._jobs if str(job.id) == target), None)
@@ -1204,13 +1207,13 @@ def _queue_join(runner: ChatJobRunner, args: list[str]) -> None:
     target = args[0] if args else ""
     timeout = 3600.0
     if not target:
-        print(_c("  usage: /queue join <job id|latest|active|next> [seconds]", "33"))
+        print(_c("  usage: /queue join <job id|latest|active|running|side|next> [seconds]", "33"))
         return
     if len(args) > 1:
         try:
             timeout = float(args[1])
         except ValueError:
-            print(_c("  usage: /queue join <job id|latest|active|next> [seconds]", "33"))
+            print(_c("  usage: /queue join <job id|latest|active|running|side|next> [seconds]", "33"))
             return
         if timeout <= 0:
             print(_c("  join timeout must be positive", "33"))
@@ -1242,7 +1245,7 @@ def _queue_join(runner: ChatJobRunner, args: list[str]) -> None:
 def _queue_show(runner: ChatJobRunner, args: list[str]) -> None:
     target = args[0] if args else ""
     if not target:
-        print(_c("  usage: /queue show <job id|latest|active|next>", "33"))
+        print(_c("  usage: /queue show <job id|latest|active|running|side|next>", "33"))
         return
     job, saved = runner.find_job(target)
     if job is None:
