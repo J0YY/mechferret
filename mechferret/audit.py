@@ -42,6 +42,7 @@ ACTION_BY_CHECK = {
 
 ADVISORY_ACTIONS = {
     "local_synthesis_not_final": "Use `--provider openai` or `--provider anthropic` to produce model-authored final synthesis from the run ledger.",
+    "missing_backend_provenance": "Regenerate or repair the run artifact so every discovery experiment records backend_used and top-level provenance records backend_requested/backend_used.",
     "synthetic_backend_not_final": "Rerun discovery with `--backend transformer_lens`, Modal, or cluster execution before treating the mechanism as a real-model result.",
     "packaged_seed_corpus_used": "Replace the packaged demo corpus with project-specific `--source` or `--url` evidence before sharing as original research.",
 }
@@ -170,14 +171,38 @@ def _audit_advisories(run: ResearchRun) -> list[dict[str, Any]]:
                 "action": ADVISORY_ACTIONS["local_synthesis_not_final"],
             }
         )
-    backend_used = str(run.provenance.get("backend_used", "")).lower()
-    experiment_backends = {str(experiment.backend_used).lower() for experiment in run.experiments}
+    backend_used = str(run.provenance.get("backend_used", "")).strip().lower()
+    backend_requested = str(run.provenance.get("backend_requested", "")).strip().lower()
+    experiment_backends = {str(experiment.backend_used).strip().lower() for experiment in run.experiments}
+    missing_backend_bits = []
+    if run.mode == "discovery" and not backend_requested:
+        missing_backend_bits.append("provenance.backend_requested")
+    if run.mode == "discovery" and not backend_used:
+        missing_backend_bits.append("provenance.backend_used")
+    if run.mode == "discovery":
+        missing_experiment_ids = [
+            str(experiment.id).strip() or str(experiment.spec_id).strip() or "unknown"
+            for experiment in run.experiments
+            if not str(experiment.backend_used).strip()
+        ]
+        if missing_experiment_ids:
+            missing_backend_bits.append("experiment.backend_used: " + ", ".join(missing_experiment_ids[:6]))
+    if missing_backend_bits:
+        advisories.append(
+            {
+                "name": "missing_backend_provenance",
+                "severity": "warning",
+                "observed": "; ".join(missing_backend_bits),
+                "action": ADVISORY_ACTIONS["missing_backend_provenance"],
+            }
+        )
     if run.mode == "discovery" and ("synthetic" in {backend_used, *experiment_backends}):
+        observed_backend = backend_used or ", ".join(sorted(backend for backend in experiment_backends if backend))
         advisories.append(
             {
                 "name": "synthetic_backend_not_final",
                 "severity": "warning",
-                "observed": backend_used or ", ".join(sorted(experiment_backends)) or "synthetic",
+                "observed": observed_backend,
                 "action": ADVISORY_ACTIONS["synthetic_backend_not_final"],
             }
         )

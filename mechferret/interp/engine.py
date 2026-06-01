@@ -165,7 +165,7 @@ class InterpEngine:
         significant = separation >= floor and separation >= 2 * (effect_std + 1e-6)
         reproduced = self._reproduced(effects, effect_mean)
 
-        backend_used = getattr(backend, "name", "synthetic")
+        backend_used = _text(getattr(backend, "name", "")).strip() or "unknown"
         metrics = {
             "effect_mean": effect_mean,
             "control_mean": control_mean,

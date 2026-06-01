@@ -119,7 +119,7 @@ class ExperimentResult:
     metrics: dict[str, float] = field(default_factory=dict)
     observations: list[str] = field(default_factory=list)
     evidence_text: str = ""
-    backend_used: str = "synthetic"
+    backend_used: str = ""
     gpu_seconds: float = 0.0
     error: str = ""
     target: dict[str, Any] = field(default_factory=dict)

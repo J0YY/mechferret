@@ -189,6 +189,27 @@ class AuditTest(unittest.TestCase):
             self.assertIn("packaged_seed_corpus_used", names)
             self.assertTrue(result["advisory_actions"])
 
+    def test_missing_backend_provenance_is_not_imputed_as_synthetic(self):
+        payload = _payload(readiness=0.5)
+        payload["question"] = "Head copies names"
+        payload["provenance"] = {
+            "answer_author": "experiment_ledger_synthesizer",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "run.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            (root / "paper").mkdir()
+            (root / "paper" / "main.tex").write_text(_valid_paper_tex(), encoding="utf-8")
+
+            loaded = load_run_artifact(path)
+            result = audit_run_artifact(path)
+
+        self.assertEqual({experiment.backend_used for experiment in loaded.experiments}, {""})
+        names = {item["name"] for item in result["advisories"]}
+        self.assertIn("missing_backend_provenance", names)
+        self.assertNotIn("synthetic_backend_not_final", names)
+
     def test_top_level_paper_does_not_satisfy_run_bound_paper_gate(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
