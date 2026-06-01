@@ -208,15 +208,12 @@ class ChatJobRunner:
         return restored
 
     def clear_saved(self) -> int:
-        saved = self.saved()
+        with self._lock:
+            live_ids = {job.id for job in self._jobs}
+            live_pending = [job for job in self._jobs if job.status in {"queued", "running"}]
+        saved = [job for job in self.saved() if job.id not in live_ids]
         self._preserved_saved_ids.clear()
-        with _queue_file_lock(self._queue_path):
-            try:
-                self._queue_path.unlink()
-            except FileNotFoundError:
-                pass
-            except OSError:
-                return 0
+        _save_queue_jobs(self._queue_path, live_pending)
         return len(saved)
 
     def pause(self) -> bool:

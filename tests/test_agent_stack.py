@@ -1844,6 +1844,31 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("cleared 1 saved queued prompt", rendered)
         self.assertIn("no queued prompts to cancel", rendered)
 
+    def test_repl_queue_clear_saved_preserves_live_queue_persistence(self):
+        from mechferret import repl
+
+        queue_path = Path("queue-clear-saved-live.json")
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: None, queue_path=queue_path)
+            try:
+                runner.pause()
+                live = runner.submit("live queued prompt")
+                repl._save_queue_jobs(queue_path, [
+                    live,
+                    repl.PromptJob(id=9, text="saved prompt"),
+                ])
+                repl._queue_clear(runner, ["saved"])
+                persisted = runner.saved()
+            finally:
+                runner.resume()
+                runner.stop(wait=True)
+
+        self.assertEqual([job.id for job in persisted], [live.id])
+        self.assertEqual(persisted[0].text, "live queued prompt")
+        self.assertIn("cleared 1 saved queued prompt", out.getvalue())
+
     def test_repl_chat_job_runner_saves_and_restores_pending_prompts(self):
         from mechferret import repl
 
