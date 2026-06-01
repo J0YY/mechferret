@@ -4157,6 +4157,9 @@ class OpsRegistryTest(unittest.TestCase):
                     ]
                 )
             self.assertIn("Run:", out.getvalue())
+            self.assertIn("Advisories:", out.getvalue())
+            self.assertIn("synthetic_backend_not_final", out.getvalue())
+            self.assertIn("packaged_seed_corpus_used", out.getvalue())
             payload = json.loads((root / "discovery" / "run.json").read_text(encoding="utf-8"))
             self.assertTrue(payload["provenance"]["allow_seed_corpus"])
             self.assertTrue(payload["provenance"]["used_packaged_seed_corpus"])
@@ -4245,6 +4248,11 @@ class OpsRegistryTest(unittest.TestCase):
                 self.assertTrue(Path(payload["path"]).exists())
                 self.assertIn("artifacts", payload)
                 self.assertIn("summary", payload)
+                self.assertIn("audit", payload)
+                if command == "discover":
+                    advisory_names = {item["name"] for item in payload["audit"]["advisories"]}
+                    self.assertIn("synthetic_backend_not_final", advisory_names)
+                    self.assertIn("local_synthesis_not_final", advisory_names)
 
             goal_out = StringIO()
             with redirect_stdout(goal_out):

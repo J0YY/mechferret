@@ -3037,6 +3037,7 @@ def print_discovery_summary(run) -> None:
     print(f"Discoveries JSON: {run.artifacts.get('discoveries')}")
     print(f"Experiments JSON: {run.artifacts.get('experiments')}")
     print(f"Trace: {run.artifacts.get('trace')}")
+    _print_audit_advisories(_audit_summary_for_run(run))
 
 
 def handle_api_command(args) -> None:
@@ -3287,6 +3288,7 @@ def _run_payload(run, *, command: str) -> dict[str, Any]:
         "path": artifacts.get("json", ""),
         "artifacts": artifacts,
         "metrics": metrics,
+        "audit": _audit_summary_for_run(run),
         "provenance": run.provenance,
         "summary": {
             "sources": len(run.sources),
@@ -3300,6 +3302,21 @@ def _run_payload(run, *, command: str) -> dict[str, Any]:
             "readiness": metrics.get("readiness_score", 0),
             "rigor": metrics.get("rigor_score", 0),
         },
+    }
+
+
+def _audit_summary_for_run(run) -> dict[str, Any]:
+    from .audit import audit_run_artifact
+
+    artifacts = run.artifacts if isinstance(run.artifacts, dict) else {}
+    audit = audit_run_artifact(artifacts.get("json"))
+    return {
+        "passed": bool(audit.get("passed")),
+        "readiness_score": audit.get("readiness_score", 0),
+        "failed_checks": audit.get("failed_checks", []),
+        "advisories": audit.get("advisories", []),
+        "advisory_actions": audit.get("advisory_actions", []),
+        "next_actions": audit.get("next_actions", []),
     }
 
 
@@ -3376,6 +3393,7 @@ def print_summary(run) -> None:
     print(f"Graph: {run.artifacts.get('graph')}")
     print(f"Evals: {run.artifacts.get('evals')}")
     print(f"Trace: {run.artifacts.get('trace')}")
+    _print_audit_advisories(_audit_summary_for_run(run))
 
 
 def print_tool_results(result: dict) -> None:
@@ -3404,6 +3422,23 @@ def _print_next_actions(actions: list[str]) -> None:
     print("Next actions:")
     for action in actions:
         print(f"  - {action}")
+
+
+def _print_audit_advisories(audit: dict[str, Any]) -> None:
+    advisories = audit.get("advisories") if isinstance(audit, dict) else []
+    if not isinstance(advisories, list) or not advisories:
+        return
+    print("Advisories:")
+    for item in advisories[:6]:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "")).strip()
+        observed = str(item.get("observed", "")).strip()
+        action = str(item.get("action", "")).strip()
+        detail = f": {observed}" if observed else ""
+        print(f"  - {name}{detail}")
+        if action:
+            print(f"      {action}")
 
 
 def _print_run_summary(summary: dict[str, Any], *, include_run_id: bool) -> None:
