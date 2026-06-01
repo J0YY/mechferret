@@ -1326,6 +1326,19 @@ def run_repl() -> None:
             job = runner.submit_side(_btw_prompt(text))
             print(_c(f"  started side #{job.id} btw", "2"))
             continue
+        if bare == "prompt":
+            text = _line_after_command(line)
+            if not text:
+                print(_c("  usage: /prompt <prompt>", "33"))
+                continue
+            if not agent.configured:
+                print(_c("  No model connected yet — let's fix that.", "2"))
+                if not onboard():
+                    continue
+                agent.reload()
+            job = runner.submit(text)
+            _print_queued(job, runner)
+            continue
         if bare == "clear":
             os.system("cls" if os.name == "nt" else "clear")
             print(_welcome(session))

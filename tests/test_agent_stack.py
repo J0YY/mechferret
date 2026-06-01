@@ -498,7 +498,7 @@ class AgentStackTest(unittest.TestCase):
         names = " ".join(c.name for _title, cmds in commands.SECTIONS for c in cmds)
         for handled in (
             "login", "model", "plan", "cost", "compact", "resume", "memory",
-            "tool-results", "export", "init", "btw", "queue", "cancel", "goal", "why", "arch", "paper",
+            "tool-results", "export", "init", "btw", "prompt", "queue", "cancel", "goal", "why", "arch", "paper",
             "audit", "bundle", "verify-bundle", "sae", "quickstart", "status", "next",
             "runs", "open", "version", "commands", "completion", "api",
         ):
@@ -519,6 +519,7 @@ class AgentStackTest(unittest.TestCase):
             repl._print_help()
         rendered_help = out.getvalue()
         self.assertIn("/btw <text>", rendered_help)
+        self.assertIn("/prompt <text>", rendered_help)
         self.assertIn("/queue", rendered_help)
         self.assertIn("/queue add <text>", rendered_help)
         self.assertIn("/queue show <id|latest|active|running|side|next>", rendered_help)
@@ -1015,6 +1016,7 @@ class AgentStackTest(unittest.TestCase):
         self.assertEqual(repl._prompt_text_after_words("/queue edit #1 'new prompt'", 3), "new prompt")
         self.assertEqual(repl._prompt_text_after_words('/queue add say "hi" exactly', 2), 'say "hi" exactly')
         self.assertEqual(repl._prompt_text_after_words('/queue add "unfinished prompt', 2), '"unfinished prompt')
+        self.assertEqual(repl._line_after_command("/prompt /paper draft from latest run"), "/paper draft from latest run")
 
     def test_repl_queue_edit_accepts_quoted_replacement_prompt(self):
         from mechferret import repl
