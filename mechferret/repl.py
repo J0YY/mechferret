@@ -130,17 +130,41 @@ class ChatJobRunner:
         self._next_id += 1
         return job_id
 
-    def submit(self, text: str, *, kind: str = "prompt", preferred_id: int | None = None) -> PromptJob:
+    def submit(
+        self,
+        text: str,
+        *,
+        kind: str = "prompt",
+        preferred_id: int | None = None,
+        created_at: float | None = None,
+    ) -> PromptJob:
         with self._lock:
-            job = PromptJob(id=self._allocate_job_id_locked(preferred_id), text=text, kind=kind)
+            job = PromptJob(
+                id=self._allocate_job_id_locked(preferred_id),
+                text=text,
+                kind=kind,
+                created_at=created_at if created_at is not None else time.time(),
+            )
             self._jobs.append(job)
         self._queue.put(job)
         self.save_pending()
         return job
 
-    def submit_side(self, text: str, *, preferred_id: int | None = None) -> PromptJob:
+    def submit_side(
+        self,
+        text: str,
+        *,
+        preferred_id: int | None = None,
+        created_at: float | None = None,
+    ) -> PromptJob:
         with self._lock:
-            job = PromptJob(id=self._allocate_job_id_locked(preferred_id), text=text, kind="btw", status="running")
+            job = PromptJob(
+                id=self._allocate_job_id_locked(preferred_id),
+                text=text,
+                kind="btw",
+                status="running",
+                created_at=created_at if created_at is not None else time.time(),
+            )
             self._jobs.append(job)
         thread = threading.Thread(target=self._run_side, args=(job,), daemon=True)
         with self._lock:
@@ -178,9 +202,9 @@ class ChatJobRunner:
         restored: list[PromptJob] = []
         for saved in restored_jobs:
             if saved.kind == "btw":
-                restored.append(self.submit_side(saved.text, preferred_id=saved.id))
+                restored.append(self.submit_side(saved.text, preferred_id=saved.id, created_at=saved.created_at))
             else:
-                restored.append(self.submit(saved.text, kind=saved.kind, preferred_id=saved.id))
+                restored.append(self.submit(saved.text, kind=saved.kind, preferred_id=saved.id, created_at=saved.created_at))
         return restored
 
     def clear_saved(self) -> int:

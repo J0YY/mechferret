@@ -1948,6 +1948,31 @@ class AgentStackTest(unittest.TestCase):
         self.assertEqual(started, ["old saved", "fresh"])
         self.assertEqual([job.text for job in saved], ["new saved"])
 
+    def test_repl_restore_saved_queue_preserves_latest_order(self):
+        from mechferret import repl
+
+        queue_path = Path("restore-latest-order.json")
+
+        repl._save_queue_jobs(queue_path, [
+            repl.PromptJob(id=3, text="old saved", created_at=100.0),
+            repl.PromptJob(id=8, text="new saved", created_at=200.0),
+        ])
+
+        with redirect_stdout(StringIO()):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: "reply", queue_path=queue_path)
+            try:
+                restored = runner.restore_saved("all")
+                self.assertTrue(runner.wait_idle(timeout=2))
+                latest, saved = runner.find_job("latest")
+            finally:
+                runner.stop(wait=True)
+
+        self.assertEqual([job.created_at for job in restored], [100.0, 200.0])
+        self.assertIsNotNone(latest)
+        assert latest is not None
+        self.assertFalse(saved)
+        self.assertEqual(latest.id, 8)
+
     def test_repl_chat_job_runner_saves_active_prompt_on_fast_shutdown(self):
         from mechferret import repl
 
