@@ -1730,13 +1730,16 @@ def _queue_join(runner: ChatJobRunner, args: list[str]) -> None:
 
 
 def _queue_show(runner: ChatJobRunner, args: list[str]) -> None:
-    target = args[0] if args else ""
-    if not target:
-        print(_c("  usage: /queue show <job id|latest|active|running|side|next>", "33"))
-        return
+    target = args[0] if args else "running"
     job, saved = runner.find_job(target)
+    if job is None and not args:
+        target = "latest"
+        job, saved = runner.find_job(target)
     if job is None:
-        print(_c(f"  no queue job matched {target!r}", "33"))
+        if args:
+            print(_c(f"  no queue job matched {target!r}", "33"))
+        else:
+            print(_c("  no queue job to show", "2"))
         return
     saved_label = " saved" if saved else ""
     print(_c(f"  job #{job.id}{saved_label} · {job.kind} · {job.status}", PURPLE_B))
@@ -1768,23 +1771,26 @@ def _queue_show(runner: ChatJobRunner, args: list[str]) -> None:
 
 
 def _queue_tail(runner: ChatJobRunner, args: list[str]) -> None:
-    target = args[0] if args else ""
+    target = args[0] if args else "running"
     timeout = 60.0
-    if not target:
-        print(_c("  usage: /queue tail <job id|latest|active|running|side> [seconds]", "33"))
-        return
     if len(args) > 1:
         try:
             timeout = float(args[1])
         except ValueError:
-            print(_c("  usage: /queue tail <job id|latest|active|running|side> [seconds]", "33"))
+            print(_c("  usage: /queue tail [job id|latest|active|running|side] [seconds]", "33"))
             return
         if timeout <= 0:
             print(_c("  tail timeout must be positive", "33"))
             return
     job, saved = runner.find_job(target)
+    if job is None and not args:
+        target = "latest"
+        job, saved = runner.find_job(target)
     if job is None:
-        print(_c(f"  no queue job matched {target!r}", "33"))
+        if args:
+            print(_c(f"  no queue job matched {target!r}", "33"))
+        else:
+            print(_c("  no queue job to tail", "2"))
         return
     if saved:
         print(_c(f"  job #{job.id} is saved; run /queue restore {target} before tailing it.", "33"))
