@@ -11,8 +11,9 @@ Three layers live here:
 - ``modal_status`` / ``modal_available`` -- pure-Python detection used by the
   ``/modal`` CLI command; importable with or without Modal installed.
 - ``run_discovery_remote`` / ``run_interp_remote`` -- the GPU functions.
-- ``dispatch_discovery`` -- run the loop on Modal if possible, else fall back to
-  a local run, returning the run dict either way.
+- ``dispatch_discovery`` -- run the loop on Modal when configured. It fails
+  closed by default so requested GPU work is not silently replaced by a local
+  synthetic run; callers can explicitly opt into local fallback for demos.
 """
 
 from __future__ import annotations
@@ -115,13 +116,45 @@ def dispatch_discovery(
     task: str | None = None,
     model: str | None = None,
     out_dir: str | Path = "runs/modal",
+    allow_local_fallback: bool = False,
 ) -> dict[str, Any]:
-    """Run the discovery loop on Modal if available; otherwise locally.
+    """Run the discovery loop on Modal if available.
 
-    Returns ``{"backend": "modal"|"local", "run": <run dict>}`` so the caller can
-    report which path executed without guessing.
+    Returns ``{"ok": true, "backend": "modal", "run": <run dict>}`` when remote
+    execution succeeds. Missing Modal setup or dispatch errors return a
+    structured failure unless ``allow_local_fallback`` is true.
     """
 
+    if not modal_available():
+        return _modal_failure(
+            "Modal is not installed.",
+            failed_check="modal_installed",
+            next_actions=[
+                "Install Modal with `pip install -e '.[modal,interp]'`.",
+                "Run `mechferret modal setup --json` for setup steps.",
+            ],
+            question=question,
+            skill=skill,
+            task=task,
+            model=model,
+            out_dir=out_dir,
+            allow_local_fallback=allow_local_fallback,
+        )
+    if not modal_authenticated():
+        return _modal_failure(
+            "Modal is not authenticated.",
+            failed_check="modal_authenticated",
+            next_actions=[
+                "Run `modal token new` to authenticate Modal.",
+                "Run `mechferret modal status --json` to verify setup.",
+            ],
+            question=question,
+            skill=skill,
+            task=task,
+            model=model,
+            out_dir=out_dir,
+            allow_local_fallback=allow_local_fallback,
+        )
     if modal_available() and modal_authenticated():
         try:
             with app.run():  # ephemeral app run -- no separate `modal deploy` needed
@@ -133,12 +166,61 @@ def dispatch_discovery(
             import json
 
             (out_path / "run.json").write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
-            return {"backend": "modal", "run": payload, "out_dir": str(out_path)}
+            return {"ok": True, "backend": "modal", "run": payload, "out_dir": str(out_path)}
         except Exception as exc:  # pragma: no cover - network/credential failures
-            fallback = _local_discovery(question, skill, task, model, out_dir)
-            fallback["note"] = f"Modal dispatch failed ({exc}); ran locally on the synthetic backend."
-            return fallback
-    return _local_discovery(question, skill, task, model, out_dir)
+            return _modal_failure(
+                f"Modal dispatch failed: {exc}",
+                failed_check="modal_dispatch",
+                next_actions=[
+                    "Run `mechferret modal status --json` to inspect Modal setup.",
+                    "Retry with `--local-fallback` only if a synthetic local run is intentional.",
+                ],
+                question=question,
+                skill=skill,
+                task=task,
+                model=model,
+                out_dir=out_dir,
+                allow_local_fallback=allow_local_fallback,
+            )
+    return _modal_failure(
+        "Modal is unavailable.",
+        failed_check="modal_available",
+        next_actions=["Run `mechferret modal setup --json` for setup steps."],
+        question=question,
+        skill=skill,
+        task=task,
+        model=model,
+        out_dir=out_dir,
+        allow_local_fallback=allow_local_fallback,
+    )
+
+
+def _modal_failure(
+    error: str,
+    *,
+    failed_check: str,
+    next_actions: list[str],
+    question: str,
+    skill: str | None,
+    task: str | None,
+    model: str | None,
+    out_dir: str | Path,
+    allow_local_fallback: bool,
+) -> dict[str, Any]:
+    if allow_local_fallback:
+        fallback = _local_discovery(question, skill, task, model, out_dir)
+        fallback["note"] = f"{error} Ran locally because local fallback was explicitly requested."
+        fallback["remote_error"] = error
+        fallback["failed_checks"] = [failed_check]
+        return fallback
+    return {
+        "ok": False,
+        "backend": "modal",
+        "error": error,
+        "failed_checks": [failed_check],
+        "next_actions": next_actions,
+        "out_dir": str(out_dir),
+    }
 
 
 def _local_discovery(question, skill, task, model, out_dir) -> dict[str, Any]:
@@ -147,4 +229,4 @@ def _local_discovery(question, skill, task, model, out_dir) -> dict[str, Any]:
     run = DiscoveryController().run(
         question=question, skill=skill, task=task, model=model, backend="auto", out_dir=out_dir
     )
-    return {"backend": "local", "run": run.to_dict(), "out_dir": str(out_dir)}
+    return {"ok": True, "backend": "local", "run": run.to_dict(), "out_dir": str(out_dir)}

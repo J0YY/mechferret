@@ -1109,7 +1109,8 @@ Usage:
 ```text
 usage: mechferret modal [-h] [--skill SKILL]
                         [--task {ioi,induction,greater_than,factual_recall}]
-                        [--model MODEL] [--out OUT] [--json]
+                        [--model MODEL] [--out OUT] [--local-fallback]
+                        [--json]
                         [{status,setup,run,deploy}] [question]
 ```
 
@@ -1125,6 +1126,7 @@ Options:
 - `--task`: choices: `ioi`, `induction`, `greater_than`, `factual_recall`; Interpretability task for remote experiments.
 - `--model`: Model to investigate remotely; required unless --skill declares one.
 - `--out`: Output directory for Modal artifacts.
+- `--local-fallback`: Explicitly run a local synthetic fallback if Modal is unavailable or fails.
 - `--json`: Print machine-readable JSON.
 
 Examples:
@@ -1142,7 +1144,8 @@ Usage:
 ```text
 usage: mechferret cluster [-h] [--skill SKILL]
                           [--task {ioi,induction,greater_than,factual_recall}]
-                          [--model MODEL] [--out OUT] [--dry-run] [--json]
+                          [--model MODEL] [--out OUT] [--dry-run]
+                          [--local-fallback] [--json]
                           [{status,setup,run}] [question]
 ```
 
@@ -1159,6 +1162,7 @@ Options:
 - `--model`: Model to investigate on the cluster; required unless --skill declares one.
 - `--out`: Output directory for cluster artifacts.
 - `--dry-run`: Print the ssh+srun command without executing.
+- `--local-fallback`: Explicitly run a local synthetic fallback if cluster dispatch is unavailable or fails.
 - `--json`: Print machine-readable JSON.
 
 Examples:

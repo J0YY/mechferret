@@ -159,14 +159,48 @@ class ClusterTest(unittest.TestCase):
                 else:
                     self.assertIn("status", payload)
 
-    def test_unconfigured_falls_back_to_local(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            # No REMOTE_HOST/REMOTE_PROJECT_DIR in this process env -> unconfigured.
-            import os
+    def test_cluster_run_json_is_machine_readable_on_setup_failure(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(cluster_mod, "CONFIG_PATHS", ()):
+            env = {"REMOTE_HOST": "", "REMOTE_PROJECT_DIR": ""}
+            out = StringIO()
+            with patch.dict(os.environ, env, clear=False), redirect_stdout(out):
+                main([
+                    "cluster",
+                    "run",
+                    "--skill",
+                    "ioi-circuit",
+                    "--model",
+                    "gpt2",
+                    "--out",
+                    str(Path(tmp) / "run"),
+                    "--json",
+                ])
+            payload = json.loads(out.getvalue())
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["backend"], "cluster")
+        self.assertIn("cluster_configured", payload["failed_checks"])
 
-            for var in ("REMOTE_HOST", "REMOTE_PROJECT_DIR"):
-                os.environ.pop(var, None)
-            result = dispatch_discovery_cluster(skill="ioi-circuit", model="gpt2", out_dir=Path(tmp) / "run")
+    def test_unconfigured_fails_closed_by_default(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(cluster_mod, "CONFIG_PATHS", ()):
+            env = {"REMOTE_HOST": "", "REMOTE_PROJECT_DIR": ""}
+            with patch.dict(os.environ, env, clear=False):
+                result = dispatch_discovery_cluster(skill="ioi-circuit", model="gpt2", out_dir=Path(tmp) / "run")
+            self.assertFalse(result["ok"])
+            self.assertEqual(result["backend"], "cluster")
+            self.assertIn("cluster_configured", result["failed_checks"])
+            self.assertFalse((Path(tmp) / "run" / "run.json").exists())
+
+    def test_unconfigured_local_fallback_requires_explicit_opt_in(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(cluster_mod, "CONFIG_PATHS", ()):
+            env = {"REMOTE_HOST": "", "REMOTE_PROJECT_DIR": ""}
+            with patch.dict(os.environ, env, clear=False):
+                result = dispatch_discovery_cluster(
+                    skill="ioi-circuit",
+                    model="gpt2",
+                    out_dir=Path(tmp) / "run",
+                    allow_local_fallback=True,
+                )
+            self.assertTrue(result["ok"])
             self.assertEqual(result["backend"], "local")
             self.assertGreaterEqual(len(result["run"]["discoveries"]), 1)
 

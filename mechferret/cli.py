@@ -299,6 +299,7 @@ def build_parser() -> argparse.ArgumentParser:
     modal_cmd.add_argument("--task", choices=["ioi", "induction", "greater_than", "factual_recall"], help="Interpretability task for remote experiments.")
     modal_cmd.add_argument("--model", help="Model to investigate remotely; required unless --skill declares one.")
     modal_cmd.add_argument("--out", default="runs/modal", help="Output directory for Modal artifacts.")
+    modal_cmd.add_argument("--local-fallback", action="store_true", help="Explicitly run a local synthetic fallback if Modal is unavailable or fails.")
     modal_cmd.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
 
     cluster_cmd = sub.add_parser("cluster", aliases=["/cluster"], help="Run experiments on a generic SLURM cluster over SSH (srun).")
@@ -309,6 +310,7 @@ def build_parser() -> argparse.ArgumentParser:
     cluster_cmd.add_argument("--model", help="Model to investigate on the cluster; required unless --skill declares one.")
     cluster_cmd.add_argument("--out", default="runs/cluster", help="Output directory for cluster artifacts.")
     cluster_cmd.add_argument("--dry-run", action="store_true", help="Print the ssh+srun command without executing.")
+    cluster_cmd.add_argument("--local-fallback", action="store_true", help="Explicitly run a local synthetic fallback if cluster dispatch is unavailable or fails.")
     cluster_cmd.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
 
     init = sub.add_parser("init", aliases=["/init"], help="Create MECHFERRET.md project notes for the interactive agent.")
@@ -2747,12 +2749,23 @@ def handle_modal(args) -> None:
         return
     # action == "run"
     skill = args.skill
-    print(f"Dispatching discovery to Modal (skill={skill}, task={args.task}, model={args.model})...")
+    if not args.json:
+        print(f"Dispatching discovery to Modal (skill={skill}, task={args.task}, model={args.model})...")
     result = dispatch_discovery(
-        question=args.question, skill=skill, task=args.task, model=args.model, out_dir=args.out
+        question=args.question,
+        skill=skill,
+        task=args.task,
+        model=args.model,
+        out_dir=args.out,
+        allow_local_fallback=args.local_fallback,
     )
     if args.json:
         print(json.dumps(_dispatch_payload("modal", result, skill=skill, task=args.task, model=args.model), indent=2, sort_keys=True))
+        return
+    if not result.get("ok", bool(result.get("run"))):
+        print(f"Modal run failed: {result.get('error', 'unknown error')}")
+        for action in result.get("next_actions", []):
+            print(f"  - {action}")
         return
     print(f"Executed on: {result['backend']} backend")
     if result.get("note"):
@@ -2799,7 +2812,13 @@ def handle_cluster(args) -> None:
     skill = args.skill
     if args.dry_run:
         result = dispatch_discovery_cluster(
-            question=args.question, skill=skill, task=args.task, model=args.model, out_dir=args.out, dry_run=True
+            question=args.question,
+            skill=skill,
+            task=args.task,
+            model=args.model,
+            out_dir=args.out,
+            dry_run=True,
+            allow_local_fallback=args.local_fallback,
         )
         if args.json:
             print(json.dumps(_dispatch_payload("cluster", result, skill=skill, task=args.task, model=args.model), indent=2, sort_keys=True))
@@ -2807,12 +2826,23 @@ def handle_cluster(args) -> None:
         print("Dry run -- command that would execute:\n")
         print(result["command"])
         return
-    print(f"Dispatching discovery to cluster (skill={skill}, task={args.task}, model={args.model})...")
+    if not args.json:
+        print(f"Dispatching discovery to cluster (skill={skill}, task={args.task}, model={args.model})...")
     result = dispatch_discovery_cluster(
-        question=args.question, skill=skill, task=args.task, model=args.model, out_dir=args.out
+        question=args.question,
+        skill=skill,
+        task=args.task,
+        model=args.model,
+        out_dir=args.out,
+        allow_local_fallback=args.local_fallback,
     )
     if args.json:
         print(json.dumps(_dispatch_payload("cluster", result, skill=skill, task=args.task, model=args.model), indent=2, sort_keys=True))
+        return
+    if not result.get("ok", bool(result.get("run"))):
+        print(f"Cluster run failed: {result.get('error', 'unknown error')}")
+        for action in result.get("next_actions", []):
+            print(f"  - {action}")
         return
     print(f"Executed on: {result['backend']} backend")
     if result.get("note"):
@@ -2939,8 +2969,9 @@ def _cluster_next_actions(action: str, status: dict[str, Any]) -> list[str]:
 def _dispatch_payload(kind: str, result: dict[str, Any], *, skill: str | None, task: str | None, model: str | None) -> dict[str, Any]:
     run = result.get("run") if isinstance(result.get("run"), dict) else {}
     metrics = run.get("metrics", {}) if isinstance(run, dict) else {}
+    ok = bool(result.get("ok")) if "ok" in result else bool(result.get("dry_run") or run)
     payload: dict[str, Any] = {
-        "ok": True,
+        "ok": ok,
         "kind": kind,
         "action": "run",
         "backend": result.get("backend"),
@@ -2958,6 +2989,12 @@ def _dispatch_payload(kind: str, result: dict[str, Any], *, skill: str | None, t
         }
     if result.get("note"):
         payload["note"] = result.get("note")
+    if result.get("error"):
+        payload["error"] = result.get("error")
+    if result.get("failed_checks"):
+        payload["failed_checks"] = result.get("failed_checks")
+    if result.get("next_actions"):
+        payload["next_actions"] = result.get("next_actions")
     return payload
 
 

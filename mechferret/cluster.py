@@ -190,11 +190,14 @@ def dispatch_discovery_cluster(
     model: str | None = None,
     out_dir: str | Path = "runs/cluster",
     dry_run: bool = False,
+    allow_local_fallback: bool = False,
 ) -> dict[str, Any]:
-    """Run the discovery loop on a SLURM cluster; fall back to local otherwise.
+    """Run the discovery loop on a SLURM cluster.
 
-    Returns ``{"backend": "cluster"|"local", ...}``. With ``dry_run`` the SSH/srun
-    command is returned without executing anything.
+    Remote execution fails closed by default so requested cluster work is not
+    silently replaced by a synthetic local run. Pass ``allow_local_fallback`` for
+    an explicit demo/smoke fallback. With ``dry_run`` the SSH/srun command is
+    returned without executing anything.
     """
 
     cfg = load_cluster_config()
@@ -206,17 +209,39 @@ def dispatch_discovery_cluster(
     printable = " ".join(shlex.quote(token) for token in invocation)
 
     if dry_run:
-        return {"backend": "cluster", "dry_run": True, "command": printable, "out_dir": str(out_path)}
+        return {"ok": True, "backend": "cluster", "dry_run": True, "command": printable, "out_dir": str(out_path)}
     if not cfg.configured:
-        result = _local(question, skill, task, model, out_path)
-        result["note"] = "Cluster not configured (set REMOTE_HOST + REMOTE_PROJECT_DIR); ran locally."
-        return result
+        return _cluster_failure(
+            "Cluster not configured; set REMOTE_HOST and REMOTE_PROJECT_DIR before launching cluster jobs.",
+            failed_check="cluster_configured",
+            next_actions=[
+                "Run `mechferret cluster setup --json` for environment variables and connection steps.",
+                "Use `--local-fallback` only if a synthetic local run is intentional.",
+            ],
+            question=question,
+            skill=skill,
+            task=task,
+            model=model,
+            out_path=out_path,
+            allow_local_fallback=allow_local_fallback,
+        )
     try:
         proc = subprocess.run(invocation, capture_output=True, text=True, timeout=cfg_seconds(cfg.time))
         if proc.returncode != 0:
-            result = _local(question, skill, task, model, out_path)
-            result["note"] = f"Cluster srun failed (rc={proc.returncode}); ran locally. stderr: {proc.stderr[-400:]}"
-            return result
+            return _cluster_failure(
+                f"Cluster srun failed (rc={proc.returncode}). stderr: {proc.stderr[-400:]}",
+                failed_check="cluster_srun",
+                next_actions=[
+                    "Run `mechferret cluster run --skill <skill> --model <model> --dry-run --json` to inspect the SSH+srun command.",
+                    "Retry with `--local-fallback` only if a synthetic local run is intentional.",
+                ],
+                question=question,
+                skill=skill,
+                task=task,
+                model=model,
+                out_path=out_path,
+                allow_local_fallback=allow_local_fallback,
+            )
         # Copy the dossier back.
         scp = subprocess.run(
             ["scp", "-q", f"{cfg.host}:{remote_out}/run.json", str(out_path / "run.json")],
@@ -229,6 +254,7 @@ def dispatch_discovery_cluster(
         if scp.returncode == 0 and run_json.exists():
             payload = json.loads(run_json.read_text(encoding="utf-8"))
         return {
+            "ok": True,
             "backend": "cluster",
             "command": printable,
             "run": payload,
@@ -236,9 +262,20 @@ def dispatch_discovery_cluster(
             "stdout_tail": proc.stdout[-400:],
         }
     except (subprocess.TimeoutExpired, OSError) as exc:
-        result = _local(question, skill, task, model, out_path)
-        result["note"] = f"Cluster dispatch error ({exc}); ran locally."
-        return result
+        return _cluster_failure(
+            f"Cluster dispatch error: {exc}",
+            failed_check="cluster_dispatch",
+            next_actions=[
+                "Run `mechferret cluster status --json` to inspect cluster setup.",
+                "Retry with `--local-fallback` only if a synthetic local run is intentional.",
+            ],
+            question=question,
+            skill=skill,
+            task=task,
+            model=model,
+            out_path=out_path,
+            allow_local_fallback=allow_local_fallback,
+        )
 
 
 def cfg_seconds(hhmmss: str) -> int:
@@ -255,4 +292,32 @@ def _local(question, skill, task, model, out_path) -> dict[str, Any]:
     run = DiscoveryController().run(
         question=question, skill=skill, task=task, model=model, backend="auto", out_dir=out_path
     )
-    return {"backend": "local", "run": run.to_dict(), "out_dir": str(out_path)}
+    return {"ok": True, "backend": "local", "run": run.to_dict(), "out_dir": str(out_path)}
+
+
+def _cluster_failure(
+    error: str,
+    *,
+    failed_check: str,
+    next_actions: list[str],
+    question: str,
+    skill: str | None,
+    task: str | None,
+    model: str | None,
+    out_path: Path,
+    allow_local_fallback: bool,
+) -> dict[str, Any]:
+    if allow_local_fallback:
+        fallback = _local(question, skill, task, model, out_path)
+        fallback["note"] = f"{error} Ran locally because local fallback was explicitly requested."
+        fallback["remote_error"] = error
+        fallback["failed_checks"] = [failed_check]
+        return fallback
+    return {
+        "ok": False,
+        "backend": "cluster",
+        "error": error,
+        "failed_checks": [failed_check],
+        "next_actions": next_actions,
+        "out_dir": str(out_path),
+    }
