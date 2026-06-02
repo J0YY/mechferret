@@ -1147,6 +1147,39 @@ class AgentToolTest(unittest.TestCase):
         self.assertFalse(bad_search_audit["ok"])
         self.assertEqual(bad_search_audit["expected"], "objects with search_audit from verify_novelty assessment")
 
+        summary_only_search_audit = _option_search_audit()
+        summary_only_search_audit.pop("passes")
+        summary_only = _validated_option("Summary-only search audit")
+        summary_only["search_audit"] = summary_only_search_audit
+        bad_summary_only = json.loads(
+            tools.run_tool(
+                "present_options",
+                {"options": [summary_only]},
+            )
+        )
+        self.assertFalse(bad_summary_only["ok"])
+        self.assertEqual(bad_summary_only["expected"], "objects with search_audit from verify_novelty assessment")
+
+        missing_pass_source_evidence_audit = _option_search_audit()
+        for row in missing_pass_source_evidence_audit["passes"]:
+            if row.get("source") == "web":
+                row.pop("source_types", None)
+                row.pop("source_domains", None)
+                break
+        missing_pass_source_evidence = _validated_option("Missing pass source evidence")
+        missing_pass_source_evidence["search_audit"] = missing_pass_source_evidence_audit
+        bad_missing_pass_source_evidence = json.loads(
+            tools.run_tool(
+                "present_options",
+                {"options": [missing_pass_source_evidence]},
+            )
+        )
+        self.assertFalse(bad_missing_pass_source_evidence["ok"])
+        self.assertEqual(
+            bad_missing_pass_source_evidence["expected"],
+            "objects with search_audit from verify_novelty assessment",
+        )
+
         shallow_search_audit = _option_search_audit()
         shallow_search_audit["pass_count"] = 4
         shallow_search_audit["focus_summary"] = shallow_search_audit["focus_summary"][:4]

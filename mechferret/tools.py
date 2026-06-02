@@ -2969,8 +2969,18 @@ def _valid_option_search_audit(value: Any) -> bool:
         "empty_web_passes",
         "duplicate_only_search_passes",
         "focus_summary",
+        "passes",
     }
     if not required_keys <= set(value):
+        return False
+    passes = _option_search_passes(value.get("passes"))
+    if not passes:
+        return False
+    if any(
+        _safe_int(row.get("unique_added")) > 0
+        and (not row.get("source_types") or not row.get("source_domains"))
+        for row in passes
+    ):
         return False
     audit = _option_search_audit(value)
     if not audit:
@@ -4357,7 +4367,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
              "source_domain_counts": {"type": "object"},
              "focus_summary": {"type": "array", "items": {"type": "object"}},
              "passes": {"type": "array", "items": {"type": "object"}},
-        }, "description": f"assessment.search_audit from verify_novelty; include pass_count, failed_passes, empty_search_passes, duplicate_only_search_passes, focus_coverage, evidence_focus_coverage, source_axis_coverage, missing_focus_coverage, missing_evidence_focus_coverage, missing_source_axis_coverage, source_type_counts, source_domain_counts, focus_summary, and passes with per-pass source_types/source_domains. The audit must prove at least {novelty_min_arxiv_passes()} arXiv passes at {novelty_arxiv_result_limit()} results, {novelty_min_web_passes()} web passes at {novelty_web_result_limit()} results, focused deep-search coverage, source-axis evidence from per-pass rows, unique_added evidence from both arXiv and web, and zero failed retrieval passes."},
+        }, "required": ["pass_count", "failed_passes", "empty_search_passes", "empty_arxiv_passes", "empty_web_passes", "duplicate_only_search_passes", "focus_summary", "passes"], "description": f"assessment.search_audit from verify_novelty; include pass_count, failed_passes, empty_search_passes, duplicate_only_search_passes, focus_coverage, evidence_focus_coverage, source_axis_coverage, missing_focus_coverage, missing_evidence_focus_coverage, missing_source_axis_coverage, source_type_counts, source_domain_counts, focus_summary, and passes with per-pass source_types/source_domains. The audit must prove at least {novelty_min_arxiv_passes()} arXiv passes at {novelty_arxiv_result_limit()} results, {novelty_min_web_passes()} web passes at {novelty_web_result_limit()} results, focused deep-search coverage, source-axis evidence from per-pass rows, unique_added evidence from both arXiv and web, and zero failed retrieval passes."},
          "recent_pressure": {"type": "object", "properties": {
              "status": {"type": "string"},
              "recent_window": {"type": "string"},
