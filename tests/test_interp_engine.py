@@ -73,6 +73,16 @@ class InterpEngineTest(unittest.TestCase):
         self.assertEqual(a.effect_size, b.effect_size)
         self.assertEqual(a.per_seed, b.per_seed)
 
+    def test_engine_requires_explicit_backend(self):
+        with self.assertRaisesRegex(ValueError, "backend is required"):
+            InterpEngine("gpt2").backend_for()
+
+    def test_backend_resolver_requires_explicit_backend(self):
+        from mechferret.interp import backends
+
+        with self.assertRaisesRegex(ValueError, "backend is required"):
+            backends.resolve_backend("gpt2")
+
     def test_all_probes_run(self):
         key = self.circuit.heads[0]
         for probe in ("head_ablation", "activation_patching", "attention_pattern", "direct_logit_attribution", "logit_lens"):

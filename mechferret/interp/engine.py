@@ -99,9 +99,9 @@ def _items(value: Any) -> list[Any]:
 
 
 class InterpEngine:
-    def __init__(self, model: str | None = None, backend: str = "auto") -> None:
+    def __init__(self, model: str | None = None, backend: str | None = None) -> None:
         self.model = _text(model).strip()
-        self.requested_backend = _text(backend).strip() or "auto"
+        self.requested_backend = _text(backend).strip()
         self._backends: dict[tuple[str, str], object] = {}
         self._default_seeds = _runtime_seed_plan()
 
@@ -109,7 +109,13 @@ class InterpEngine:
         model_name = _text(model).strip() or self.model
         if not model_name:
             raise ValueError("model is required; pass --model or use a skill that declares one.")
-        key = (model_name, _text(backend).strip() or self.requested_backend)
+        backend_name = _text(backend).strip() or self.requested_backend
+        if not backend_name:
+            raise ValueError(
+                "backend is required; pass backend='synthetic' for smoke data or "
+                "backend='transformer_lens'/'real' for real measurements."
+            )
+        key = (model_name, backend_name)
         if key not in self._backends:
             self._backends[key] = resolve_backend(key[0], key[1])
         return self._backends[key]

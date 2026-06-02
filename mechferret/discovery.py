@@ -50,6 +50,7 @@ from .models import (
 )
 
 SUPPORTED_TASK_HELP = "|".join(SUPPORTED_TASK_NAMES)
+DISCOVERY_BACKENDS = {"synthetic", "transformer_lens", "tl", "real"}
 from .provenance import refresh_run_manifest
 from .report import write_artifacts
 from .retrieval import BM25Index
@@ -303,7 +304,7 @@ class DiscoveryController:
         skill: str | Skill | None = None,
         task: str | None = None,
         model: str | None = None,
-        backend: str = "auto",
+        backend: str | None = None,
         source_paths: list[str] | None = None,
         urls: list[str] | None = None,
         out_dir: str | Path = "runs/discovery",
@@ -317,7 +318,17 @@ class DiscoveryController:
         question = _text(question).strip()
         task = _text(task).strip() or None
         model = _text(model).strip()
-        backend = _text(backend).strip() or "auto"
+        backend = _text(backend).strip().lower()
+        if not backend or backend == "auto":
+            raise ValueError(
+                "discovery needs an explicit backend; pass backend=synthetic only for smoke data, "
+                "or backend=transformer_lens/tl/real for real measurements."
+            )
+        if backend not in DISCOVERY_BACKENDS:
+            raise ValueError(
+                "unknown discovery backend; pass backend=synthetic only for smoke data, "
+                "or backend=transformer_lens/tl/real for real measurements."
+            )
         source_paths = _path_list(source_paths)
         urls = _path_list(urls)
         provider = _text(provider).strip() or "auto"

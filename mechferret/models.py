@@ -98,7 +98,7 @@ class ExperimentSpec:
     metric: str = "logit_diff"
     controls: list[str] = field(default_factory=list)
     seeds: list[int] = field(default_factory=list)
-    backend: str = "auto"  # auto | synthetic | transformer_lens | modal
+    backend: str = ""  # synthetic | transformer_lens | modal; auto only when explicitly requested
     hypothesis_id: str = ""
     params: dict[str, Any] = field(default_factory=dict)
 

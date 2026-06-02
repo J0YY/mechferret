@@ -434,7 +434,7 @@ class DiscoveryLoopTest(unittest.TestCase):
                 question=b"Find IOI heads",
                 skill="ioi-circuit",
                 model="gpt2",
-                backend=[],
+                backend="synthetic",
                 out_dir=root / "run",
                 source_paths=None,
                 urls=["", None],
@@ -444,13 +444,29 @@ class DiscoveryLoopTest(unittest.TestCase):
                 allow_seed_corpus="yes",
                 budget=Budget(max_experiments=4, max_rounds="bad", allow_network="yes"),
             )
-            self.assertEqual(run.provenance["backend_requested"], "auto")
+            self.assertEqual(run.provenance["backend_requested"], "synthetic")
             self.assertEqual(run.provenance["provider_requested"], "auto")
             self.assertTrue(run.provenance["included_memory"])
             self.assertFalse(run.provenance["allow_seed_corpus"])
             self.assertEqual(run.provenance["requested_urls"], [])
             self.assertEqual(run.provenance["budget"]["max_experiments"], 4)
             self.assertEqual(run.provenance["budget"]["max_rounds"], 4)
+
+    def test_discovery_api_rejects_missing_auto_or_unknown_backend(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for backend in (None, "", [], "auto", "quantum"):
+                with self.subTest(backend=backend):
+                    with self.assertRaisesRegex(ValueError, "explicit backend|unknown discovery backend"):
+                        DiscoveryController(root / "mem.sqlite").run(
+                            question="Find IOI heads",
+                            skill="ioi-circuit",
+                            model="gpt2",
+                            backend=backend,
+                            out_dir=root / "run",
+                            include_memory=False,
+                            budget=Budget(max_experiments=1, max_rounds=1),
+                        )
 
     def test_discovery_does_not_impute_missing_backend_name_as_synthetic(self):
         unnamed_backend = SimpleNamespace(n_layers=2, n_heads=2, d_model=16)
@@ -462,7 +478,7 @@ class DiscoveryLoopTest(unittest.TestCase):
                     question="Find IOI heads",
                     skill="ioi-circuit",
                     model="gpt2",
-                    backend="auto",
+                    backend="synthetic",
                     out_dir=root / "run",
                     include_memory=False,
                     budget=Budget(max_experiments=1, max_rounds=1),

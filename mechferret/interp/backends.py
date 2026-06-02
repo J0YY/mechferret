@@ -5,7 +5,7 @@ Every probe is written against a small duck-typed backend interface, so the
 :class:`~mechferret.interp.synthetic.SyntheticBackend` or a real model measured
 with :class:`TransformerLensBackend`.
 
-Resolution order for ``backend="auto"``:
+Resolution order for an explicit ``backend="auto"`` request:
 
 1. ``transformer_lens`` if importable (real measurement), unless disabled.
 2. ``synthetic`` otherwise (always available locally).
@@ -34,11 +34,16 @@ def transformer_lens_available() -> bool:
     )
 
 
-def resolve_backend(model: str | None, backend: str = "auto"):
+def resolve_backend(model: str | None, backend: str | None = None):
     """Return a backend instance honouring an explicit request or auto-detection."""
 
     model_name = _model_name(model)
-    choice = (backend or "auto").lower()
+    choice = (backend or "").strip().lower()
+    if not choice:
+        raise ValueError(
+            "backend is required; pass backend='synthetic' for smoke data or "
+            "backend='transformer_lens'/'real' for real measurements."
+        )
     if choice == "synthetic":
         return SyntheticBackend(model_name)
     if choice in {"transformer_lens", "tl", "real"}:
@@ -48,7 +53,12 @@ def resolve_backend(model: str | None, backend: str = "auto"):
                 "Install with `pip install -e '.[interp]'` or run with --backend synthetic."
             )
         return TransformerLensBackend(model_name)
-    # auto / modal-local: prefer real measurement when the deps are present.
+    if choice != "auto":
+        raise ValueError(
+            "unknown backend; pass backend='synthetic', 'transformer_lens', 'tl', 'real', "
+            "or explicit backend='auto'."
+        )
+    # Explicit auto / modal-local: prefer real measurement when the deps are present.
     if transformer_lens_available():
         try:
             return TransformerLensBackend(model_name)
