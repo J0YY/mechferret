@@ -339,7 +339,7 @@ You can do things like:
 /queue          show the active and queued prompts
 /queue add <prompt> enqueue a prompt explicitly, including prompts that start with /
 /queue show [id|latest|active|running|side|next] show a queued job's full prompt, live output, reply, or error
-/queue tail [id|latest|active|running|side] [seconds] follow live output from a queued or /btw job
+/queue tail [id|latest|active|running|side] [seconds|now] follow live output, or use now for a non-blocking snapshot
 /queue retry <id|latest|running|side|next> retry a job without retyping its prompt
 /queue choose <id|latest|side> <number|title> choose a deferred option from a queued/background picker
 /queue apply <id|side|latest|all> add finished /btw side replies to the main conversation

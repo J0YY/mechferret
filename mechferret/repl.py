@@ -1321,7 +1321,7 @@ def run_repl() -> None:
                 _queue_join(runner, tokens[2:])
             elif len(tokens) > 1 and tokens[1].lower() == "show":
                 _queue_show(runner, tokens[2:])
-            elif len(tokens) > 1 and tokens[1].lower() in {"tail", "watch", "follow"}:
+            elif len(tokens) > 1 and tokens[1].lower() in {"tail", "watch", "follow", "peek"}:
                 _queue_tail(runner, tokens[2:])
             elif len(tokens) > 1 and tokens[1].lower() == "retry":
                 _queue_retry(runner, tokens[2:])
@@ -1852,10 +1852,19 @@ def _deferred_option_queue_details(option: dict[str, Any]) -> list[str]:
     return details
 
 
-def _queue_tail_args(runner: ChatJobRunner, args: list[str]) -> tuple[str, float, bool, str]:
+def _queue_tail_args(runner: ChatJobRunner, args: list[str]) -> tuple[str, float, bool, bool, str]:
     target = args[0] if args else "running"
     timeout = 60.0
     uses_default_target = not args
+    once = False
+    if len(args) == 1 and args[0].lower() in {"now", "once", "peek"}:
+        target = "running"
+        uses_default_target = True
+        once = True
+    elif len(args) > 1 and args[1].lower() in {"now", "once", "peek"}:
+        once = True
+    elif len(args) > 2:
+        return "", 0.0, uses_default_target, once, "usage"
     if len(args) == 1:
         job, _saved = runner.find_job(target)
         if job is None:
@@ -1865,23 +1874,23 @@ def _queue_tail_args(runner: ChatJobRunner, args: list[str]) -> tuple[str, float
                 pass
             else:
                 if timeout <= 0:
-                    return "", 0.0, uses_default_target, "positive"
+                    return "", 0.0, uses_default_target, once, "positive"
                 target = "running"
                 uses_default_target = True
-    if len(args) > 1:
+    if len(args) > 1 and not once:
         try:
             timeout = float(args[1])
         except ValueError:
-            return "", 0.0, uses_default_target, "usage"
+            return "", 0.0, uses_default_target, once, "usage"
         if timeout <= 0:
-            return "", 0.0, uses_default_target, "positive"
-    return target, timeout, uses_default_target, ""
+            return "", 0.0, uses_default_target, once, "positive"
+    return target, timeout, uses_default_target, once, ""
 
 
 def _queue_tail(runner: ChatJobRunner, args: list[str]) -> None:
-    target, timeout, uses_default_target, parse_error = _queue_tail_args(runner, args)
+    target, timeout, uses_default_target, once, parse_error = _queue_tail_args(runner, args)
     if parse_error == "usage":
-        print(_c("  usage: /queue tail [job id|latest|active|running|side] [seconds]", "33"))
+        print(_c("  usage: /queue tail [job id|latest|active|running|side] [seconds|now]", "33"))
         return
     if parse_error == "positive":
         print(_c("  tail timeout must be positive", "33"))
@@ -1898,6 +1907,17 @@ def _queue_tail(runner: ChatJobRunner, args: list[str]) -> None:
         return
     if saved:
         print(_c(f"  job #{job.id} is saved; run /queue restore {target} before tailing it.", "33"))
+        return
+    if once:
+        print(_c(f"  output snapshot for #{job.id} {job.kind}", "2"))
+        if job.output:
+            print(_render_reply("\n".join(job.output[-80:])))
+        elif job.status == "running":
+            print(_c("  (no assistant or tool output captured yet)", "2"))
+        else:
+            print(_c(f"  job #{job.id} has no captured output; status {job.status}", "2"))
+        if job.status not in TERMINAL_JOB_STATUSES:
+            print(_c(f"  use /queue tail #{job.id} to follow, or keep typing to queue more prompts", "2"))
         return
     print(_c(f"  following #{job.id} {job.kind}; timeout {timeout:g}s", "2"))
     seen = 0

@@ -552,7 +552,7 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("/queue", rendered_help)
         self.assertIn("/queue add <text>", rendered_help)
         self.assertIn("/queue show [id|latest|active|running|side|next]", rendered_help)
-        self.assertIn("/queue tail [id|latest|active|running|side] [seconds]", rendered_help)
+        self.assertIn("/queue tail [id|latest|active|running|side] [seconds|now]", rendered_help)
         self.assertIn("/queue retry <id|latest|running|side|next>", rendered_help)
         self.assertIn("/queue choose <id|latest|side> <number|title>", rendered_help)
         self.assertIn("/queue apply <id|side|latest|all>", rendered_help)
@@ -1369,6 +1369,39 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("timeout 2s", rendered)
         self.assertIn("partial numeric timeout prompt", rendered)
         self.assertIn("job #1 done", rendered)
+
+    def test_repl_queue_tail_now_returns_snapshot_without_following(self):
+        from mechferret import repl
+
+        release = threading.Event()
+        partial_emitted = threading.Event()
+
+        def fake_chat(agent, session, text, *, background=False):
+            repl._print_background(f"partial {text}")
+            partial_emitted.set()
+            self.assertTrue(release.wait(timeout=2))
+            repl._print_background("late output")
+            return "final answer"
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-tail-now.json"))
+            try:
+                job = runner.submit("snapshot prompt")
+                self.assertTrue(partial_emitted.wait(timeout=2))
+                repl._queue_tail(runner, ["now"])
+                self.assertEqual(job.status, "running")
+            finally:
+                release.set()
+                runner.wait_idle(timeout=2)
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("output snapshot for #1", rendered)
+        self.assertIn("partial snapshot prompt", rendered)
+        snapshot_section = rendered.split("output snapshot for #1", 1)[1].split("late output", 1)[0]
+        self.assertIn("keep typing to queue more prompts", snapshot_section)
+        self.assertNotIn("following #1", snapshot_section)
 
     def test_repl_queue_tail_single_numeric_arg_prefers_matching_job_id(self):
         from mechferret import repl
@@ -2362,7 +2395,7 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("/queue add <prompt>", rendered)
         self.assertIn("no queue job to show", rendered)
         self.assertIn("no queue job to tail", rendered)
-        self.assertIn("/queue tail [job id|latest|active|running|side] [seconds]", rendered)
+        self.assertIn("/queue tail [job id|latest|active|running|side] [seconds|now]", rendered)
         self.assertIn("/queue retry <job id|latest|running|side|next>", rendered)
         self.assertIn("/queue edit <job id|latest|next> <new prompt>", rendered)
         self.assertIn("/queue move <job id|latest|next>", rendered)
