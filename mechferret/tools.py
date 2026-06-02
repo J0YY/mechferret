@@ -2805,6 +2805,10 @@ def _valid_option_comparison_axis_row(value: Any) -> bool:
         return False
     if not _has_finite_number(value, "strongest_score"):
         return False
+    if _safe_int(value.get("evidence_count")) > 0 or _safe_float(value.get("strongest_score")) > 0:
+        prior = value.get("representative_prior")
+        if not isinstance(prior, dict) or not _text_has_http_url(str(prior.get("url", "")).strip()):
+            return False
     next_action = value.get("next_action")
     return isinstance(next_action, str) and bool(next_action.strip())
 
@@ -4283,7 +4287,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
              "evidence_count": {"type": "integer"},
              "representative_prior": {"type": "object"},
              "next_action": {"type": "string"},
-         }}, "description": "assessment.comparison_matrix from verify_novelty; include per-axis covered/evidence_count/next_action fields."},
+         }}, "description": "assessment.comparison_matrix from verify_novelty; include per-axis covered/evidence_count/recent_evidence_count/strongest_score/next_action fields, plus representative_prior with a URL whenever an axis has evidence."},
          "novelty_threat_model": {"type": "array", "items": {"type": "object", "properties": {
              "threat": {"type": "string"},
              "searched": {"type": "boolean"},

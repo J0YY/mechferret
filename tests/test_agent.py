@@ -81,9 +81,18 @@ def _option_comparison_matrix():
             "evidence_count": evidence_count,
             "recent_evidence_count": 1 if covered else 0,
             "strongest_score": 0.34 if covered else 0.0,
+            "representative_prior": (
+                {
+                    "title": f"Closest {axis.replace('_', ' ').title()} Paper",
+                    "url": f"https://arxiv.org/abs/2501.{index:04d}",
+                    "source_type": "paper",
+                }
+                if evidence_count
+                else {}
+            ),
             "next_action": next_action,
         }
-        for axis, covered, evidence_count, next_action in rows
+        for index, (axis, covered, evidence_count, next_action) in enumerate(rows)
     ]
 
 
@@ -957,6 +966,15 @@ class AgentToolTest(unittest.TestCase):
         bad_forged_axis_rows = json.loads(tools.run_tool("present_options", {"options": [forged_axis_rows]}))
         self.assertFalse(bad_forged_axis_rows["ok"])
         self.assertEqual(bad_forged_axis_rows["expected"], "objects with comparison_matrix from verify_novelty assessment")
+
+        unsourced_axis_prior = _validated_option("Unsourced axis prior")
+        unsourced_axis_prior["comparison_matrix"][0] = {
+            **unsourced_axis_prior["comparison_matrix"][0],
+            "representative_prior": {"title": "Closest Paper"},
+        }
+        bad_unsourced_axis_prior = json.loads(tools.run_tool("present_options", {"options": [unsourced_axis_prior]}))
+        self.assertFalse(bad_unsourced_axis_prior["ok"])
+        self.assertEqual(bad_unsourced_axis_prior["expected"], "objects with comparison_matrix from verify_novelty assessment")
 
         bad_threat_model = json.loads(
             tools.run_tool(
