@@ -337,6 +337,14 @@ class AgentToolTest(unittest.TestCase):
         research_props = next(tool for tool in tools.TOOL_SPECS if tool["name"] == "run_research")["parameters"]["properties"]
         self.assertIn("allow_seed_corpus", research_props)
         self.assertIn("source_paths", research_props)
+        web_search_props = next(tool for tool in tools.TOOL_SPECS if tool["name"] == "web_search")["parameters"]["properties"]
+        arxiv_search_props = next(tool for tool in tools.TOOL_SPECS if tool["name"] == "arxiv_search")["parameters"]["properties"]
+        self.assertEqual(web_search_props["max_results"]["minimum"], tools.web_search_result_limit())
+        self.assertEqual(web_search_props["max_results"]["default"], tools.web_search_result_limit())
+        self.assertEqual(arxiv_search_props["max_results"]["minimum"], tools.arxiv_search_result_limit())
+        self.assertEqual(arxiv_search_props["max_results"]["default"], tools.arxiv_search_result_limit())
+        self.assertNotEqual(web_search_props["max_results"]["default"], 5)
+        self.assertNotEqual(arxiv_search_props["max_results"]["default"], 5)
         self.assertIn("selection", next(tool for tool in tools.TOOL_SPECS if tool["name"] == "list_runs")["parameters"]["properties"])
         self.assertIn("selection", next(tool for tool in tools.TOOL_SPECS if tool["name"] == "audit_run")["parameters"]["properties"])
         self.assertIn("selection", next(tool for tool in tools.TOOL_SPECS if tool["name"] == "verify_run")["parameters"]["properties"])

@@ -4304,11 +4304,31 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {"name": "grep", "description": "Search file contents by regex (ripgrep if available). Optional glob filter.",
      "parameters": _obj({"pattern": {"type": "string"}, "path": {"type": "string"}, "glob": {"type": "string"}}, ["pattern"])},
     {"name": "web_search", "description": f"Search the web (returns title + url results). Uses at least {web_search_result_limit()} results per query, even if a smaller max_results is requested. Use for current information and finding sources.",
-     "parameters": _obj({"query": {"type": "string"}, "max_results": {"type": "integer"}}, ["query"])},
+     "parameters": _obj({
+         "query": {"type": "string"},
+         "max_results": {
+             "type": "integer",
+             "minimum": web_search_result_limit(),
+             "default": web_search_result_limit(),
+             "description": f"Number of results to request; must be at least {web_search_result_limit()} for research depth.",
+         },
+     }, ["query"])},
     {"name": "web_fetch", "description": "Fetch a URL and return its readable text content.",
      "parameters": _obj({"url": {"type": "string"}}, ["url"])},
     {"name": "arxiv_search", "description": f"Search arXiv for papers. Uses at least {arxiv_search_result_limit()} results per query, even if a smaller max_results is requested. sort_by: relevance | submittedDate | lastUpdatedDate. Use for literature grounding.",
-     "parameters": _obj({"query": {"type": "string", "description": "arXiv query, e.g. 'cat:cs.LG AND (abs:sparse autoencoder OR abs:linear probe)'"}, "max_results": {"type": "integer"}, "sort_by": {"type": "string", "enum": ["relevance", "submittedDate", "lastUpdatedDate"]}}, ["query"])},
+     "parameters": _obj({
+         "query": {
+             "type": "string",
+             "description": "arXiv query, e.g. 'cat:cs.LG AND (abs:sparse autoencoder OR abs:linear probe)'",
+         },
+         "max_results": {
+             "type": "integer",
+             "minimum": arxiv_search_result_limit(),
+             "default": arxiv_search_result_limit(),
+             "description": f"Number of papers to request; must be at least {arxiv_search_result_limit()} for literature depth.",
+         },
+         "sort_by": {"type": "string", "enum": ["relevance", "submittedDate", "lastUpdatedDate"]},
+     }, ["query"])},
     {"name": "neuronpedia_search", "description": "Semantic search over SAE-feature explanations for an explicit Neuronpedia model id.",
      "parameters": _obj({"model_id": {"type": "string"}, "query": {"type": "string"}}, ["model_id", "query"])},
     {"name": "verify_novelty", "description": "Deep novelty check for a research idea using multi-pass arXiv and web searches across relevance, recency, recent discoveries, architecture variants, recent frontier architectures, model-family discoveries, method, mechanism, evaluation, implementation, replication, failure-mode, protocol, peer-review, code-repository, model-hub, benchmark-tracker, and lab-report angles. Call this for each proposed research direction before presenting it.",
