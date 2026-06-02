@@ -1,11 +1,12 @@
 import json
 import math
 import os
+import sys
 import tempfile
 import threading
 import time
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
@@ -1282,6 +1283,69 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("live output:", rendered)
         self.assertIn("no assistant or tool output captured yet", rendered)
         self.assertNotIn("▶ queued #1", rendered)
+
+    def test_repl_queue_show_captures_direct_background_stdout_and_stderr(self):
+        from mechferret import repl
+
+        release = threading.Event()
+        partial_emitted = threading.Event()
+        err = StringIO()
+
+        def fake_chat(agent, session, text, *, background=False):
+            print("direct stdout before completion")
+            print("direct stderr before completion", file=sys.stderr)
+            partial_emitted.set()
+            self.assertTrue(release.wait(timeout=2))
+            return "final answer"
+
+        out = StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-direct-output.json"))
+            try:
+                job = runner.submit("long prompt")
+                self.assertTrue(partial_emitted.wait(timeout=2))
+                repl._queue_show(runner, [str(job.id)])
+            finally:
+                release.set()
+                runner.wait_idle(timeout=2)
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("direct stdout before completion", rendered)
+        self.assertIn("direct stderr before completion", rendered)
+        self.assertIn("direct stderr before completion", err.getvalue())
+        self.assertIn("direct stdout before completion", "\n".join(job.output))
+        self.assertIn("direct stderr before completion", "\n".join(job.output))
+        self.assertNotIn("▶ queued #1", "\n".join(job.output))
+
+    def test_repl_queue_show_captures_direct_btw_stdout(self):
+        from mechferret import repl
+
+        release = threading.Event()
+        partial_emitted = threading.Event()
+
+        def fake_chat(agent, session, text, *, background=False):
+            print("direct side output before completion")
+            partial_emitted.set()
+            self.assertTrue(release.wait(timeout=2))
+            return "side answer"
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-direct-side-output.json"))
+            try:
+                job = runner.submit_side(repl._btw_prompt("side question"))
+                self.assertTrue(partial_emitted.wait(timeout=2))
+                repl._queue_show(runner, [str(job.id)])
+            finally:
+                release.set()
+                runner.wait_idle(timeout=2)
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("direct side output before completion", rendered)
+        self.assertIn("direct side output before completion", "\n".join(job.output))
+        self.assertNotIn("▶ side #1", "\n".join(job.output))
 
     def test_repl_queue_show_keeps_captured_output_after_completion(self):
         from mechferret import repl

@@ -17,7 +17,7 @@ import sys
 import threading
 import time
 from copy import deepcopy
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -44,6 +44,11 @@ _QUEUE_FILE_LOCKS_GUARD = threading.Lock()
 _QUEUE_FILE_LOCKS: dict[Path, threading.Lock] = {}
 _OUTPUT_LOCK = threading.RLock()
 _BACKGROUND_JOB = threading.local()
+_BACKGROUND_STREAM_CAPTURE = threading.local()
+_STREAM_PROXY_LOCK = threading.RLock()
+_STREAM_PROXY_REFCOUNT = 0
+_STREAM_PROXY_STDOUT_BASE: Any = None
+_STREAM_PROXY_STDERR_BASE: Any = None
 MAX_JOB_OUTPUT_CHARS = 24000
 
 
@@ -55,16 +60,17 @@ def _print_background(text: str, *, capture: bool = True) -> None:
     if capture:
         _record_background_output(text)
     with _OUTPUT_LOCK:
-        if readline is not None and sys.stdin.isatty() and sys.stdout.isatty():
-            sys.stdout.write("\r\033[2K")
+        with _suspend_thread_output_capture():
+            if readline is not None and sys.stdin.isatty() and sys.stdout.isatty():
+                sys.stdout.write("\r\033[2K")
+                print(text)
+                sys.stdout.flush()
+                try:
+                    readline.redisplay()
+                except (AttributeError, OSError):
+                    pass
+                return
             print(text)
-            sys.stdout.flush()
-            try:
-                readline.redisplay()
-            except (AttributeError, OSError):
-                pass
-            return
-        print(text)
 
 
 def _print_background_status(text: str) -> None:
@@ -100,6 +106,141 @@ def _trim_job_output(job: "PromptJob") -> None:
     while job.output and total > MAX_JOB_OUTPUT_CHARS:
         removed = job.output.pop(0)
         total -= len(removed) + 1
+
+
+class _ThreadOutputCaptureProxy:
+    def __init__(self, stream_name: str) -> None:
+        self.stream_name = stream_name
+
+    def write(self, text: str) -> int:
+        value = str(text)
+        stream = _stream_proxy_base(self.stream_name)
+        with _OUTPUT_LOCK:
+            written = stream.write(value)
+        _capture_thread_stream_text(self.stream_name, value)
+        return written
+
+    def flush(self) -> None:
+        _flush_thread_output_capture(self.stream_name)
+        stream = _stream_proxy_base(self.stream_name)
+        with _OUTPUT_LOCK:
+            stream.flush()
+
+    def isatty(self) -> bool:
+        stream = _stream_proxy_base(self.stream_name)
+        return bool(getattr(stream, "isatty", lambda: False)())
+
+    def fileno(self) -> int:
+        stream = _stream_proxy_base(self.stream_name)
+        return stream.fileno()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(_stream_proxy_base(self.stream_name), name)
+
+
+def _stream_proxy_base(stream_name: str) -> Any:
+    base = _STREAM_PROXY_STDERR_BASE if stream_name == "stderr" else _STREAM_PROXY_STDOUT_BASE
+    return base if base is not None else (sys.stderr if stream_name == "stderr" else sys.stdout)
+
+
+def _install_stream_capture_proxies() -> None:
+    global _STREAM_PROXY_REFCOUNT, _STREAM_PROXY_STDOUT_BASE, _STREAM_PROXY_STDERR_BASE
+    with _STREAM_PROXY_LOCK:
+        if _STREAM_PROXY_REFCOUNT == 0:
+            _STREAM_PROXY_STDOUT_BASE = sys.stdout
+            _STREAM_PROXY_STDERR_BASE = sys.stderr
+            sys.stdout = _ThreadOutputCaptureProxy("stdout")  # type: ignore[assignment]
+            sys.stderr = _ThreadOutputCaptureProxy("stderr")  # type: ignore[assignment]
+        _STREAM_PROXY_REFCOUNT += 1
+
+
+def _uninstall_stream_capture_proxies() -> None:
+    global _STREAM_PROXY_REFCOUNT, _STREAM_PROXY_STDOUT_BASE, _STREAM_PROXY_STDERR_BASE
+    with _STREAM_PROXY_LOCK:
+        _STREAM_PROXY_REFCOUNT = max(0, _STREAM_PROXY_REFCOUNT - 1)
+        if _STREAM_PROXY_REFCOUNT == 0:
+            if _STREAM_PROXY_STDOUT_BASE is not None:
+                sys.stdout = _STREAM_PROXY_STDOUT_BASE
+            if _STREAM_PROXY_STDERR_BASE is not None:
+                sys.stderr = _STREAM_PROXY_STDERR_BASE
+            _STREAM_PROXY_STDOUT_BASE = None
+            _STREAM_PROXY_STDERR_BASE = None
+
+
+def _capture_thread_stream_text(stream_name: str, text: str) -> None:
+    if not text or getattr(_BACKGROUND_STREAM_CAPTURE, "suspended", 0):
+        return
+    job = getattr(_BACKGROUND_STREAM_CAPTURE, "job", None)
+    if not isinstance(job, PromptJob):
+        return
+    buffers = getattr(_BACKGROUND_STREAM_CAPTURE, "buffers", None)
+    if not isinstance(buffers, dict):
+        buffers = {"stdout": "", "stderr": ""}
+        _BACKGROUND_STREAM_CAPTURE.buffers = buffers
+    current = str(buffers.get(stream_name, "")) + text
+    lines = current.splitlines(keepends=True)
+    remainder = ""
+    if lines and not lines[-1].endswith(("\n", "\r")):
+        remainder = lines.pop()
+    for line in lines:
+        _record_background_output(line)
+    buffers[stream_name] = remainder
+
+
+def _flush_thread_output_capture(stream_name: str | None = None) -> None:
+    buffers = getattr(_BACKGROUND_STREAM_CAPTURE, "buffers", None)
+    if not isinstance(buffers, dict):
+        return
+    names = [stream_name] if stream_name else ["stdout", "stderr"]
+    for name in names:
+        pending = str(buffers.get(name, ""))
+        if pending:
+            _record_background_output(pending)
+            buffers[name] = ""
+
+
+@contextmanager
+def _suspend_thread_output_capture():
+    prior = getattr(_BACKGROUND_STREAM_CAPTURE, "suspended", 0)
+    _BACKGROUND_STREAM_CAPTURE.suspended = prior + 1
+    try:
+        yield
+    finally:
+        if prior:
+            _BACKGROUND_STREAM_CAPTURE.suspended = prior
+        else:
+            try:
+                delattr(_BACKGROUND_STREAM_CAPTURE, "suspended")
+            except AttributeError:
+                pass
+
+
+@contextmanager
+def _capture_background_streams(job: "PromptJob", runner: "ChatJobRunner"):
+    previous_job = getattr(_BACKGROUND_STREAM_CAPTURE, "job", None)
+    previous_runner = getattr(_BACKGROUND_STREAM_CAPTURE, "runner", None)
+    previous_buffers = getattr(_BACKGROUND_STREAM_CAPTURE, "buffers", None)
+    previous_suspended = getattr(_BACKGROUND_STREAM_CAPTURE, "suspended", None)
+    _BACKGROUND_STREAM_CAPTURE.job = job
+    _BACKGROUND_STREAM_CAPTURE.runner = runner
+    _BACKGROUND_STREAM_CAPTURE.buffers = {"stdout": "", "stderr": ""}
+    _BACKGROUND_STREAM_CAPTURE.suspended = 0
+    _install_stream_capture_proxies()
+    try:
+        yield
+    finally:
+        _flush_thread_output_capture()
+        _uninstall_stream_capture_proxies()
+        _BACKGROUND_STREAM_CAPTURE.job = previous_job
+        _BACKGROUND_STREAM_CAPTURE.runner = previous_runner
+        _BACKGROUND_STREAM_CAPTURE.buffers = previous_buffers
+        if previous_suspended is None:
+            try:
+                delattr(_BACKGROUND_STREAM_CAPTURE, "suspended")
+            except AttributeError:
+                pass
+        else:
+            _BACKGROUND_STREAM_CAPTURE.suspended = previous_suspended
 
 
 def _job_order_key(job: "PromptJob") -> tuple[float, int]:
@@ -724,7 +865,8 @@ class ChatJobRunner:
                 _print_background_status(
                     _c(f"  ▶ queued #{job.id} {job.kind}: {_short_job_text(_display_job_text(job))}", "2")
                 )
-                reply = self._chat_fn(self.agent, self.session, job.text, background=True)
+                with _capture_background_streams(job, self):
+                    reply = self._chat_fn(self.agent, self.session, job.text, background=True)
                 if reply is None:
                     raise RuntimeError("no reply produced")
                 job.reply = reply
@@ -752,7 +894,8 @@ class ChatJobRunner:
             _print_background_status(_c(f"  ▶ side #{job.id}: {_short_job_text(_display_job_text(job))}", "2"))
             side_agent = self._side_agent_factory(self.agent)
             side_session = Session()
-            reply = self._chat_fn(side_agent, side_session, job.text, background=True)
+            with _capture_background_streams(job, self):
+                reply = self._chat_fn(side_agent, side_session, job.text, background=True)
             if reply is None:
                 raise RuntimeError("no reply produced")
             job.reply = reply
