@@ -2121,7 +2121,12 @@ def _novelty_recent_pressure(rows: list[dict[str, Any]]) -> dict[str, Any]:
     recent_titles = []
     for row in recent_rows[:5]:
         title = str(row.get("title", "")).strip()
-        if title:
+        url = str(row.get("url", "")).strip()
+        if title and url:
+            recent_titles.append(f"{title} {url}")
+        elif url:
+            recent_titles.append(url)
+        elif title:
             recent_titles.append(title)
     return {
         "recent_window": _novelty_recent_window_label(),
@@ -3297,7 +3302,9 @@ def _valid_option_recent_pressure(value: Any) -> bool:
     if _safe_int(pressure.get("recent_evidence_count")) <= 0:
         return False
     latest_year = _safe_int(pressure.get("latest_year"))
-    return latest_year >= datetime.now(UTC).year - 2
+    if latest_year < datetime.now(UTC).year - 2:
+        return False
+    return bool(_option_source_refs(pressure.get("recent_prior_titles", [])))
 
 
 def _option_recent_pressure(value: Any) -> dict[str, Any]:
@@ -4320,7 +4327,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
              "recent_evidence_count": {"type": "integer"},
              "latest_year": {"type": "integer"},
              "recent_prior_titles": {"type": "array", "items": {"type": "string"}},
-         }, "description": "assessment.recent_pressure from verify_novelty; include status=recent_prior_present, current recent_window, recent_evidence_count, latest_year, and recent_prior_titles."},
+         }, "description": "assessment.recent_pressure from verify_novelty; include status=recent_prior_present, current recent_window, recent_evidence_count, latest_year, and recent_prior_titles with at least one source URL."},
          "required_delta": {"type": "string", "description": "specific deltas from assessment.required_delta; join multiple entries into one concise string"},
      }, "required": ["title", "summary", "detail", "citations", "novelty_risk", "novelty_verdict", "closest_prior_art", "claim_readiness", "comparison_matrix", "novelty_threat_model", "disqualifying_overlap_tests", "search_audit", "recent_pressure", "required_delta"]}}}, ["options"])},
     {"name": "run_research", "description": "Run the general prompt-to-dossier literature/research pipeline over explicit sources, URLs, memory, or a configured provider. Defaults to a four-round retrieval, critique, and gap-expansion pass unless max_rounds is explicitly set.",

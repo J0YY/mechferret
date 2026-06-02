@@ -278,7 +278,7 @@ def _validated_option(title: str = "Novelty audit") -> dict:
             "recent_window": _recent_window_label(),
             "recent_evidence_count": 1,
             "latest_year": datetime.now(UTC).year,
-            "recent_prior_titles": ["Closest Paper"],
+            "recent_prior_titles": ["Closest Paper https://arxiv.org/abs/2501.0001"],
         },
         "required_delta": ["Show a causal ablation that differs from prior work."],
     }
@@ -1350,7 +1350,7 @@ class AgentToolTest(unittest.TestCase):
             "recent_window": "2020-2022",
             "recent_evidence_count": 1,
             "latest_year": 2022,
-            "recent_prior_titles": ["Old Paper"],
+            "recent_prior_titles": ["Old Paper https://arxiv.org/abs/2201.0001"],
         }
         bad_stale_recent = json.loads(
             tools.run_tool(
@@ -1360,6 +1360,23 @@ class AgentToolTest(unittest.TestCase):
         )
         self.assertFalse(bad_stale_recent["ok"])
         self.assertEqual(bad_stale_recent["expected"], "objects with recent_pressure from verify_novelty assessment")
+
+        unsourced_recent = _validated_option("Unsourced recent evidence")
+        unsourced_recent["recent_pressure"] = {
+            "status": "recent_prior_present",
+            "recent_window": _recent_window_label(),
+            "recent_evidence_count": 1,
+            "latest_year": datetime.now(UTC).year,
+            "recent_prior_titles": ["Recent Paper"],
+        }
+        bad_unsourced_recent = json.loads(
+            tools.run_tool(
+                "present_options",
+                {"options": [unsourced_recent]},
+            )
+        )
+        self.assertFalse(bad_unsourced_recent["ok"])
+        self.assertEqual(bad_unsourced_recent["expected"], "objects with recent_pressure from verify_novelty assessment")
 
         too_few_options = json.loads(
             tools.run_tool(
@@ -1398,6 +1415,7 @@ class AgentToolTest(unittest.TestCase):
         self.assertTrue(ok["option_details"][0]["search_audit"]["focus_coverage"]["claim_collision"])
         self.assertEqual(ok["option_details"][0]["recent_pressure"]["status"], "recent_prior_present")
         self.assertEqual(ok["option_details"][0]["recent_pressure"]["latest_year"], datetime.now(UTC).year)
+        self.assertIn("https://arxiv.org/abs/2501.0001", ok["option_details"][0]["recent_pressure"]["recent_prior_titles"][0])
 
     def test_run_discovery_requires_explicit_model_without_modelled_skill(self):
         from mechferret import tools
@@ -2057,6 +2075,9 @@ class AgentToolTest(unittest.TestCase):
         self.assertTrue(axes["method"]["representative_prior"])
         self.assertEqual(payload["assessment"]["recent_pressure"]["latest_year"], current_year)
         self.assertEqual(payload["assessment"]["recent_pressure"]["status"], "recent_prior_present")
+        self.assertTrue(
+            any("http" in item for item in payload["assessment"]["recent_pressure"]["recent_prior_titles"])
+        )
         self.assertTrue(any(row.get("fetched") for row in payload["web_results"]))
         self.assertIn(payload["assessment"]["evidence_strength"], {"strong_multi_source_overlap", "strong_but_narrow_overlap"})
         self.assertEqual(payload["assessment"]["source_diversity"], "broad_independent")
