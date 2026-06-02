@@ -1100,6 +1100,33 @@ class AgentStackTest(unittest.TestCase):
         self.assertNotIn("saved   #1", rendered)
         self.assertNotIn("saved   #2", rendered)
 
+    def test_repl_queue_view_explains_prompt_and_btw_while_running(self):
+        from mechferret import repl
+
+        release = threading.Event()
+
+        def fake_chat(agent, session, text, *, background=False):
+            self.assertTrue(release.wait(timeout=2))
+            return text
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-live-hint.json"))
+            try:
+                runner.submit("active prompt")
+                deadline = time.monotonic() + 2
+                while runner.active() is None and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                repl._print_queue(runner)
+            finally:
+                release.set()
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("running #1", rendered)
+        self.assertIn("type a prompt, or `/prompt <text>`, to queue it", rendered)
+        self.assertIn("`/btw <text>` for a side question", rendered)
+
     def test_repl_queue_add_explicitly_enqueues_prompt_text(self):
         from mechferret import repl
 

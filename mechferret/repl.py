@@ -1599,6 +1599,8 @@ def _print_queue(runner: ChatJobRunner) -> None:
             print(_c(f"  running #{active.id} {active.kind}: {_short_job_text(_display_job_text(active))}", PURPLE))
         for job in side_active:
             print(_c(f"  side    #{job.id} {job.kind}: {_short_job_text(_display_job_text(job))}", PURPLE))
+        if active is not None or side_active:
+            print(_c("  type a prompt, or `/prompt <text>`, to queue it; use `/btw <text>` for a side question", "2"))
         for job in side_ready:
             print(_c(f"  ready   #{job.id} {job.kind}: {_short_job_text(_display_job_text(job))}", "33"))
         for job in live_deferred:
