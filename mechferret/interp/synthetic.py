@@ -27,15 +27,9 @@ from dataclasses import dataclass, field
 
 from .tasks import Task, get_task
 
-# Standard small interpretability models and their shapes.
-MODEL_SHAPES: dict[str, tuple[int, int, int]] = {
-    "gpt2": (12, 12, 768),
-    "gpt2-small": (12, 12, 768),
-    "gpt2-medium": (24, 16, 1024),
-    "pythia-160m": (12, 12, 768),
-    "pythia-410m": (24, 16, 1024),
-    "synthetic-12L": (12, 12, 768),
-}
+# Generic local-smoke shape. Synthetic runs are explicitly marked as synthetic
+# and must not be treated as model measurements.
+GENERIC_SYNTHETIC_SHAPE: tuple[int, int, int] = (12, 12, 768)
 
 
 def _seeded_rng(*parts: object) -> random.Random:
@@ -45,17 +39,11 @@ def _seeded_rng(*parts: object) -> random.Random:
 
 
 def _shape(model: str | None) -> tuple[int, int, int]:
-    key = _model_key(model)
-    if key in MODEL_SHAPES:
-        return MODEL_SHAPES[key]
+    _model_key(model)
     configured = _configured_shape()
     if configured is not None:
         return configured
-    known = ", ".join(sorted(MODEL_SHAPES))
-    raise ValueError(
-        f"synthetic backend does not know the shape for model {key!r}; "
-        f"use one of: {known}, or set MECHFERRET_SYNTHETIC_SHAPE=layers,heads,d_model."
-    )
+    return GENERIC_SYNTHETIC_SHAPE
 
 
 def _model_key(model: str | None) -> str:

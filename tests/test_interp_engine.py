@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from mechferret.interp.engine import InterpEngine
-from mechferret.interp.synthetic import SyntheticBackend
+from mechferret.interp.synthetic import GENERIC_SYNTHETIC_SHAPE, SyntheticBackend
 from mechferret.interp.tasks import TASKS, get_task, infer_task
 from mechferret.models import ExperimentSpec
 
@@ -47,6 +47,17 @@ class InterpEngineTest(unittest.TestCase):
             positives = [head for head in circuit.heads if head.magnitude > 0]
             self.assertGreaterEqual(len(positives), 1)
             self.assertTrue(all(head.layer >= circuit.n_layers // 3 for head in positives))
+
+    def test_synthetic_backend_has_no_benchmark_model_catalog(self):
+        backend = SyntheticBackend("research/model-x", run_salt=1)
+        self.assertEqual((backend.n_layers, backend.n_heads, backend.d_model), GENERIC_SYNTHETIC_SHAPE)
+        self.assertEqual(backend.circuit("ioi").model, "research/model-x")
+
+    def test_synthetic_shape_can_be_explicitly_configured(self):
+        with patch.dict("os.environ", {"MECHFERRET_SYNTHETIC_SHAPE": "6,4,512"}):
+            backend = SyntheticBackend("research/model-x", run_salt=1)
+
+        self.assertEqual((backend.n_layers, backend.n_heads, backend.d_model), (6, 4, 512))
 
     def test_control_head_is_not_significant(self):
         layer, head = self.backend.control_head("ioi", 0)
