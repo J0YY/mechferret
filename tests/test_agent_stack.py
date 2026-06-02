@@ -3527,6 +3527,16 @@ class AgentStackTest(unittest.TestCase):
         command_names.discard("repl")
         self.assertTrue(command_names <= commands.COMMAND_WORDS)
 
+    def test_cli_discover_backend_choices_are_concrete(self):
+        from mechferret.cli import _command_index_payload, build_parser
+
+        payload = _command_index_payload(build_parser())
+        discover = next(row for row in payload["commands"] if row["name"] == "discover")
+        backend = next(option for option in discover["options"] if option["dest"] == "backend")
+
+        self.assertEqual(backend["choices"], ["synthetic", "transformer_lens", "tl", "real"])
+        self.assertNotIn("auto", backend["choices"])
+
     def test_repl_shortcuts_do_not_shadow_argument_bearing_cli_commands(self):
         from mechferret import repl
 

@@ -463,7 +463,7 @@ Usage:
 usage: mechferret discover [-h] [--skill SKILL]
                            [--task {induction,greater_than,factual_recall,ioi}]
                            [--model MODEL]
-                           [--backend {auto,synthetic,transformer_lens}]
+                           [--backend {synthetic,transformer_lens,tl,real}]
                            [--source SOURCE] [--url URL] [--out OUT] [--db DB]
                            [--max-rounds MAX_ROUNDS]
                            [--max-experiments MAX_EXPERIMENTS]
@@ -484,7 +484,7 @@ Options:
 - `--skill`: Named skill/playbook (see `mechferret /skills`) or a path to a skill JSON.
 - `--task`: choices: `induction`, `greater_than`, `factual_recall`, `ioi`; Interpretability task.
 - `--model`: Model to investigate; required unless --skill declares one.
-- `--backend`: choices: `auto`, `synthetic`, `transformer_lens`; Experiment backend for interpretability probes; required so synthetic smoke data is explicit.
+- `--backend`: choices: `synthetic`, `transformer_lens`, `tl`, `real`; Experiment backend for interpretability probes; required so synthetic smoke data is explicit.
 - `--source`: Prior-art documents to ground hypotheses.
 - `--url`: URL to fetch as prior art.
 - `--out`: Output directory for discovery artifacts.

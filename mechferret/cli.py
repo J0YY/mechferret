@@ -42,6 +42,7 @@ from .registry import all_items, items_by_kind
 
 SUPPORTED_TASK_CHOICES = list(SUPPORTED_TASK_NAMES)
 SUPPORTED_TASK_HELP = "|".join(SUPPORTED_TASK_NAMES)
+DISCOVERY_BACKEND_CHOICES = ["synthetic", "transformer_lens", "tl", "real"]
 from .skills import list_skills, load_skill
 from .sources import example_corpus_path
 from .tools import tool_clean_tool_results, tool_list_tool_results
@@ -277,7 +278,7 @@ def build_parser() -> argparse.ArgumentParser:
     discover.add_argument("--skill", help="Named skill/playbook (see `mechferret /skills`) or a path to a skill JSON.")
     discover.add_argument("--task", choices=SUPPORTED_TASK_CHOICES, help="Interpretability task.")
     discover.add_argument("--model", help="Model to investigate; required unless --skill declares one.")
-    discover.add_argument("--backend", choices=["auto", "synthetic", "transformer_lens"], help="Experiment backend for interpretability probes; required so synthetic smoke data is explicit.")
+    discover.add_argument("--backend", choices=DISCOVERY_BACKEND_CHOICES, help="Experiment backend for interpretability probes; required so synthetic smoke data is explicit.")
     discover.add_argument("--source", action="append", default=[], help="Prior-art documents to ground hypotheses.")
     discover.add_argument("--url", action="append", default=[], help="URL to fetch as prior art.")
     discover.add_argument("--out", default="runs/discovery", help="Output directory for discovery artifacts.")
@@ -1093,7 +1094,7 @@ def handle_discover(args) -> None:
         print(f"Discovery not started: {exc}", file=sys.stderr)
         raise SystemExit(2) from None
     if not args.backend:
-        exc = ValueError("discovery needs an explicit backend; pass --backend synthetic, transformer_lens, or auto.")
+        exc = ValueError("discovery needs an explicit backend; pass --backend synthetic only for smoke data, or --backend transformer_lens/real for real measurements.")
         if args.json:
             print(json.dumps(_error_payload("discover", exc, out_dir=args.out), indent=2, sort_keys=True))
             raise SystemExit(2) from None

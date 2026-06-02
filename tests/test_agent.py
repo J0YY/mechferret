@@ -1541,6 +1541,19 @@ class AgentToolTest(unittest.TestCase):
             schema["parameters"]["properties"]["task"]["enum"],
             ["induction", "greater_than", "factual_recall", "ioi"],
         )
+        self.assertEqual(
+            schema["parameters"]["properties"]["backend"]["enum"],
+            ["real", "synthetic", "tl", "transformer_lens"],
+        )
+
+    def test_run_discovery_rejects_auto_backend_at_tool_boundary(self):
+        from mechferret import tools
+
+        payload = json.loads(tools.run_tool("run_discovery", {"backend": "auto"}))
+
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["argument"], "backend")
+        self.assertNotIn("auto", payload["allowed_values"])
 
     def test_system_prompt_does_not_inject_memory_by_default(self):
         with patch.dict(os.environ, {"MECHFERRET_INCLUDE_MEMORY_CONTEXT": ""}):
@@ -2478,7 +2491,7 @@ class AgentToolTest(unittest.TestCase):
         cases = [
             ("run_research", {"question": "What should we test?", "provider": "bogus"}, "provider", provider_values),
             ("run_discovery", {"provider": "bogus"}, "provider", provider_values),
-            ("run_discovery", {"backend": "quantum"}, "backend", ["auto", "real", "synthetic", "tl", "transformer_lens"]),
+            ("run_discovery", {"backend": "quantum"}, "backend", ["real", "synthetic", "tl", "transformer_lens"]),
             ("write_paper", {"provider": "bogus"}, "provider", provider_values),
             ("review_paper", {"provider": "local"}, "provider", ["anthropic", "auto", "openai"]),
             (

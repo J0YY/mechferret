@@ -1056,7 +1056,7 @@ def tool_run_discovery(args: dict[str, Any]) -> str:
     provider, invalid = _enum_arg(args, "provider", "auto", PROVIDERS)
     if invalid:
         return json.dumps(invalid)
-    backend, invalid = _enum_arg(args, "backend", "auto", DISCOVERY_BACKENDS)
+    backend, invalid = _enum_arg(args, "backend", "synthetic", DISCOVERY_BACKENDS)
     if invalid:
         return json.dumps(invalid)
     question, invalid = _optional_string_arg(args, "question", "")
@@ -1115,14 +1115,13 @@ def tool_run_discovery(args: dict[str, Any]) -> str:
         return json.dumps({
             "ok": False,
             "tool": "run_discovery",
-            "error": "run_discovery needs an explicit backend; pass backend=auto, synthetic, transformer_lens, tl, or real.",
+            "error": "run_discovery needs an explicit backend; pass backend=synthetic only for smoke data, or backend=transformer_lens/tl/real for real measurements.",
             "argument": "backend",
-            "expected": "explicit backend: auto, synthetic, transformer_lens, tl, or real",
+            "expected": "explicit concrete backend: synthetic, transformer_lens, tl, or real",
             "failed_checks": ["backend_required"],
             "next_actions": [
                 "Pass backend=synthetic only for an intentional smoke/demo run.",
                 "Pass backend=transformer_lens or backend=real for real model measurements.",
-                "Pass backend=auto only when automatic real-backend detection is intentional.",
             ],
         })
     budget_requested = any(args.get(name) not in (None, "") for name in ("max_rounds", "max_experiments", "max_gpu_seconds"))
@@ -3559,7 +3558,7 @@ SELECTION_POLICIES = {"latest", "best", "ready"}
 PROVIDERS = {"anthropic", "auto", "local", "openai"}
 REVIEW_PROVIDERS = {"anthropic", "auto", "openai"}
 ARXIV_SORTS = {"lastUpdatedDate", "relevance", "submittedDate"}
-DISCOVERY_BACKENDS = {"auto", "real", "synthetic", "tl", "transformer_lens"}
+DISCOVERY_BACKENDS = {"real", "synthetic", "tl", "transformer_lens"}
 OPENVLA_ACTIONS = {
     "commands",
     "create-manifest",
@@ -4388,7 +4387,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
          "skill": {"type": "string", "description": "Skill name from `mechferret skills`, or a path to a skill JSON."},
          "task": {"type": "string", "enum": SUPPORTED_TASK_CHOICES},
          "model": {"type": "string"},
-         "backend": {"type": "string", "enum": ["auto", "synthetic", "transformer_lens", "tl", "real"]},
+         "backend": {"type": "string", "enum": sorted(DISCOVERY_BACKENDS)},
          "source_paths": {"type": "array", "items": {"type": "string"}, "description": "Optional local source files for literature grounding."},
          "urls": {"type": "array", "items": {"type": "string"}, "description": "Optional URLs for literature grounding."},
          "out_dir": {"type": "string", "description": "Directory for run.json, report.html, trace.jsonl, and related artifacts."},
