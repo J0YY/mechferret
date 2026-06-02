@@ -133,7 +133,7 @@ class InterpEngine:
             task = get_task(_text(getattr(spec, "task", "")))
             probe = get_probe(probe_name)
             backend_raw = _text(getattr(spec, "backend", "")).strip()
-            backend_choice = backend_raw if backend_raw and backend_raw != "auto" else self.requested_backend
+            backend_choice = backend_raw or self.requested_backend
             backend = self._backend(model, backend_choice)
         except Exception as exc:  # noqa: BLE001 - malformed specs become error result rows
             return self._error_result(result_id, spec_id, probe_name, target, str(exc))

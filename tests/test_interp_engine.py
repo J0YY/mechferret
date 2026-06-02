@@ -83,6 +83,24 @@ class InterpEngineTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "backend is required"):
             backends.resolve_backend("gpt2")
 
+    def test_run_spec_honors_explicit_spec_backend(self):
+        key = self.circuit.heads[0]
+        explicit = spec("head_ablation", key.layer, key.head)
+        explicit.backend = "auto"
+        seen_backends = []
+        original_backend = self.engine._backend
+
+        def tracking_backend(model, backend):
+            seen_backends.append(backend)
+            return original_backend(model, backend)
+
+        self.engine._backend = tracking_backend  # type: ignore[method-assign]
+        with patch("mechferret.interp.backends.transformer_lens_available", return_value=False):
+            result = self.engine.run_spec(explicit)
+
+        self.assertEqual(result.status, "ran")
+        self.assertEqual(seen_backends[0], "auto")
+
     def test_all_probes_run(self):
         key = self.circuit.heads[0]
         for probe in ("head_ablation", "activation_patching", "attention_pattern", "direct_logit_attribution", "logit_lens"):
