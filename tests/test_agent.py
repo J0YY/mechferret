@@ -1025,6 +1025,20 @@ class AgentToolTest(unittest.TestCase):
         self.assertFalse(bad_unsearched_threat["ok"])
         self.assertEqual(bad_unsearched_threat["expected"], "objects with novelty_threat_model from verify_novelty assessment")
 
+        unsourced_threat_prior = _validated_option("Unsourced threat prior")
+        unsourced_threat_prior["novelty_threat_model"][1] = {
+            **unsourced_threat_prior["novelty_threat_model"][1],
+            "representative_prior": {"title": "Closest Paper"},
+        }
+        bad_unsourced_threat_prior = json.loads(
+            tools.run_tool(
+                "present_options",
+                {"options": [unsourced_threat_prior]},
+            )
+        )
+        self.assertFalse(bad_unsourced_threat_prior["ok"])
+        self.assertEqual(bad_unsourced_threat_prior["expected"], "objects with novelty_threat_model from verify_novelty assessment")
+
         bad_disqualifying_tests = json.loads(
             tools.run_tool(
                 "present_options",
@@ -1077,6 +1091,23 @@ class AgentToolTest(unittest.TestCase):
         self.assertFalse(bad_unsearched_disqualifier["ok"])
         self.assertEqual(
             bad_unsearched_disqualifier["expected"],
+            "objects with disqualifying_overlap_tests from verify_novelty assessment",
+        )
+
+        unsourced_disqualifier_prior = _validated_option("Unsourced disqualifier prior")
+        unsourced_disqualifier_prior["disqualifying_overlap_tests"][1] = {
+            **unsourced_disqualifier_prior["disqualifying_overlap_tests"][1],
+            "representative_prior": {"title": "Closest Paper"},
+        }
+        bad_unsourced_disqualifier_prior = json.loads(
+            tools.run_tool(
+                "present_options",
+                {"options": [unsourced_disqualifier_prior]},
+            )
+        )
+        self.assertFalse(bad_unsourced_disqualifier_prior["ok"])
+        self.assertEqual(
+            bad_unsourced_disqualifier_prior["expected"],
             "objects with disqualifying_overlap_tests from verify_novelty assessment",
         )
 

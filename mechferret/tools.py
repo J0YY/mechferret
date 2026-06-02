@@ -2862,6 +2862,7 @@ def _valid_option_threat_model(value: Any) -> bool:
         bool(rows)
         and NOVELTY_REQUIRED_THREATS <= set(required)
         and all(row.get("searched") is True and row.get("risk") != "not_searched" for row in required.values())
+        and all(_option_threat_row_has_required_source(row) for row in required.values())
     )
 
 
@@ -2915,6 +2916,7 @@ def _valid_option_disqualifying_tests(value: Any) -> bool:
         bool(rows)
         and NOVELTY_REQUIRED_THREATS <= set(required)
         and all(row.get("risk") != "not_searched" for row in required.values())
+        and all(_option_disqualifying_row_has_required_source(row) for row in required.values())
     )
 
 
@@ -3295,6 +3297,22 @@ def _option_prior(value: Any) -> dict[str, Any]:
     if "score" in value:
         row["score"] = _safe_float(value.get("score"))
     return row
+
+
+def _option_prior_has_url(value: Any) -> bool:
+    return isinstance(value, dict) and _text_has_http_url(str(value.get("url", "")).strip())
+
+
+def _option_threat_row_has_required_source(row: dict[str, Any]) -> bool:
+    if _safe_int(row.get("evidence_count")) <= 0 and _safe_float(row.get("strongest_score")) <= 0:
+        return True
+    return _option_prior_has_url(row.get("representative_prior"))
+
+
+def _option_disqualifying_row_has_required_source(row: dict[str, Any]) -> bool:
+    if row.get("risk") == "searched_no_strong_overlap" and row.get("passed") is True:
+        return True
+    return _option_prior_has_url(row.get("representative_prior"))
 
 
 def _valid_option_recent_pressure(value: Any) -> bool:
@@ -4297,14 +4315,14 @@ TOOL_SPECS: list[dict[str, Any]] = [
              "representative_prior": {"type": "object"},
              "failure_mode": {"type": "string"},
              "next_action": {"type": "string"},
-         }}, "description": "assessment.novelty_threat_model from verify_novelty; include exact_phrase_overlap and claim_collision rows."},
+         }}, "description": "assessment.novelty_threat_model from verify_novelty; include exact_phrase_overlap and claim_collision rows, and representative_prior with a URL whenever a row has evidence."},
          "disqualifying_overlap_tests": {"type": "array", "items": {"type": "object", "properties": {
              "test": {"type": "string"},
              "passed": {"type": "boolean"},
              "risk": {"type": "string"},
              "representative_prior": {"type": "object"},
              "required_evidence": {"type": "string"},
-         }}, "description": "assessment.disqualifying_overlap_tests from verify_novelty; include exact_phrase_overlap and claim_collision rows."},
+         }}, "description": "assessment.disqualifying_overlap_tests from verify_novelty; include exact_phrase_overlap and claim_collision rows, and representative_prior with a URL for any row that needs delta review or disqualifies the option."},
          "search_audit": {"type": "object", "properties": {
              "pass_count": {"type": "integer"},
              "failed_passes": {"type": "integer"},
