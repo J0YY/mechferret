@@ -461,7 +461,7 @@ Usage:
 
 ```text
 usage: mechferret discover [-h] [--skill SKILL]
-                           [--task {ioi,induction,greater_than,factual_recall}]
+                           [--task {induction,greater_than,factual_recall,ioi}]
                            [--model MODEL]
                            [--backend {auto,synthetic,transformer_lens}]
                            [--source SOURCE] [--url URL] [--out OUT] [--db DB]
@@ -482,7 +482,7 @@ Options:
 
 - `-h`, `--help`: show this help message and exit
 - `--skill`: Named skill/playbook (see `mechferret /skills`) or a path to a skill JSON.
-- `--task`: choices: `ioi`, `induction`, `greater_than`, `factual_recall`; Interpretability task.
+- `--task`: choices: `induction`, `greater_than`, `factual_recall`, `ioi`; Interpretability task.
 - `--model`: Model to investigate; required unless --skill declares one.
 - `--backend`: choices: `auto`, `synthetic`, `transformer_lens`; Experiment backend for interpretability probes; required so synthetic smoke data is explicit.
 - `--source`: Prior-art documents to ground hypotheses.
@@ -1109,7 +1109,7 @@ Usage:
 
 ```text
 usage: mechferret modal [-h] [--skill SKILL]
-                        [--task {ioi,induction,greater_than,factual_recall}]
+                        [--task {induction,greater_than,factual_recall,ioi}]
                         [--model MODEL] [--out OUT] [--local-fallback]
                         [--json]
                         [{status,setup,run,deploy}] [question]
@@ -1124,7 +1124,7 @@ Options:
 
 - `-h`, `--help`: show this help message and exit
 - `--skill`: Skill to run remotely.
-- `--task`: choices: `ioi`, `induction`, `greater_than`, `factual_recall`; Interpretability task for remote experiments.
+- `--task`: choices: `induction`, `greater_than`, `factual_recall`, `ioi`; Interpretability task for remote experiments.
 - `--model`: Model to investigate remotely; required unless --skill declares one.
 - `--out`: Output directory for Modal artifacts.
 - `--local-fallback`: Explicitly run a local synthetic fallback if Modal is unavailable or fails.
@@ -1144,7 +1144,7 @@ Usage:
 
 ```text
 usage: mechferret cluster [-h] [--skill SKILL]
-                          [--task {ioi,induction,greater_than,factual_recall}]
+                          [--task {induction,greater_than,factual_recall,ioi}]
                           [--model MODEL] [--out OUT] [--dry-run]
                           [--local-fallback] [--json]
                           [{status,setup,run}] [question]
@@ -1159,7 +1159,7 @@ Options:
 
 - `-h`, `--help`: show this help message and exit
 - `--skill`: Skill to run remotely.
-- `--task`: choices: `ioi`, `induction`, `greater_than`, `factual_recall`; Interpretability task for cluster experiments.
+- `--task`: choices: `induction`, `greater_than`, `factual_recall`, `ioi`; Interpretability task for cluster experiments.
 - `--model`: Model to investigate on the cluster; required unless --skill declares one.
 - `--out`: Output directory for cluster artifacts.
 - `--dry-run`: Print the ssh+srun command without executing.

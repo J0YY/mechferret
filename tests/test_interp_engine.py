@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from mechferret.interp.engine import InterpEngine
 from mechferret.interp.synthetic import GENERIC_SYNTHETIC_SHAPE, SyntheticBackend
-from mechferret.interp.tasks import TASKS, get_task, infer_task
+from mechferret.interp.tasks import SUPPORTED_TASK_NAMES, TASKS, get_task, infer_task
 from mechferret.models import ExperimentSpec
 
 
@@ -29,6 +29,8 @@ class InterpEngineTest(unittest.TestCase):
 
     def test_tasks_registered(self):
         self.assertEqual(set(TASKS), {"ioi", "induction", "greater_than", "factual_recall"})
+        self.assertEqual(SUPPORTED_TASK_NAMES, ("induction", "greater_than", "factual_recall", "ioi"))
+        self.assertEqual(list(TASKS), list(SUPPORTED_TASK_NAMES))
         self.assertEqual(get_task("IOI").name, "ioi")
         self.assertEqual(infer_task("find induction heads"), "induction")
         self.assertEqual(infer_task("plan a vague research project"), "")

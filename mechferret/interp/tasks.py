@@ -134,16 +134,19 @@ def _factual_recall() -> Task:
     )
 
 
+SUPPORTED_TASK_NAMES = ("induction", "greater_than", "factual_recall", "ioi")
+
+
 TASKS: dict[str, Task] = {
     task.name: task
-    for task in (_ioi(), _induction(), _greater_than(), _factual_recall())
+    for task in (_induction(), _greater_than(), _factual_recall(), _ioi())
 }
 
 
 def get_task(name: str) -> Task:
     key = (name or "").strip().lower()
     if key not in TASKS:
-        raise KeyError(f"Unknown interpretability task: {name!r}. Known: {sorted(TASKS)}")
+        raise KeyError(f"Unknown interpretability task: {name!r}. Known: {', '.join(SUPPORTED_TASK_NAMES)}")
     return TASKS[key]
 
 

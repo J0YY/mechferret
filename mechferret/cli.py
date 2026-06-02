@@ -17,6 +17,7 @@ from .costs import estimate_run_cost
 from .discovery import DiscoveryController
 from .goal_loop import GoalLoop
 from .hooks import Budget
+from .interp.tasks import SUPPORTED_TASK_NAMES
 from .ops import bundle_run_artifacts, init_project_notes, list_run_artifacts, memory_clear, memory_recent, memory_summary, open_artifact, print_artifact_result, print_bundle_result, print_doctor, print_project_init, print_project_status, print_quickstart, print_quickstart_run, print_run_list, print_selftest, print_verify_bundle_result, print_verify_result, project_status, quickstart, resolve_artifact, run_quickstart, select_run_artifact, selftest, summarize_run_artifact, verify_bundle_artifacts, verify_run_artifacts
 from .openvla_sae import command_lines as openvla_sae_commands
 from .openvla_sae import create_manifest as create_openvla_sae_manifest
@@ -38,6 +39,9 @@ from .openvla_sae import write_dossier as write_openvla_sae_dossier
 from .openvla_sae import write_plan as write_openvla_sae_plan
 from .paper import TECTONIC_TIMEOUT_SECONDS, print_paper_result, print_review_result, review_paper, write_paper_from_artifact
 from .registry import all_items, items_by_kind
+
+SUPPORTED_TASK_CHOICES = list(SUPPORTED_TASK_NAMES)
+SUPPORTED_TASK_HELP = "|".join(SUPPORTED_TASK_NAMES)
 from .skills import list_skills, load_skill
 from .sources import example_corpus_path
 from .tools import tool_clean_tool_results, tool_list_tool_results
@@ -271,7 +275,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     discover.add_argument("question", nargs="?", default="", help="Research question (optional if --skill is given).")
     discover.add_argument("--skill", help="Named skill/playbook (see `mechferret /skills`) or a path to a skill JSON.")
-    discover.add_argument("--task", choices=["ioi", "induction", "greater_than", "factual_recall"], help="Interpretability task.")
+    discover.add_argument("--task", choices=SUPPORTED_TASK_CHOICES, help="Interpretability task.")
     discover.add_argument("--model", help="Model to investigate; required unless --skill declares one.")
     discover.add_argument("--backend", choices=["auto", "synthetic", "transformer_lens"], help="Experiment backend for interpretability probes; required so synthetic smoke data is explicit.")
     discover.add_argument("--source", action="append", default=[], help="Prior-art documents to ground hypotheses.")
@@ -296,7 +300,7 @@ def build_parser() -> argparse.ArgumentParser:
     modal_cmd.add_argument("action", nargs="?", default="status", choices=["status", "setup", "run", "deploy"], help="Modal workflow action.")
     modal_cmd.add_argument("question", nargs="?", default="", help="Question for remote run actions.")
     modal_cmd.add_argument("--skill", help="Skill to run remotely.")
-    modal_cmd.add_argument("--task", choices=["ioi", "induction", "greater_than", "factual_recall"], help="Interpretability task for remote experiments.")
+    modal_cmd.add_argument("--task", choices=SUPPORTED_TASK_CHOICES, help="Interpretability task for remote experiments.")
     modal_cmd.add_argument("--model", help="Model to investigate remotely; required unless --skill declares one.")
     modal_cmd.add_argument("--out", default="runs/modal", help="Output directory for Modal artifacts.")
     modal_cmd.add_argument("--local-fallback", action="store_true", help="Explicitly run a local synthetic fallback if Modal is unavailable or fails.")
@@ -306,7 +310,7 @@ def build_parser() -> argparse.ArgumentParser:
     cluster_cmd.add_argument("action", nargs="?", default="status", choices=["status", "setup", "run"], help="Cluster workflow action.")
     cluster_cmd.add_argument("question", nargs="?", default="", help="Question for remote run actions.")
     cluster_cmd.add_argument("--skill", help="Skill to run remotely.")
-    cluster_cmd.add_argument("--task", choices=["ioi", "induction", "greater_than", "factual_recall"], help="Interpretability task for cluster experiments.")
+    cluster_cmd.add_argument("--task", choices=SUPPORTED_TASK_CHOICES, help="Interpretability task for cluster experiments.")
     cluster_cmd.add_argument("--model", help="Model to investigate on the cluster; required unless --skill declares one.")
     cluster_cmd.add_argument("--out", default="runs/cluster", help="Output directory for cluster artifacts.")
     cluster_cmd.add_argument("--dry-run", action="store_true", help="Print the ssh+srun command without executing.")
@@ -3371,7 +3375,7 @@ def _command_error_next_actions(command: str, error: str) -> list[str]:
         if "explicit backend" in lowered or "backend is required" in lowered:
             actions.append("Pass --backend synthetic only for an intentional smoke/demo run, or --backend transformer_lens for real model measurements.")
         if "could not infer" in lowered or "explicit task" in lowered or "question, --task, or --skill" in lowered:
-            actions.append("Pass --task ioi|induction|greater_than|factual_recall, use --skill, or run literature mode first.")
+            actions.append(f"Pass --task <supported task> ({SUPPORTED_TASK_HELP}), use --skill, or run literature mode first.")
         if "not aligned" in lowered or "mismatch" in lowered or "unsupported term" in lowered:
             actions.append("Use `mechferret run ...` for planning, `mechferret sae openvla plan` for OpenVLA/SAE work, or pass --allow-mismatch for an intentional demo.")
         return actions or ["Retry with explicit --model and --task or a matching --skill."]

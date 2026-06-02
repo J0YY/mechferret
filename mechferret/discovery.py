@@ -34,7 +34,7 @@ from .hooks import Budget, BudgetGuard
 from .interp.critic import ExperimentCritic
 from .interp.engine import InterpEngine
 from .interp.hypotheses import HypothesisGenerator, classify_head_role, runtime_seed_plan, update_hypotheses
-from .interp.tasks import get_task, infer_task
+from .interp.tasks import SUPPORTED_TASK_NAMES, get_task, infer_task
 from .llm import make_research_adapter, synthesize_answer_with_provider
 from .memory import ResearchMemory
 from .models import (
@@ -48,6 +48,8 @@ from .models import (
     Source,
     utc_now,
 )
+
+SUPPORTED_TASK_HELP = "|".join(SUPPORTED_TASK_NAMES)
 from .provenance import refresh_run_manifest
 from .report import write_artifacts
 from .retrieval import BM25Index
@@ -285,7 +287,7 @@ def request_alignment_issue(
     if not explicit_task and not skill and not matched_tasks:
         return (
             "Discovery could not infer a supported interpretability task from the question. "
-            "Choose --task ioi|induction|greater_than|factual_recall, use --skill, or run literature mode first."
+            f"Choose --task <supported task> ({SUPPORTED_TASK_HELP}), use --skill, or run literature mode first."
         )
     return ""
 
@@ -337,7 +339,7 @@ class DiscoveryController:
         if not task_name:
             raise ValueError(
                 "Discovery needs an explicit task when the prompt does not name a supported task. "
-                "Choose --task ioi|induction|greater_than|factual_recall, use --skill, or run literature mode first."
+                f"Choose --task <supported task> ({SUPPORTED_TASK_HELP}), use --skill, or run literature mode first."
             )
         get_task(task_name)  # validate
         question = question or f"Which components of {model} implement the {task_name} behaviour?"

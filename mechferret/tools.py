@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 
+from .interp.tasks import SUPPORTED_TASK_NAMES
 from .policy import (
     arxiv_search_result_limit,
     novelty_arxiv_result_limit,
@@ -35,6 +36,8 @@ PERSIST_THRESHOLD = 16000  # results larger than this are written to disk, not t
 JSON_PREVIEW_FIELD_LIMIT = 2000
 CHECK_LIST_STRUCTURED_LIMIT = 480
 RESULTS_DIR = Path(".mechferret/tool_results")
+SUPPORTED_TASK_CHOICES = list(SUPPORTED_TASK_NAMES)
+SUPPORTED_TASK_HELP = "|".join(SUPPORTED_TASK_NAMES)
 DEFAULT_WEB_RESULTS = web_search_result_limit()
 DEFAULT_ARXIV_RESULTS = arxiv_search_result_limit()
 NOVELTY_RELATED_LIMIT = 24
@@ -1221,7 +1224,7 @@ def _discovery_error_payload(error: str, *, out_dir: str) -> dict[str, Any]:
         next_actions.append("Ask the user which model to investigate, then pass model explicitly.")
     if "could not infer" in lowered or "explicit task" in lowered or "unknown interpretability task" in lowered:
         failed_checks.append("task_required")
-        next_actions.append("Ask the user to choose task ioi, induction, greater_than, or factual_recall, or use a matching skill.")
+        next_actions.append(f"Ask the user to choose a supported task ({SUPPORTED_TASK_HELP}), or use a matching skill.")
     if "not aligned" in lowered or "mismatch" in lowered or "unsupported term" in lowered:
         failed_checks.append("request_alignment")
         next_actions.append("Use run_research for planning, openvla_sae for OpenVLA/SAE work, or pass allow_mismatch only for an intentional demo.")
@@ -4383,7 +4386,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
      "parameters": _obj({
          "question": {"type": "string"},
          "skill": {"type": "string", "description": "Skill name from `mechferret skills`, or a path to a skill JSON."},
-         "task": {"type": "string", "enum": ["ioi", "induction", "greater_than", "factual_recall"]},
+         "task": {"type": "string", "enum": SUPPORTED_TASK_CHOICES},
          "model": {"type": "string"},
          "backend": {"type": "string", "enum": ["auto", "synthetic", "transformer_lens", "tl", "real"]},
          "source_paths": {"type": "array", "items": {"type": "string"}, "description": "Optional local source files for literature grounding."},

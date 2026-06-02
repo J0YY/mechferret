@@ -1530,6 +1530,17 @@ class AgentToolTest(unittest.TestCase):
         self.assertIn("task_required", payload["failed_checks"])
         self.assertNotIn("tool_exception", payload["failed_checks"])
         self.assertTrue(any("task" in action.lower() for action in payload["next_actions"]))
+        self.assertTrue(any("induction|greater_than|factual_recall|ioi" in action for action in payload["next_actions"]))
+
+    def test_run_discovery_tool_schema_lists_benchmark_task_last(self):
+        from mechferret import tools
+
+        schema = next(spec for spec in tools.all_specs() if spec["name"] == "run_discovery")
+
+        self.assertEqual(
+            schema["parameters"]["properties"]["task"]["enum"],
+            ["induction", "greater_than", "factual_recall", "ioi"],
+        )
 
     def test_system_prompt_does_not_inject_memory_by_default(self):
         with patch.dict(os.environ, {"MECHFERRET_INCLUDE_MEMORY_CONTEXT": ""}):

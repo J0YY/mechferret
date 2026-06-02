@@ -20,6 +20,6 @@ from __future__ import annotations
 
 from .engine import InterpEngine
 from .probes import PROBES
-from .tasks import TASKS, get_task
+from .tasks import SUPPORTED_TASK_NAMES, TASKS, get_task
 
-__all__ = ["InterpEngine", "PROBES", "TASKS", "get_task"]
+__all__ = ["InterpEngine", "PROBES", "SUPPORTED_TASK_NAMES", "TASKS", "get_task"]
