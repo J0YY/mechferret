@@ -1284,6 +1284,38 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("no assistant or tool output captured yet", rendered)
         self.assertNotIn("▶ queued #1", rendered)
 
+    def test_repl_queue_show_filters_legacy_saved_runner_banner_output(self):
+        from mechferret import repl
+
+        queue_path = Path("queue-legacy-banner-output.json")
+        repl._save_queue_jobs(
+            queue_path,
+            [
+                repl.PromptJob(
+                    id=7,
+                    text="new robot policy architectures",
+                    status="running",
+                    output=["▶ queued #7 prompt: new robot policy architectures"],
+                )
+            ],
+        )
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=lambda *args, **kwargs: "resumed", queue_path=queue_path)
+            try:
+                repl._queue_show(runner, ["#7"])
+            finally:
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("job #7 saved", rendered)
+        self.assertIn("new robot policy architectures", rendered)
+        self.assertIn("live output:", rendered)
+        self.assertIn("no assistant or tool output captured yet", rendered)
+        self.assertNotIn("▶ queued #7", rendered)
+        self.assertEqual(repl._load_saved_queue(queue_path)[0].output, [])
+
     def test_repl_queue_show_captures_direct_background_stdout_and_stderr(self):
         from mechferret import repl
 

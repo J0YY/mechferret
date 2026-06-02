@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import re
 import shlex
 import sys
 import threading
@@ -106,6 +107,21 @@ def _trim_job_output(job: "PromptJob") -> None:
     while job.output and total > MAX_JOB_OUTPUT_CHARS:
         removed = job.output.pop(0)
         total -= len(removed) + 1
+
+
+def _is_internal_job_output_line(text: str) -> bool:
+    cleaned = _strip_ansi(str(text)).strip()
+    if not cleaned:
+        return True
+    return bool(
+        re.match(r"^[▶✓]\s+(?:queued|side|finished(?:\s+side)?)\s+#\d+\b", cleaned)
+        or re.match(r"^(?:skipped canceled|error in queued|error in side)\s+#\d+\b", cleaned)
+        or re.match(r"^use /queue (?:show|tail|apply|choose)\s+#\d+\b", cleaned)
+    )
+
+
+def _display_job_output(job: "PromptJob", *, limit: int = 80) -> list[str]:
+    return [line for line in job.output[-limit:] if not _is_internal_job_output_line(line)]
 
 
 class _ThreadOutputCaptureProxy:
@@ -965,7 +981,11 @@ def _load_saved_queue(path: Path = QUEUE_FILE) -> list[PromptJob]:
         created_at = row.get("created_at") if isinstance(row.get("created_at"), (int, float)) else time.time()
         raw_id = row.get("id")
         job_id = int(raw_id) if isinstance(raw_id, int) and raw_id > 0 else len(jobs) + 1
-        output = [str(item) for item in row.get("output", []) if isinstance(item, str) and item.strip()]
+        output = [
+            str(item)
+            for item in row.get("output", [])
+            if isinstance(item, str) and item.strip() and not _is_internal_job_output_line(item)
+        ]
         reply = row.get("reply") if isinstance(row.get("reply"), str) else None
         error = row.get("error") if isinstance(row.get("error"), str) else ""
         applied = row.get("applied") if type(row.get("applied")) is bool else False
@@ -1947,10 +1967,11 @@ def _queue_show(runner: ChatJobRunner, args: list[str]) -> None:
         print(_indent(job.error))
     print(_c("  prompt:", "1"))
     print(_render_reply(_display_job_text(job)))
-    if job.output:
+    display_output = _display_job_output(job)
+    if display_output:
         label = "captured output:" if job.reply or job.status in TERMINAL_JOB_STATUSES else "live output:"
         print(_c(f"  {label}", "1"))
-        print(_render_reply("\n".join(job.output[-80:])))
+        print(_render_reply("\n".join(display_output)))
     elif job.status == "running":
         print(_c("  live output:", "1"))
         print(_c("  (no assistant or tool output captured yet; use /queue tail to follow it)", "2"))
@@ -2053,8 +2074,9 @@ def _queue_tail(runner: ChatJobRunner, args: list[str]) -> None:
         return
     if once:
         print(_c(f"  output snapshot for #{job.id} {job.kind}", "2"))
-        if job.output:
-            print(_render_reply("\n".join(job.output[-80:])))
+        output = _display_job_output(job)
+        if output:
+            print(_render_reply("\n".join(output)))
         elif job.status == "running":
             print(_c("  (no assistant or tool output captured yet)", "2"))
         else:
@@ -2066,7 +2088,7 @@ def _queue_tail(runner: ChatJobRunner, args: list[str]) -> None:
     seen = 0
     deadline = time.monotonic() + timeout
     while True:
-        output = list(job.output)
+        output = _display_job_output(job, limit=len(job.output))
         if len(output) > seen:
             print(_render_reply("\n".join(output[seen:])))
             seen = len(output)
