@@ -21,24 +21,33 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 
+from .policy import (
+    arxiv_search_result_limit,
+    novelty_arxiv_result_limit,
+    novelty_min_arxiv_passes,
+    novelty_min_web_passes,
+    novelty_web_result_limit,
+    web_search_result_limit,
+)
+
 MAX_OUTPUT = 12000
 PERSIST_THRESHOLD = 16000  # results larger than this are written to disk, not truncated
 JSON_PREVIEW_FIELD_LIMIT = 2000
 CHECK_LIST_STRUCTURED_LIMIT = 480
 RESULTS_DIR = Path(".mechferret/tool_results")
-DEFAULT_WEB_RESULTS = 50
-DEFAULT_ARXIV_RESULTS = 50
+DEFAULT_WEB_RESULTS = web_search_result_limit()
+DEFAULT_ARXIV_RESULTS = arxiv_search_result_limit()
 NOVELTY_RELATED_LIMIT = 24
 NOVELTY_FOCUSED_LIMIT = 10
-NOVELTY_QUERY_RESULT_LIMIT = 50
+NOVELTY_QUERY_RESULT_LIMIT = novelty_arxiv_result_limit()
 NOVELTY_MAX_QUERY_PASSES = 36
 NOVELTY_CLOSEST_PRIOR_LIMIT = 8
-NOVELTY_WEB_RESULT_LIMIT = 50
+NOVELTY_WEB_RESULT_LIMIT = novelty_web_result_limit()
 NOVELTY_WEB_MAX_QUERY_PASSES = 32
 NOVELTY_WEB_FETCH_LIMIT = 12
 NOVELTY_WEB_FETCH_CHARS = 2400
-NOVELTY_MIN_OPTION_ARXIV_PASSES = 12
-NOVELTY_MIN_OPTION_WEB_PASSES = 12
+NOVELTY_MIN_OPTION_ARXIV_PASSES = novelty_min_arxiv_passes()
+NOVELTY_MIN_OPTION_WEB_PASSES = novelty_min_web_passes()
 NOVELTY_RISKS = {
     "high_prior_art_risk",
     "medium_prior_art_risk",
@@ -799,10 +808,11 @@ def tool_web_search(args: dict[str, Any]) -> str:
     query, invalid = _string_arg(args, "query")
     if invalid:
         return json.dumps(invalid)
-    max_results, invalid = _int_arg(args, "max_results", DEFAULT_WEB_RESULTS, min_value=1)
+    floor = web_search_result_limit()
+    max_results, invalid = _int_arg(args, "max_results", floor, min_value=1)
     if invalid:
         return json.dumps(invalid)
-    max_results = max(max_results, DEFAULT_WEB_RESULTS)
+    max_results = max(max_results, floor)
     results = web_search(query, max_results=max_results)
     return json.dumps(results) if results else "(no results)"
 
@@ -825,10 +835,11 @@ def tool_arxiv_search(args: dict[str, Any]) -> str:
     query, invalid = _string_arg(args, "query")
     if invalid:
         return json.dumps(invalid)
-    max_results, invalid = _int_arg(args, "max_results", DEFAULT_ARXIV_RESULTS, min_value=1)
+    floor = arxiv_search_result_limit()
+    max_results, invalid = _int_arg(args, "max_results", floor, min_value=1)
     if invalid:
         return json.dumps(invalid)
-    max_results = max(max_results, DEFAULT_ARXIV_RESULTS)
+    max_results = max(max_results, floor)
     sort_by, invalid = _enum_arg(args, "sort_by", "relevance", ARXIV_SORTS)
     if invalid:
         return json.dumps(invalid)
@@ -1565,7 +1576,7 @@ def _novelty_plan_item(query: str, sort_by: str, focus: str) -> dict[str, Any]:
     return {
         "query": query,
         "sort_by": sort_by,
-        "max_results": NOVELTY_QUERY_RESULT_LIMIT,
+        "max_results": novelty_arxiv_result_limit(),
         "focus": focus,
     }
 
@@ -1573,7 +1584,7 @@ def _novelty_plan_item(query: str, sort_by: str, focus: str) -> dict[str, Any]:
 def _novelty_web_plan_item(query: str, focus: str) -> dict[str, Any]:
     return {
         "query": query,
-        "max_results": NOVELTY_WEB_RESULT_LIMIT,
+        "max_results": novelty_web_result_limit(),
         "focus": focus,
     }
 
@@ -2183,8 +2194,8 @@ def _novelty_claim_readiness(risk: str, top_score: float, coverage: dict[str, An
     checks = {
         "deep_query_plan": coverage.get("arxiv_query_count", 0) >= 10
         and coverage.get("web_query_count", 0) >= 8
-        and coverage.get("arxiv_results_per_query", 0) >= 50
-        and coverage.get("web_results_per_query", 0) >= NOVELTY_WEB_RESULT_LIMIT,
+        and coverage.get("arxiv_results_per_query", 0) >= novelty_arxiv_result_limit()
+        and coverage.get("web_results_per_query", 0) >= novelty_web_result_limit(),
         "focus_breadth": all(
             bool(focus_coverage.get(name))
             for name in (
@@ -2971,15 +2982,17 @@ def _valid_option_search_audit(value: Any) -> bool:
     web_unique = _option_search_source_unique_added(focus_summary, "web")
     if audit.get("failed_passes", 0) != 0 or audit.get("failed_focuses"):
         return False
-    if audit.get("pass_count", 0) < NOVELTY_MIN_OPTION_ARXIV_PASSES + NOVELTY_MIN_OPTION_WEB_PASSES:
+    min_arxiv_passes = novelty_min_arxiv_passes()
+    min_web_passes = novelty_min_web_passes()
+    if audit.get("pass_count", 0) < min_arxiv_passes + min_web_passes:
         return False
-    if arxiv_passes < NOVELTY_MIN_OPTION_ARXIV_PASSES or web_passes < NOVELTY_MIN_OPTION_WEB_PASSES:
+    if arxiv_passes < min_arxiv_passes or web_passes < min_web_passes:
         return False
     if arxiv_unique <= 0 or web_unique <= 0:
         return False
-    if _option_search_source_requested_max(focus_summary, "arxiv") < NOVELTY_QUERY_RESULT_LIMIT:
+    if _option_search_source_requested_max(focus_summary, "arxiv") < novelty_arxiv_result_limit():
         return False
-    if _option_search_source_requested_max(focus_summary, "web") < NOVELTY_WEB_RESULT_LIMIT:
+    if _option_search_source_requested_max(focus_summary, "web") < novelty_web_result_limit():
         return False
     coverage = _option_search_focus_coverage(focus_summary)
     if not all(coverage.get(name) for name in NOVELTY_REQUIRED_OPTION_SEARCH_FOCUS):
@@ -4278,11 +4291,11 @@ TOOL_SPECS: list[dict[str, Any]] = [
      "parameters": _obj({"pattern": {"type": "string"}, "path": {"type": "string"}}, ["pattern"])},
     {"name": "grep", "description": "Search file contents by regex (ripgrep if available). Optional glob filter.",
      "parameters": _obj({"pattern": {"type": "string"}, "path": {"type": "string"}, "glob": {"type": "string"}}, ["pattern"])},
-    {"name": "web_search", "description": "Search the web (returns title + url results). Uses at least 50 results per query, even if a smaller max_results is requested. Use for current information and finding sources.",
+    {"name": "web_search", "description": f"Search the web (returns title + url results). Uses at least {web_search_result_limit()} results per query, even if a smaller max_results is requested. Use for current information and finding sources.",
      "parameters": _obj({"query": {"type": "string"}, "max_results": {"type": "integer"}}, ["query"])},
     {"name": "web_fetch", "description": "Fetch a URL and return its readable text content.",
      "parameters": _obj({"url": {"type": "string"}}, ["url"])},
-    {"name": "arxiv_search", "description": "Search arXiv for papers. Uses at least 50 results per query, even if a smaller max_results is requested. sort_by: relevance | submittedDate | lastUpdatedDate. Use for literature grounding.",
+    {"name": "arxiv_search", "description": f"Search arXiv for papers. Uses at least {arxiv_search_result_limit()} results per query, even if a smaller max_results is requested. sort_by: relevance | submittedDate | lastUpdatedDate. Use for literature grounding.",
      "parameters": _obj({"query": {"type": "string", "description": "arXiv query, e.g. 'cat:cs.LG AND (abs:sparse autoencoder OR abs:linear probe)'"}, "max_results": {"type": "integer"}, "sort_by": {"type": "string", "enum": ["relevance", "submittedDate", "lastUpdatedDate"]}}, ["query"])},
     {"name": "neuronpedia_search", "description": "Semantic search over SAE-feature explanations for an explicit Neuronpedia model id.",
      "parameters": _obj({"model_id": {"type": "string"}, "query": {"type": "string"}}, ["model_id", "query"])},
@@ -4342,7 +4355,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
              "source_domain_counts": {"type": "object"},
              "focus_summary": {"type": "array", "items": {"type": "object"}},
              "passes": {"type": "array", "items": {"type": "object"}},
-        }, "description": "assessment.search_audit from verify_novelty; include pass_count, failed_passes, empty_search_passes, duplicate_only_search_passes, focus_coverage, evidence_focus_coverage, source_axis_coverage, missing_focus_coverage, missing_evidence_focus_coverage, missing_source_axis_coverage, source_type_counts, source_domain_counts, focus_summary, and passes with per-pass source_types/source_domains. The audit must prove at least 12 arXiv passes at 50 results, 12 web passes at 50 results, focused deep-search coverage, source-axis evidence from per-pass rows, unique_added evidence from both arXiv and web, and zero failed retrieval passes."},
+        }, "description": f"assessment.search_audit from verify_novelty; include pass_count, failed_passes, empty_search_passes, duplicate_only_search_passes, focus_coverage, evidence_focus_coverage, source_axis_coverage, missing_focus_coverage, missing_evidence_focus_coverage, missing_source_axis_coverage, source_type_counts, source_domain_counts, focus_summary, and passes with per-pass source_types/source_domains. The audit must prove at least {novelty_min_arxiv_passes()} arXiv passes at {novelty_arxiv_result_limit()} results, {novelty_min_web_passes()} web passes at {novelty_web_result_limit()} results, focused deep-search coverage, source-axis evidence from per-pass rows, unique_added evidence from both arXiv and web, and zero failed retrieval passes."},
          "recent_pressure": {"type": "object", "properties": {
              "status": {"type": "string"},
              "recent_window": {"type": "string"},

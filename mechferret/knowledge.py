@@ -16,6 +16,8 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from typing import Any
 
+from .policy import MAX_RETRIEVAL_RESULTS, arxiv_search_result_limit, web_search_result_limit
+
 _UA = "mechferret/0.1 (interpretability research agent)"
 
 
@@ -67,13 +69,14 @@ def web_fetch(url: str, max_chars: int = 6000, timeout: int = 20) -> str:
     return text[:max_chars]
 
 
-def web_search(query: str, max_results: int = 50, timeout: int = 20) -> list[dict]:
+def web_search(query: str, max_results: int | None = None, timeout: int = 20) -> list[dict]:
     """General web search via DuckDuckGo's HTML endpoint (no API key)."""
 
     query = _text(query).strip()
     if not query:
         return []
-    max_results = max(50, _positive_int(max_results, 50, upper=50))
+    floor = web_search_result_limit()
+    max_results = max(floor, _positive_int(max_results, floor, upper=MAX_RETRIEVAL_RESULTS))
     timeout = _positive_int(timeout, 20, upper=120)
     data = urllib.parse.urlencode({"q": query}).encode()
     req = urllib.request.Request(
@@ -126,13 +129,14 @@ _OPENSEARCH = "http://a9.com/-/spec/opensearch/1.1/"
 _NS = {"a": _ATOM, "os": _OPENSEARCH}
 
 
-def search_arxiv(query: str, max_results: int = 50, sort_by: str = "relevance", timeout: int = 30) -> tuple[int, list[dict]]:
+def search_arxiv(query: str, max_results: int | None = None, sort_by: str = "relevance", timeout: int = 30) -> tuple[int, list[dict]]:
     """Search arXiv. Returns (total_results, results). sort_by in {relevance, submittedDate, lastUpdatedDate}."""
 
     query = _text(query).strip()
     if not query:
         return 0, []
-    max_results = max(50, _positive_int(max_results, 50, upper=50))
+    floor = arxiv_search_result_limit()
+    max_results = max(floor, _positive_int(max_results, floor, upper=MAX_RETRIEVAL_RESULTS))
     sort_by = _text(sort_by).strip()
     if sort_by not in {"relevance", "submittedDate", "lastUpdatedDate"}:
         sort_by = "relevance"

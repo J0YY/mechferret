@@ -1946,6 +1946,31 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(arxiv_calls[0]["max_results"], 50)
         self.assertEqual(web_calls[0]["max_results"], 50)
 
+    def test_retrieval_tools_use_raised_policy_floor(self):
+        from mechferret import tools
+
+        arxiv_calls = []
+        web_calls = []
+
+        def fake_arxiv(query, max_results=20, sort_by="relevance"):
+            arxiv_calls.append({"query": query, "max_results": max_results, "sort_by": sort_by})
+            return 0, []
+
+        def fake_web(query, max_results=12):
+            web_calls.append({"query": query, "max_results": max_results})
+            return []
+
+        with (
+            patch.dict(os.environ, {"MECHFERRET_ARXIV_SEARCH_RESULTS": "80", "MECHFERRET_WEB_SEARCH_RESULTS": "70"}),
+            patch("mechferret.knowledge.search_arxiv", side_effect=fake_arxiv),
+            patch("mechferret.knowledge.web_search", side_effect=fake_web),
+        ):
+            tools.run_tool("arxiv_search", {"query": "sparse autoencoder", "max_results": 5})
+            tools.run_tool("web_search", {"query": "sparse autoencoder", "max_results": 5})
+
+        self.assertEqual(arxiv_calls[0]["max_results"], 80)
+        self.assertEqual(web_calls[0]["max_results"], 70)
+
     def test_verify_novelty_runs_deep_recent_method_search(self):
         from mechferret import tools
 
@@ -2255,6 +2280,18 @@ class AgentToolTest(unittest.TestCase):
         self.assertNotIn("transformer", combined)
         self.assertNotIn("sparse autoencoder", combined)
         self.assertNotIn("github " + "project", combined)
+
+    def test_verify_novelty_search_plan_uses_raised_policy_results(self):
+        from mechferret import tools
+
+        with patch.dict(os.environ, {"MECHFERRET_NOVELTY_ARXIV_RESULTS": "90", "MECHFERRET_NOVELTY_WEB_RESULTS": "80"}):
+            arxiv_plan = tools._novelty_search_plan("adaptive probe routing", None)
+            web_plan = tools._novelty_web_search_plan("adaptive probe routing", None)
+
+        self.assertTrue(arxiv_plan)
+        self.assertTrue(web_plan)
+        self.assertTrue(all(item["max_results"] == 90 for item in arxiv_plan))
+        self.assertTrue(all(item["max_results"] == 80 for item in web_plan))
 
     def test_verify_novelty_marks_duplicate_only_focuses_not_ready(self):
         from mechferret import tools

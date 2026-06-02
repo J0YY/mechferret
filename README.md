@@ -443,6 +443,19 @@ The intended loop is:
 
 That is the prompt-to-paper story.
 
+Novelty and retrieval depth are policy knobs, not hidden shallow defaults. A
+small `max_results` requested by a model is raised to the configured floor
+instead of being trusted. The default floor is 50 results per query, and you can
+raise it without editing code:
+
+```bash
+export MECHFERRET_RETRIEVAL_MIN_RESULTS=80
+export MECHFERRET_NOVELTY_ARXIV_RESULTS=100
+export MECHFERRET_NOVELTY_WEB_RESULTS=100
+export MECHFERRET_NOVELTY_MIN_ARXIV_PASSES=16
+export MECHFERRET_NOVELTY_MIN_WEB_PASSES=16
+```
+
 ## Research Modes
 
 MechFerret supports a few different levels of "realness" because a research

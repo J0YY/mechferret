@@ -1,4 +1,5 @@
 import json
+import os
 import urllib.parse
 import unittest
 from unittest.mock import patch
@@ -87,6 +88,34 @@ class KnowledgeTest(unittest.TestCase):
         with patch("urllib.request.urlopen", return_value=_Response(feed)) as opened:
             search_arxiv("sae", max_results=2 + 3)
         self.assertEqual(self._query_param(opened.call_args.args[0].full_url, "max_results"), "50")
+
+    def test_arxiv_search_floor_can_be_raised_by_policy(self):
+        feed = b"""<?xml version="1.0"?>
+        <feed xmlns="http://www.w3.org/2005/Atom" xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">
+          <opensearch:totalResults>0</opensearch:totalResults>
+        </feed>
+        """
+        with (
+            patch.dict(os.environ, {"MECHFERRET_ARXIV_SEARCH_RESULTS": "80"}),
+            patch("urllib.request.urlopen", return_value=_Response(feed)) as opened,
+        ):
+            search_arxiv("sae", max_results=5)
+
+        self.assertEqual(self._query_param(opened.call_args.args[0].full_url, "max_results"), "80")
+
+    def test_web_search_floor_can_be_raised_by_policy(self):
+        html = "\n".join(
+            f'<a class="result__a" href="/l/?uddg=https%3A%2F%2Fexample.com%2F{i}">Result {i}</a>'
+            for i in range(60)
+        ).encode()
+
+        with (
+            patch.dict(os.environ, {"MECHFERRET_WEB_SEARCH_RESULTS": "60"}),
+            patch("urllib.request.urlopen", return_value=_Response(html)),
+        ):
+            results = web_search("sae", max_results=5)
+
+        self.assertEqual(len(results), 60)
 
     def test_neuronpedia_helpers_tolerate_bad_json_and_inputs(self):
         self.assertEqual(neuronpedia_search_explanations("", "query"), {})
