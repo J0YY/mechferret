@@ -1224,6 +1224,38 @@ class AgentStackTest(unittest.TestCase):
         self.assertIn("partial answer before completion", rendered)
         self.assertIn("long prompt", rendered)
 
+    def test_repl_queue_show_does_not_treat_runner_banner_as_live_output(self):
+        from mechferret import repl
+
+        release = threading.Event()
+        started = threading.Event()
+
+        def fake_chat(agent, session, text, *, background=False):
+            started.set()
+            self.assertTrue(release.wait(timeout=2))
+            return "final answer"
+
+        out = StringIO()
+        with redirect_stdout(out):
+            runner = repl.ChatJobRunner(object(), repl.Session(), chat_fn=fake_chat, queue_path=Path("queue-live-empty.json"))
+            try:
+                job = runner.submit("long prompt")
+                self.assertTrue(started.wait(timeout=2))
+                self.assertEqual(job.output, [])
+                out.seek(0)
+                out.truncate(0)
+                repl._queue_show(runner, [str(job.id)])
+            finally:
+                release.set()
+                runner.wait_idle(timeout=2)
+                runner.stop(wait=True)
+
+        rendered = out.getvalue()
+        self.assertIn("job #1", rendered)
+        self.assertIn("live output:", rendered)
+        self.assertIn("no assistant or tool output captured yet", rendered)
+        self.assertNotIn("▶ queued #1", rendered)
+
     def test_repl_queue_show_keeps_captured_output_after_completion(self):
         from mechferret import repl
 

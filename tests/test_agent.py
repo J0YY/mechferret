@@ -873,6 +873,18 @@ class AgentToolTest(unittest.TestCase):
         self.assertFalse(bad_novelty["ok"])
         self.assertEqual(bad_novelty["expected"], "objects with novelty_risk from verify_novelty assessment")
 
+        bad_citation_locator = _validated_option("Citation without locator")
+        bad_citation_locator["citations"] = ["Closest Paper"]
+        bad_citation = json.loads(tools.run_tool("present_options", {"options": [bad_citation_locator]}))
+        self.assertFalse(bad_citation["ok"])
+        self.assertEqual(bad_citation["expected"], "objects with citation URLs from verify_novelty assessment")
+
+        bad_closest_locator = _validated_option("Closest prior without locator")
+        bad_closest_locator["closest_prior_art"] = ["Closest Paper"]
+        bad_closest = json.loads(tools.run_tool("present_options", {"options": [bad_closest_locator]}))
+        self.assertFalse(bad_closest["ok"])
+        self.assertEqual(bad_closest["expected"], "objects with closest_prior_art URLs from verify_novelty assessment")
+
         bad_readiness = json.loads(
             tools.run_tool(
                 "present_options",

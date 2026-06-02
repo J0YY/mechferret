@@ -51,8 +51,9 @@ def _c(text: str, code: str) -> str:
     return f"\033[{code}m{text}\033[0m" if _COLOR else text
 
 
-def _print_background(text: str) -> None:
-    _record_background_output(text)
+def _print_background(text: str, *, capture: bool = True) -> None:
+    if capture:
+        _record_background_output(text)
     with _OUTPUT_LOCK:
         if readline is not None and sys.stdin.isatty() and sys.stdout.isatty():
             sys.stdout.write("\r\033[2K")
@@ -64,6 +65,13 @@ def _print_background(text: str) -> None:
                 pass
             return
         print(text)
+
+
+def _print_background_status(text: str) -> None:
+    try:
+        _print_background(text, capture=False)
+    except TypeError:
+        _print_background(text)
 
 
 def _strip_ansi(text: str) -> str:
@@ -703,7 +711,7 @@ class ChatJobRunner:
                 if self._stopped:
                     continue
                 if job.status == "canceled":
-                    _print_background(_c(f"  skipped canceled #{job.id}", "2"))
+                    _print_background_status(_c(f"  skipped canceled #{job.id}", "2"))
                     continue
                 if not self._is_next_queued(job):
                     self._queue.put(job)
@@ -713,7 +721,9 @@ class ChatJobRunner:
                 self.save_pending()
                 _BACKGROUND_JOB.job = job
                 _BACKGROUND_JOB.runner = self
-                _print_background(_c(f"  ▶ queued #{job.id} {job.kind}: {_short_job_text(_display_job_text(job))}", "2"))
+                _print_background_status(
+                    _c(f"  ▶ queued #{job.id} {job.kind}: {_short_job_text(_display_job_text(job))}", "2")
+                )
                 reply = self._chat_fn(self.agent, self.session, job.text, background=True)
                 if reply is None:
                     raise RuntimeError("no reply produced")
@@ -726,7 +736,7 @@ class ChatJobRunner:
                     job.status = "error"
                     job.error = str(exc)
                     self.save_pending()
-                    _print_background(_c(f"  error in queued #{job.id}: {exc}", "31"))
+                    _print_background_status(_c(f"  error in queued #{job.id}: {exc}", "31"))
                     _print_job_result_hint(job, background=True)
             finally:
                 if getattr(_BACKGROUND_JOB, "job", None) is job:
@@ -739,7 +749,7 @@ class ChatJobRunner:
         try:
             _BACKGROUND_JOB.job = job
             _BACKGROUND_JOB.runner = self
-            _print_background(_c(f"  ▶ side #{job.id}: {_short_job_text(_display_job_text(job))}", "2"))
+            _print_background_status(_c(f"  ▶ side #{job.id}: {_short_job_text(_display_job_text(job))}", "2"))
             side_agent = self._side_agent_factory(self.agent)
             side_session = Session()
             reply = self._chat_fn(side_agent, side_session, job.text, background=True)
@@ -753,7 +763,7 @@ class ChatJobRunner:
             job.status = "error"
             job.error = str(exc)
             self.save_pending()
-            _print_background(_c(f"  error in side #{job.id}: {exc}", "31"))
+            _print_background_status(_c(f"  error in side #{job.id}: {exc}", "31"))
             _print_job_result_hint(job, background=True)
         finally:
             if getattr(_BACKGROUND_JOB, "job", None) is job:
@@ -1642,7 +1652,7 @@ def _print_queued(job: PromptJob, runner: ChatJobRunner) -> None:
 
 
 def _print_job_result_hint(job: PromptJob, *, background: bool = False) -> None:
-    emit = _print_background if background else print
+    emit = _print_background_status if background else print
     emit(_c(f"  use /queue show #{job.id} to view the prompt, live output, reply, or error", "2"))
     if job.kind == "btw" and job.status == "done" and not job.applied:
         emit(_c(f"  use /queue apply #{job.id} to add this side reply to the main conversation", "2"))
@@ -1652,7 +1662,7 @@ def _print_job_result_hint(job: PromptJob, *, background: bool = False) -> None:
 
 def _print_finished(job: PromptJob, *, label: str = "queued", background: bool = False) -> None:
     prefix = f"finished {label}" if label != "queued" else "finished"
-    emit = _print_background if background else print
+    emit = _print_background_status if background else print
     emit(_c(f"  ✓ {prefix} #{job.id}", "32"))
     _print_job_result_hint(job, background=background)
 
@@ -1796,6 +1806,9 @@ def _queue_show(runner: ChatJobRunner, args: list[str]) -> None:
         label = "captured output:" if job.reply or job.status in TERMINAL_JOB_STATUSES else "live output:"
         print(_c(f"  {label}", "1"))
         print(_render_reply("\n".join(job.output[-80:])))
+    elif job.status == "running":
+        print(_c("  live output:", "1"))
+        print(_c("  (no assistant or tool output captured yet; use /queue tail to follow it)", "2"))
     if job.reply:
         print(_c("  reply:", "1"))
         print(_render_reply(job.reply))
@@ -2056,7 +2069,7 @@ def _chat(agent, session, text: str, *, background: bool = False) -> str | None:
 
     if not agent.configured:
         if background:
-            _print_background(_c("  queued prompt needs a model; run /login, then submit it again.", "33"))
+            _print_background_status(_c("  queued prompt needs a model; run /login, then submit it again.", "33"))
             return None
         print(_c("  No model connected yet — let's fix that.", "2"))
         if not onboard():

@@ -2610,13 +2610,13 @@ def _validate_option_card(option: dict[str, Any], index: int) -> dict[str, Any] 
             index=index,
             expected="objects with novelty_risk from verify_novelty assessment",
         )
-    citations = _option_strings(option.get("citations", []))
+    citations = _option_source_refs(option.get("citations", []))
     if not citations:
         return _invalid_object_list_payload(
             "options",
             option.get("citations"),
             index=index,
-            expected="objects with non-empty citations list",
+            expected="objects with citation URLs from verify_novelty assessment",
         )
     if not isinstance(option.get("closest_prior_art"), list):
         return _invalid_object_list_payload(
@@ -2703,6 +2703,14 @@ def _validate_option_card(option: dict[str, Any], index: int) -> dict[str, Any] 
             index=index,
             expected="objects with non-empty required_delta from verify_novelty assessment",
         )
+    closest = _option_source_refs(option.get("closest_prior_art", []))
+    if not closest:
+        return _invalid_object_list_payload(
+            "options",
+            option.get("closest_prior_art"),
+            index=index,
+            expected="objects with closest_prior_art URLs from verify_novelty assessment",
+        )
     return None
 
 
@@ -2719,10 +2727,10 @@ def _option_detail(option: dict[str, Any]) -> dict[str, Any]:
     required_delta = _option_required_delta(option.get("required_delta"))
     if required_delta:
         detail["required_delta"] = required_delta
-    citations = _option_strings(option.get("citations", []))[:4]
+    citations = _option_source_refs(option.get("citations", []))[:4]
     if citations:
         detail["citations"] = citations
-    closest = _option_strings(option.get("closest_prior_art", []))[:3]
+    closest = _option_source_refs(option.get("closest_prior_art", []))[:3]
     if closest:
         detail["closest_prior_art"] = closest
     readiness = option.get("claim_readiness")
@@ -3358,6 +3366,34 @@ def _option_strings(value: Any) -> list[str]:
         if isinstance(item, str) and item.strip():
             result.append(item.strip())
     return result
+
+
+def _option_source_refs(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    refs: list[str] = []
+    for item in value:
+        if isinstance(item, str):
+            text = item.strip()
+            if text and _text_has_http_url(text):
+                refs.append(text)
+            continue
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url", "")).strip()
+        if not _text_has_http_url(url):
+            continue
+        title = str(item.get("title", "")).strip()
+        refs.append(" ".join(part for part in (title, url) if part))
+    return refs
+
+
+def _text_has_http_url(text: str) -> bool:
+    for token in str(text).split():
+        parsed = urlparse(token.strip(".,;:()[]{}<>\"'"))
+        if parsed.scheme in {"http", "https"} and parsed.netloc:
+            return True
+    return False
 
 
 def tool_list_skills(_args: dict[str, Any]) -> str:
