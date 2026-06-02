@@ -26,14 +26,14 @@ PERSIST_THRESHOLD = 16000  # results larger than this are written to disk, not t
 JSON_PREVIEW_FIELD_LIMIT = 2000
 CHECK_LIST_STRUCTURED_LIMIT = 480
 RESULTS_DIR = Path(".mechferret/tool_results")
-DEFAULT_WEB_RESULTS = 24
+DEFAULT_WEB_RESULTS = 50
 DEFAULT_ARXIV_RESULTS = 50
 NOVELTY_RELATED_LIMIT = 24
 NOVELTY_FOCUSED_LIMIT = 10
 NOVELTY_QUERY_RESULT_LIMIT = 50
 NOVELTY_MAX_QUERY_PASSES = 36
 NOVELTY_CLOSEST_PRIOR_LIMIT = 8
-NOVELTY_WEB_RESULT_LIMIT = 24
+NOVELTY_WEB_RESULT_LIMIT = 50
 NOVELTY_WEB_MAX_QUERY_PASSES = 32
 NOVELTY_WEB_FETCH_LIMIT = 12
 NOVELTY_WEB_FETCH_CHARS = 2400
@@ -2184,7 +2184,7 @@ def _novelty_claim_readiness(risk: str, top_score: float, coverage: dict[str, An
         "deep_query_plan": coverage.get("arxiv_query_count", 0) >= 10
         and coverage.get("web_query_count", 0) >= 8
         and coverage.get("arxiv_results_per_query", 0) >= 50
-        and coverage.get("web_results_per_query", 0) >= 24,
+        and coverage.get("web_results_per_query", 0) >= NOVELTY_WEB_RESULT_LIMIT,
         "focus_breadth": all(
             bool(focus_coverage.get(name))
             for name in (
@@ -4256,7 +4256,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
      "parameters": _obj({"pattern": {"type": "string"}, "path": {"type": "string"}}, ["pattern"])},
     {"name": "grep", "description": "Search file contents by regex (ripgrep if available). Optional glob filter.",
      "parameters": _obj({"pattern": {"type": "string"}, "path": {"type": "string"}, "glob": {"type": "string"}}, ["pattern"])},
-    {"name": "web_search", "description": "Search the web (returns title + url results). Uses at least 24 results per query, even if a smaller max_results is requested. Use for current information and finding sources.",
+    {"name": "web_search", "description": "Search the web (returns title + url results). Uses at least 50 results per query, even if a smaller max_results is requested. Use for current information and finding sources.",
      "parameters": _obj({"query": {"type": "string"}, "max_results": {"type": "integer"}}, ["query"])},
     {"name": "web_fetch", "description": "Fetch a URL and return its readable text content.",
      "parameters": _obj({"url": {"type": "string"}}, ["url"])},
@@ -4320,7 +4320,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
              "source_domain_counts": {"type": "object"},
              "focus_summary": {"type": "array", "items": {"type": "object"}},
              "passes": {"type": "array", "items": {"type": "object"}},
-        }, "description": "assessment.search_audit from verify_novelty; include pass_count, failed_passes, empty_search_passes, duplicate_only_search_passes, focus_coverage, evidence_focus_coverage, source_axis_coverage, missing_focus_coverage, missing_evidence_focus_coverage, missing_source_axis_coverage, source_type_counts, source_domain_counts, focus_summary, and passes with per-pass source_types/source_domains. The audit must prove at least 12 arXiv passes at 50 results, 12 web passes at 24 results, focused deep-search coverage, source-axis evidence from per-pass rows, unique_added evidence from both arXiv and web, and zero failed retrieval passes."},
+        }, "description": "assessment.search_audit from verify_novelty; include pass_count, failed_passes, empty_search_passes, duplicate_only_search_passes, focus_coverage, evidence_focus_coverage, source_axis_coverage, missing_focus_coverage, missing_evidence_focus_coverage, missing_source_axis_coverage, source_type_counts, source_domain_counts, focus_summary, and passes with per-pass source_types/source_domains. The audit must prove at least 12 arXiv passes at 50 results, 12 web passes at 50 results, focused deep-search coverage, source-axis evidence from per-pass rows, unique_added evidence from both arXiv and web, and zero failed retrieval passes."},
          "recent_pressure": {"type": "object", "properties": {
              "status": {"type": "string"},
              "recent_window": {"type": "string"},

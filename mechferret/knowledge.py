@@ -67,13 +67,13 @@ def web_fetch(url: str, max_chars: int = 6000, timeout: int = 20) -> str:
     return text[:max_chars]
 
 
-def web_search(query: str, max_results: int = 24, timeout: int = 20) -> list[dict]:
+def web_search(query: str, max_results: int = 50, timeout: int = 20) -> list[dict]:
     """General web search via DuckDuckGo's HTML endpoint (no API key)."""
 
     query = _text(query).strip()
     if not query:
         return []
-    max_results = max(24, _positive_int(max_results, 24, upper=50))
+    max_results = max(50, _positive_int(max_results, 50, upper=50))
     timeout = _positive_int(timeout, 20, upper=120)
     data = urllib.parse.urlencode({"q": query}).encode()
     req = urllib.request.Request(

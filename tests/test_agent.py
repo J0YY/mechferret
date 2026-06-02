@@ -137,9 +137,9 @@ def _option_search_audit():
             "focus": focus,
             "passes": 1,
             "failed_passes": 0,
-            "retrieved": 24,
+            "retrieved": 50,
             "unique_added": 3,
-            "requested_results_max": 24,
+            "requested_results_max": 50,
         }
         for i, focus in enumerate(web_focuses)
     )
@@ -171,8 +171,8 @@ def _option_search_audit():
             {
                 "source": "web",
                 "focus": focus,
-                "requested_results": 24,
-                "retrieved": 24,
+                "requested_results": 50,
+                "retrieved": 50,
                 "unique_added": 3,
                 "source_types": {source_type: 3},
                 "source_domains": {domain: 3},
@@ -1895,7 +1895,7 @@ class AgentToolTest(unittest.TestCase):
             tools.run_tool("web_search", {"query": "sparse autoencoder", "max_results": shallow_count})
 
         self.assertEqual(arxiv_calls[0]["max_results"], 50)
-        self.assertEqual(web_calls[0]["max_results"], 24)
+        self.assertEqual(web_calls[0]["max_results"], 50)
 
     def test_verify_novelty_runs_deep_recent_method_search(self):
         from mechferret import tools
@@ -2022,7 +2022,7 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(len(payload["search_plan"]), len(calls))
         self.assertEqual(payload["arxiv_search_plan"], payload["search_plan"])
         self.assertGreaterEqual(len(web_calls), 8)
-        self.assertTrue(all(call["max_results"] == 24 for call in web_calls))
+        self.assertTrue(all(call["max_results"] == 50 for call in web_calls))
         self.assertTrue(any('"we propose"' in call["query"].lower() for call in web_calls))
         self.assertTrue(any("openreview review rebuttal" in call["query"].lower() for call in web_calls))
         self.assertTrue(any("site:openreview.net" in call["query"].lower() for call in web_calls))
@@ -2042,7 +2042,7 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(len(arxiv_audit), len(calls))
         self.assertEqual(len(web_audit), len(web_calls))
         self.assertTrue(all(row["requested_results"] == 50 for row in arxiv_audit))
-        self.assertTrue(all(row["requested_results"] == 24 for row in web_audit))
+        self.assertTrue(all(row["requested_results"] == 50 for row in web_audit))
         self.assertTrue(all("retrieved" in row and "unique_added" in row for row in payload["search_audit"]))
         self.assertFalse(any(row["unique_added"] == 0 and row["retrieved"] > 0 for row in payload["search_audit"]))
         self.assertEqual(payload["web_results"][0]["source"], "web")
@@ -2083,7 +2083,7 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(payload["assessment"]["source_diversity"], "broad_independent")
         self.assertIn("recent_window", payload["assessment"]["coverage"])
         self.assertEqual(payload["assessment"]["coverage"]["arxiv_results_per_query"], 50)
-        self.assertEqual(payload["assessment"]["coverage"]["web_results_per_query"], 24)
+        self.assertEqual(payload["assessment"]["coverage"]["web_results_per_query"], 50)
         self.assertGreaterEqual(payload["assessment"]["coverage"]["arxiv_query_count"], 10)
         self.assertGreaterEqual(payload["assessment"]["coverage"]["web_query_count"], 8)
         self.assertIn("replication_failure_modes", payload["assessment"]["coverage"]["arxiv_focuses"])
@@ -2885,11 +2885,11 @@ class AgentToolTest(unittest.TestCase):
                 {"query": "q2", "sort_by": "submittedDate", "max_results": 50, "focus": "recent_discovery"},
             ],
             "web_search_plan": [
-                {"query": "w1", "max_results": 24, "focus": "web_recent_method"},
+                {"query": "w1", "max_results": 50, "focus": "web_recent_method"},
             ],
             "search_audit": [
                 {"source": "arxiv", "focus": "core_relevance", "requested_results": 50, "retrieved": 50},
-                {"source": "web", "focus": "web_recent_method", "requested_results": 24, "retrieved": 24},
+                {"source": "web", "focus": "web_recent_method", "requested_results": 50, "retrieved": 50},
             ],
             "related_papers": [{"title": f"paper {index}", "abstract": "x" * 800} for index in range(200)],
             "assessment": {
@@ -2939,7 +2939,7 @@ class AgentToolTest(unittest.TestCase):
         self.assertEqual(parsed["search_audit_row_count"], 2)
         self.assertEqual(parsed["search_plan_limits"]["requested_results_min"], 50)
         self.assertEqual(parsed["search_plan_limits"]["requested_results_max"], 50)
-        self.assertEqual(parsed["web_search_plan_limits"]["requested_results_max"], 24)
+        self.assertEqual(parsed["web_search_plan_limits"]["requested_results_max"], 50)
         self.assertIn("recent_discovery", parsed["search_plan_limits"]["focuses"])
         self.assertEqual(parsed["assessment"]["freshness_profile"]["status"], "recent_prior_present")
         self.assertEqual(parsed["assessment"]["freshness_profile"]["latest_year"], datetime.now(UTC).year)
@@ -2978,7 +2978,7 @@ class AgentToolTest(unittest.TestCase):
                     "arxiv_query_count": 20,
                     "web_query_count": 12,
                     "arxiv_results_per_query": 50,
-                    "web_results_per_query": 24,
+                    "web_results_per_query": 50,
                     "focus_coverage": {"recent_discovery": True, "architecture": True},
                     "long": "y" * 4000,
                 },
